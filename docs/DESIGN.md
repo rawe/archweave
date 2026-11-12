@@ -160,7 +160,8 @@ React, Vite, `@xyflow/react` for the canvas, `elkjs` for automatic layout, `zust
 - **The canvas is the page.** Chrome floats over it in small pieces and gets out of the way. No sidebars that are always open, no headers above panels, no captions explaining what a panel is.
 - **One accent per author.** The human's selection and edits are cobalt. The agent's activity is saffron. Nothing else in the interface uses those two hues, so a glance tells who did what.
 - **Threads carry the meaning.** Relations are drawn as calm, thin threads. Selecting an element brings its threads and neighbors forward and lets the rest recede. This focus behavior is the signature of the product and the main tool for reading a dense diagram.
-- **Words are scarce.** Diagram nodes show a name, and at comfortable zoom a summary. Everything else appears in the inspector on selection. Explanations live behind `?`.
+- **Words are scarce.** Diagram nodes show a name, and at comfortable zoom the full summary. Everything else appears in the inspector on selection. Explanations live behind `?`.
+- **Nothing is cut off.** No text on a canvas or in a panel is ever shortened with an ellipsis or clipped: names, summaries, field names, field types, technology, labels, paths and list entries wrap, and their container grows to fit. To reduce density the interface hides a whole kind of content (the "names only" view option hides summaries; neighbor chips never had them), it never shows half of it. A diagram the reader cannot fully read is useless.
 - **Keyboard first, pointer complete.** Every action is reachable both ways.
 
 ### 5.2 Visual language
