@@ -293,7 +293,7 @@ export function StructureCanvas() {
             fresh: lastFresh || undefined,
             planned: e.relations.every((r) => r.status === 'planned'),
             carries,
-            showLabel: zoomNear,
+            near: zoomNear,
             route: routes.get(e.id),
             onSelect: selectEdge,
           },
@@ -333,6 +333,7 @@ export function StructureCanvas() {
   const pendingFrom = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const prevScope = useRef<string | undefined>(scopeId);
   const transition = useRef<Transition | null>({ kind: 'jump' });
+  const wasEmpty = useRef(!projection.nodes.length);
   const [entering, setEntering] = useState(false);
   useLayoutEffect(() => {
     const prev = prevScope.current;
@@ -349,11 +350,26 @@ export function StructureCanvas() {
       transition.current = child ? { kind: 'out', child } : { kind: 'jump' };
     } else transition.current = { kind: 'jump' };
     pendingFrom.current = null;
+    wasEmpty.current = false;
     setDropTarget(null);
     setComposer(null);
   }, [scopeId, model.elements]);
 
   const initialized = useNodesInitialized();
+  // A canvas that goes from empty to having nodes (an agent filled it) is fitted once, after placement.
+  useEffect(() => {
+    if (!projection.nodes.length) {
+      wasEmpty.current = true;
+      return;
+    }
+    if (!wasEmpty.current || placing || !initialized) return;
+    if (nodes.filter((n) => !n.data.leaving).length !== projection.nodes.length) return;
+    wasEmpty.current = false;
+    const pending = transition.current;
+    transition.current = null;
+    void rf.fitView(fitOptions({ duration: pending || reduced ? 0 : 300 }));
+  }, [placing, initialized, nodes, projection.nodes.length, rf, reduced]);
+
   useEffect(() => {
     const t = transition.current;
     if (!t || placing || !initialized) return;

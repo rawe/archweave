@@ -89,8 +89,10 @@ function MultiInspector({ ids }: { ids: string[] }) {
           <li key={e.id} className="rel-row-wrap">
             <button type="button" className="rel-row" onClick={() => navigateToElement(e.id)}>
               <KindIcon kind={e.kind} size={13} className="rel-kind" />
-              <span className="rel-name">{e.name}</span>
-              {e.summary && <span className="rel-verb">{e.summary}</span>}
+              <span className="rel-text">
+                <span className="rel-name">{e.name}</span>
+                {e.summary && <> <span className="rel-verb">{e.summary}</span></>}
+              </span>
             </button>
           </li>
         ))}

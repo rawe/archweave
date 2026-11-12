@@ -220,6 +220,20 @@ describe('get_context', () => {
     await slow;
     expect(session.agentCursor).toBe(applied.revision);
   });
+
+  it('lists at most the 20 most recent human changes and counts the older ones', async () => {
+    const { call, store } = await harness();
+    for (let i = 1; i <= 23; i++) store.apply({ summary: `Edit ${i}`, elements: [{ id: 'web', summary: `Version ${i}.` }] }, 'human');
+    const context = await call('get_context');
+    expect(context.humanChanges).toHaveLength(20);
+    expect(context.humanChanges[0].summary).toBe('Edit 4');
+    expect(context.humanChanges.at(-1).summary).toBe('Edit 23');
+    expect(context.olderHumanChangesOmitted).toBe(3);
+    store.apply({ summary: 'One more', elements: [{ id: 'web', summary: 'Last.' }] }, 'human');
+    const again = await call('get_context');
+    expect(again.humanChanges.map((e: { summary: string }) => e.summary)).toEqual(['One more']);
+    expect(again).not.toHaveProperty('olderHumanChangesOmitted');
+  });
 });
 
 describe('apply_changes', () => {

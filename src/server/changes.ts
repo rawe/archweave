@@ -48,7 +48,7 @@ export interface Applied {
   layoutChanged: boolean;
 }
 
-type Collection = keyof IdLists;
+export type Collection = keyof IdLists;
 
 export function parseChangeSet(input: unknown): ChangeSet {
   const parsed = ChangeSet.safeParse(input);
@@ -666,6 +666,28 @@ export function describeChanges(created: IdLists, updated: IdLists, removed: IdL
   if (!parts.length) return 'Updated the model';
   const text = parts.join('; ');
   return text[0]!.toUpperCase() + text.slice(1);
+}
+
+/** The one element, relation or flow a change only updated (nothing created or removed), if that is all it did. */
+export function onlyUpdated(lists: { created: IdLists; updated: IdLists; removed: IdLists }): { collection: Collection; id: string } | undefined {
+  const all = (l: IdLists) => [...l.elements, ...l.relations, ...l.flows];
+  if (all(lists.created).length || all(lists.removed).length || all(lists.updated).length !== 1) return undefined;
+  const collection = (['elements', 'relations', 'flows'] as const).find((c) => lists.updated[c].length)!;
+  return { collection, id: lists.updated[collection][0]! };
+}
+
+const PROPERTY_WORDS: Record<string, string> = { codeRefs: 'code links', parentId: 'parent', dataIds: 'data', from: 'ends', to: 'ends' };
+
+/** A generated summary for an update of one item, naming what changed between `before` and `after`: "Edited Order: fields, summary". */
+export function describeEdit(collection: Collection, before: object | undefined, after: object, model: Model): string {
+  const name = (id: string) => model.elements.find((e) => e.id === id)?.name ?? id;
+  const item = after as { id: string; name?: string; from?: string; to?: string };
+  const label = collection === 'relations' ? `${name(item.from!)} → ${name(item.to!)}` : (item.name ?? item.id);
+  const old = (before ?? {}) as Record<string, unknown>;
+  const now = after as Record<string, unknown>;
+  const keys = [...new Set([...Object.keys(old), ...Object.keys(now)])].filter((k) => JSON.stringify(old[k]) !== JSON.stringify(now[k]));
+  const words = [...new Set(keys.map((k) => PROPERTY_WORDS[k] ?? k))];
+  return words.length ? `Edited ${label}: ${words.join(', ')}` : `Edited ${label}`;
 }
 
 function sets(): Record<Collection, Set<string>> {

@@ -71,6 +71,7 @@ Rules:
 - Code ref paths are stored repo-relative: an absolute path inside the repository is made relative; an absolute path outside it, or one escaping it with `..`, is a validation error.
 - A change set that only contains `layout` does not create a journal entry or an undo step and does not bump the model revision visibly to the agent (it still broadcasts to browsers).
 - Undo: the store keeps the last 50 model snapshots. `undo()` restores the previous one and journals it.
+- Journal coalescing: a change that only updates one element, relation or flow (nothing created or removed) and has no `summary` gets a generated one naming what changed ("Edited Order: summary, fields"). It is merged into the previous journal entry when that entry is the same kind of edit of the same item by the same actor, less than 60 s old, with nothing journaled in between (an undo or a disk reload ends it). The merged entry takes the new `revision` and `at`, keeps the first edit's revision in `firstRevision`, so `since` queries inside the range still return it, and its summary covers everything changed since the first edit. Undo steps stay one per change.
 
 ### REST API
 
@@ -140,7 +141,7 @@ Keep the surface small. Tool results are compact JSON text. Every tool that retu
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `get_guide` | none | The modeling guide. |
-| `get_context` | none | What the human is doing now: `ui` state with the selected elements and relations expanded in full (including code refs, notes, children, relations in and out), the breadcrumb of the current scope, what the canvas shows (structure: the scope's nodes and threads; data: the catalog as counts per owner, or the focused structure with its fields, the structures it references and that reference it, and its users by verb), open notes across the model, journal entries by the human since the agent's last `get_context` or `apply_changes`, and stale link count. This is the first call for any request that says "this", "here", "the selected". |
+| `get_context` | none | What the human is doing now: `ui` state with the selected elements and relations expanded in full (including code refs, notes, children, relations in and out), the breadcrumb of the current scope, what the canvas shows (structure: the scope's nodes and threads; data: the catalog as counts per owner, or the focused structure with its fields, the structures it references and that reference it, and its users by verb), open notes across the model, journal entries by the human since the agent's last `get_context` or `apply_changes` (the 20 most recent; `olderHumanChangesOmitted` counts the rest), and stale link count. This is the first call for any request that says "this", "here", "the selected". |
 | `get_model` | `scopeId?`, `depth?` (default 2), `kinds?`, `includeData?` | Outline of the model: nested elements as `{id, kind, name, summary, status, children}` plus relations among them, flows by name, counts. |
 | `get_element` | `id` | One element in full: fields, code refs, notes, parent chain, children, relations in and out with the other end's name, flows it takes part in, data it touches. Works for relations ids too. |
 | `search` | `query`, `kinds?`, `limit?` | Elements whose name, summary, description, tags, field names or code paths match. |
@@ -182,7 +183,7 @@ React, Vite, `@xyflow/react` for the canvas, `elkjs` for automatic layout, `zust
 - **Threads carry the meaning.** Relations are drawn as calm, thin threads. Selecting an element brings its threads and neighbors forward and lets the rest recede. This focus behavior is the signature of the product and the main tool for reading a dense diagram.
 - **Words are scarce.** Diagram nodes show a name, and at comfortable zoom the full summary. Everything else appears in the inspector on selection. Explanations live behind `?`.
 - **Nothing is cut off.** No text on a canvas or in a panel is ever shortened with an ellipsis or clipped: names, summaries, field names, field types, technology, labels, paths and list entries wrap, and their container grows to fit. To reduce density the interface hides a whole kind of content (the "names only" view option hides summaries; neighbor chips never had them), it never shows half of it. A diagram the reader cannot fully read is useless.
-- **Keyboard first, pointer complete.** Every action is reachable both ways.
+- **Keyboard first, pointer complete.** Every action is reachable both ways. While a dialog, the palette or the export dialog is open, no global shortcut acts.
 
 ### 5.2 Visual language
 
@@ -207,7 +208,7 @@ Shape: nodes are 10 px radius rectangles with a 1 px `--line` border and no shad
 
 Canvas background: a faint dot grid that fades out when zoomed far out.
 
-Threads: 1.25 px, `--line` at rest, smooth step or bezier routed with rounded corners, small arrowhead. Label shown only when the thread is in focus or the zoom is close. Planned relations are dashed. A relation carrying data shows a small diamond at its midpoint; hovering it lists the structures.
+Threads: 1.25 px, `--line` at rest, smooth step or bezier routed with rounded corners, small arrowhead. Label shown only while the thread is hovered or its relation is selected; a focused element's relations read in the inspector. Planned relations are dashed. A relation carrying data shows a small diamond at its midpoint; hovering it lists the structures.
 
 Focus: when something is selected, its threads take `--human`, neighbors keep full contrast, everything else drops to about 35% opacity (transition 160 ms). Clicking the empty canvas restores the whole picture.
 
@@ -249,7 +250,7 @@ Shows the children of the current scope (top-level elements at the root). Elemen
 - **Delete:** `Backspace` or `Delete` on a selection. Deleting an element with children asks once.
 - **Density:** automatic layout is compact. A scope with about ten elements and as many neighbors is readable at 80% zoom or more on a 1280 px wide window. Neighbors are name-only chips on the rim: callers on the left, callees on the right. Threads leave and enter nodes on the sides facing each other, spread along the side so they do not stack, and curve once; no loops, no detours.
 - **Selection stays visible:** when the inspector opens over the selected element or its neighbors, the canvas pans just enough to bring the focused set into the free area.
-- **Arrange:** positions persist per scope. New elements without positions are placed by ELK relative to the existing ones without moving them. "Tidy" in the canvas context menu re-runs layout for the whole scope.
+- **Arrange:** positions persist per scope. New elements without positions are placed by ELK relative to the existing ones without moving them. A canvas that goes from empty to having nodes (an agent filled it) is fitted to the screen once, after placement. "Tidy" in the canvas context menu re-runs layout for the whole scope.
 - Multi-select with shift-click and drag-box.
 
 ### 5.5 Data perspective
@@ -267,7 +268,7 @@ The place to find and discuss data structures. A real codebase has dozens of the
 
 Shared by both states:
 - A slim list rail on the left (the only persistent side element, 220 px, collapsible) lists all structures grouped by owner, with a filter field. The filter also narrows the catalog. Selecting an entry focuses that structure. This is what makes any structure reachable in one step.
-- Fields are edited in the inspector: add, rename, retype, reorder, link to another structure, mark optional. The example payload is an editable code block.
+- Fields are edited in the inspector: add, rename, retype, reorder, link to another structure (never the structure itself), mark optional. The example payload is an editable code block.
 - From anywhere, `⌘K` then a structure name jumps here in focus. From the Structure perspective, the inspector of an element lists the data it touches; clicking one jumps here with it focused.
 
 ### 5.6 Flows perspective
@@ -288,17 +289,17 @@ For an element, top to bottom, with sections collapsed when empty and no section
 3. Description (rendered markdown, click to edit).
 4. **Code**: each ref as path, symbol and line range in mono. Click opens the code drawer at that location. Stale refs show in `--warn` with the reason. "Link code" opens a fuzzy file picker backed by `/api/code/files`.
 5. **Data** (non-data elements): structures it touches with the verb. **Fields** (data elements).
-6. **Relations**: incoming and outgoing, each a row that selects the other end.
+6. **Relations**: incoming and outgoing, each a row that selects the other end. "Add" picks any other element, also one on another canvas, and a direction (to or from), creates a `uses` relation and opens it with the label field focused.
 7. **Notes**: open notes, a field to add one ("Note for the agent"), resolved notes folded away.
 8. A quiet footer row: "Copy prompt" with a menu (Explain, Investigate, Change…) that copies a ready sentence referencing the element by name and id, for pasting into the agent. Delete.
 
 For a relation: kind, label, technology, description, data carried (picker), code, the underlying relations when it is a merged thread.
 
-Edits commit on blur or `Enter` and go out as a `ChangeSet`.
+Edits commit on blur or `Enter` and go out as a `ChangeSet`. Plain property edits (fields, summary, description, technology, code links, a relation's label) carry no summary, so the server describes them and coalesces quick ones into one journal entry (see Store).
 
 ### 5.8 Code drawer
 
-Read-only view of the linked file with syntax highlighting (`highlight.js`), the referenced range marked and scrolled into view. Header: path (mono), a list of the elements linked to this same file as chips (code-to-architecture navigation), "Open in editor" (`vscode://file/<hostPath>/<path>:<line>`, shown when a host path is known), copy path. Selecting lines and pressing "Link selection" adds a code ref with that range to the selected element.
+Read-only view of the linked file with syntax highlighting (`highlight.js`), the referenced range marked and scrolled into view. Header: path (mono), a list of the elements linked to this same file as chips (code-to-architecture navigation), "Open in editor" (`vscode://file/<hostPath>/<path>:<line>`, shown when a host path is known), copy path. Selecting lines and pressing "Link lines <range> to <element>" (for example "Link lines 8–12 to Checkout") adds a code ref with that range to the selected element.
 
 ### 5.9 Search and commands
 
@@ -306,11 +307,11 @@ Read-only view of the linked file with syntax highlighting (`highlight.js`), the
 
 ### 5.10 Agent presence and activity
 
-The presence button shows a dot: hollow when no agent has connected, saffron when one is present. Clicking it opens the activity popover: journal entries newest first, each with author color, summary and relative time; clicking an entry selects what it touched. When no agent has ever connected the popover shows how to connect: the MCP URL and the one-line config, with a copy button.
+The presence button shows a dot: hollow when no agent has connected, saffron when one is present. Clicking it opens the activity popover: code links that need attention, then open notes across the model (author color, the full text, the owning element; clicking one goes to the element; no section when there are none), then journal entries newest first, each with author color, summary and relative time; clicking an entry selects what it touched. When no agent has ever connected the popover shows how to connect: the MCP URL and the one-line config, with a copy button.
 
 When the agent applies a change while the human is looking, a small toast at the bottom center names the summary; clicking it navigates to the change. A `focus` event navigates immediately and shows the message in the same toast.
 
-The browser reports `UiState` to the server whenever perspective, scope, flow or selection changes (debounced 150 ms).
+The browser reports `UiState` to the server whenever perspective, scope, flow or selection changes (debounced 150 ms), and at once whenever the event stream connects or reconnects, so a restarted server knows the view without waiting for a click.
 
 ### 5.11 Empty state
 

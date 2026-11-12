@@ -330,6 +330,34 @@ button.crumb:hover {
   margin-top: 4px;
 }
 
+.note-row {
+  grid-template-columns: 8px 1fr;
+}
+
+.note-row-text {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.note-row-owner {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: var(--fs-12);
+}
+
+.note-row-owner span {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.note-row-owner svg {
+  flex: none;
+  color: var(--ink-3);
+}
+
 .activity-connect + .activity-list,
 .links-check + .activity-list {
   margin-top: 0;

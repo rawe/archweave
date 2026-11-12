@@ -454,6 +454,7 @@
 .note-list,
 .field-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
 }
 
@@ -488,17 +489,20 @@
   flex: none;
 }
 
-.rel-name {
-  flex: 0 1 auto;
+/* name and verb share one text flow, so it wraps between words; a word breaks only when it is wider than the row */
+.rel-text {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+.rel-text .rel-verb {
+  margin: 0 2px;
 }
 
 .rel-verb {
   color: var(--ink-3);
   font-size: var(--fs-12);
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .rel-verb.is-lead {
@@ -511,10 +515,6 @@
   color: var(--ink-2);
   text-decoration: underline dashed var(--line-strong);
   text-underline-offset: 3px;
-}
-
-.rel-row.is-pair .rel-name {
-  max-width: 38%;
 }
 
 .row-remove,

@@ -43,7 +43,7 @@ function SingleRelation({ rel, index }: { rel: Relation; index: ModelIndex }) {
   const from = index.byId.get(rel.from);
   const to = index.byId.get(rel.to);
   const name = `${from?.name ?? rel.from} → ${to?.name ?? rel.to}`;
-  const patch = (p: Omit<PlainRelationPatch, 'id'>, summary = `Edited ${name}`) => void commit({ summary, relations: [{ id: rel.id, ...p }] });
+  const patch = (p: Omit<PlainRelationPatch, 'id'>, summary?: string) => void commit({ summary, relations: [{ id: rel.id, ...p }] });
   const [picking, setPicking] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
 
@@ -162,12 +162,12 @@ function MergedInspector({ relations, index, edgeKey }: { relations: Relation[];
               <li key={r.id} className="rel-row-wrap">
                 <button
                   type="button"
-                  className={cx('rel-row', 'is-pair', r.status === 'planned' && 'is-planned')}
+                  className={cx('rel-row', r.status === 'planned' && 'is-planned')}
                   onClick={() => setState({ selection: { elementIds: [], relationIds: [r.id], edgeKey } })}
                 >
-                  <span className="rel-name">{f?.name}</span>
-                  <span className="rel-verb">{r.label || RELATION_VERB[r.kind]}</span>
-                  <span className="rel-name">{t?.name}</span>
+                  <span className="rel-text">
+                    <span className="rel-name">{f?.name}</span> <span className="rel-verb">{r.label || RELATION_VERB[r.kind]}</span> <span className="rel-name">{t?.name}</span>
+                  </span>
                 </button>
               </li>
             );

@@ -10,6 +10,7 @@ import { cx } from '../lib/dom.ts';
 import { relativeTime } from '../lib/format.ts';
 import { DATA_VERBS, KindIcon, RELATION_VERB } from '../lib/kinds.tsx';
 import { Section } from './fields.tsx';
+import { connect } from '../state/actions.ts';
 
 // ─── Notes ──────────────────────────────────────────────────────────────────
 
@@ -104,10 +105,12 @@ function RelationRow({ rel, other, dir, via }: { rel: Relation; other?: Element;
       <button type="button" className={cx('rel-row', rel.status === 'planned' && 'is-planned')} onClick={() => navigateToElement(other.id)}>
         {dir === 'out' ? <ArrowRight size={13} strokeWidth={1.7} className="rel-dir" aria-label="to" /> : <ArrowLeft size={13} strokeWidth={1.7} className="rel-dir" aria-label="from" />}
         <KindIcon kind={other.kind} size={13} className="rel-kind" />
-        <span className="rel-name">{other.name}</span>
-        <span className="rel-verb">
-          {verb}
-          {via && <span className="rel-via"> · via {via.name}</span>}
+        <span className="rel-text">
+          <span className="rel-name">{other.name}</span>{' '}
+          <span className="rel-verb">
+            {verb}
+            {via && <span className="rel-via"> · via {via.name}</span>}
+          </span>
         </span>
         {unseen && <span className="dot-agent" aria-label="Changed by the agent" />}
       </button>
@@ -133,16 +136,52 @@ export function Relations({ el, index }: { el: Element; index: ModelIndex }) {
     for (const r of index.in.get(id) ?? [])
       if (!inside.has(r.from) && !isDataLink(r)) rows.push({ rel: r, dir: 'in', other: index.byId.get(r.from), via: id === el.id ? undefined : index.byId.get(id) });
   }
-  if (!rows.length) return null;
+  const others = el.kind === 'data' ? [] : [...index.byId.values()].filter((e) => e.kind !== 'data' && e.id !== el.id);
+  if (!rows.length && !others.length) return null;
   rows.sort((a, b) => (a.dir === b.dir ? Number(!!a.via) - Number(!!b.via) : a.dir === 'out' ? -1 : 1));
   return (
-    <Section label="Relations">
-      <ul className="rel-list">
-        {rows.map((r) => (
-          <RelationRow key={`${r.dir}-${r.rel.id}`} rel={r.rel} other={r.other} dir={r.dir} via={r.via} />
-        ))}
-      </ul>
+    <Section label="Relations" action={others.length > 0 ? <AddRelation el={el} others={others} index={index} /> : undefined}>
+      {rows.length > 0 && (
+        <ul className="rel-list">
+          {rows.map((r) => (
+            <RelationRow key={`${r.dir}-${r.rel.id}`} rel={r.rel} other={r.other} dir={r.dir} via={r.via} />
+          ))}
+        </ul>
+      )}
     </Section>
+  );
+}
+
+/** A `uses` relation to or from any other element, also one on another canvas. */
+function AddRelation({ el, others, index }: { el: Element; others: Element[]; index: ModelIndex }) {
+  const [picking, setPicking] = useState(false);
+  const [dir, setDir] = useState<'to' | 'from'>('to');
+  const addRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={addRef} type="button" className="section-action" onClick={() => setPicking(true)}>
+        <Plus size={13} strokeWidth={1.8} aria-hidden />
+        Add
+      </button>
+      {picking && (
+        <Picker
+          anchor={addRef}
+          placeholder={dir === 'to' ? `${el.name} uses…` : `Uses ${el.name}…`}
+          items={others.map((o) => ({ id: o.id, label: o.name, detail: scopePath(o, index), icon: <KindIcon kind={o.kind} size={13} /> }))}
+          onClose={() => setPicking(false)}
+          onPick={(item) => (dir === 'to' ? connect(el.id, item.id) : connect(item.id, el.id))}
+          header={
+            <div className="verb-pick" role="radiogroup" aria-label="Direction">
+              {(['to', 'from'] as const).map((d) => (
+                <button key={d} type="button" role="radio" aria-checked={dir === d} className={cx('chip', dir === d && 'is-active')} onPointerDown={(e) => e.preventDefault()} onClick={() => setDir(d)}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          }
+        />
+      )}
+    </>
   );
 }
 
@@ -188,7 +227,9 @@ export function TouchedData({ el, index }: { el: Element; index: ModelIndex }) {
                 <button type="button" className={cx('rel-row', r.status === 'planned' && 'is-planned')} onClick={() => navigateToElement(d.id)}>
                   <span className="rel-verb is-lead">{RELATION_VERB[r.kind]}</span>
                   <KindIcon kind="data" size={13} className="rel-kind" />
-                  <span className="rel-name">{d.name}</span>
+                  <span className="rel-text">
+                    <span className="rel-name">{d.name}</span>
+                  </span>
                 </button>
                 <Tip label="Remove" side="left">
                   <button
@@ -212,8 +253,10 @@ export function TouchedData({ el, index }: { el: Element; index: ModelIndex }) {
                 <button type="button" className="rel-row" onClick={() => navigateToElement(d.id)}>
                   <span className="rel-verb is-lead">{r.from === el.id ? 'sends' : 'receives'}</span>
                   <KindIcon kind="data" size={13} className="rel-kind" />
-                  <span className="rel-name">{d.name}</span>
-                  {other && <span className="rel-verb">{r.from === el.id ? `to ${other.name}` : `from ${other.name}`}</span>}
+                  <span className="rel-text">
+                    <span className="rel-name">{d.name}</span>
+                    {other && <> <span className="rel-verb">{r.from === el.id ? `to ${other.name}` : `from ${other.name}`}</span></>}
+                  </span>
                 </button>
               </li>
             );
@@ -277,8 +320,9 @@ export function UsedBy({ el, index }: { el: Element; index: ModelIndex }) {
           <li key={`${r.relId}-${r.verb}`} className="rel-row-wrap">
             <button type="button" className="rel-row" onClick={() => navigateToElement(r.other.id)} title="Show in Structure">
               <KindIcon kind={r.other.kind} size={13} className="rel-kind" />
-              <span className="rel-name">{r.other.name}</span>
-              <span className="rel-verb">{r.verb}</span>
+              <span className="rel-text">
+                <span className="rel-name">{r.other.name}</span> <span className="rel-verb">{r.verb}</span>
+              </span>
             </button>
           </li>
         ))}

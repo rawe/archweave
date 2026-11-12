@@ -274,7 +274,10 @@ export interface ChangeResult {
 
 /** One entry of the shared activity journal. Layout-only changes are not journaled. */
 export interface JournalEntry {
+  /** The model revision after this change. Entries coalesced from several quick edits carry the latest. */
   revision: number;
+  /** For coalesced entries: the revision of the first edit they hold. */
+  firstRevision?: number;
   at: string; // ISO timestamp
   actor: Actor;
   summary: string; // given or generated ("Added 3 elements, 2 relations")

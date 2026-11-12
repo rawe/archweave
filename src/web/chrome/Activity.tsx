@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowRight, Check, Copy, Workflow } from 'lucide-react';
 import type { JournalEntry, StaleLink } from '../../shared/model.ts';
 import { linkProblem, ownerName, refreshStale, repairLinks, showLinkOwner } from '../state/codeLinks.ts';
-import { navigateToEntry, setOverlay, useStore } from '../state/store.ts';
+import { navigateToElement, navigateToEntry, setOverlay, useStore } from '../state/store.ts';
 import { groupByFile } from '../lib/codeRefs.ts';
 import { copyText, cx } from '../lib/dom.ts';
 import { lineRange, plural, relativeTime } from '../lib/format.ts';
@@ -108,6 +108,7 @@ export function ActivityPopover({ anchor }: { anchor: RefObject<HTMLElement | nu
         </div>
       )}
       <CodeLinksCheck />
+      <OpenNotes />
       {entries.length > 0 ? (
         <ol className="activity-list">
           {entries.map((e) => (
@@ -181,6 +182,45 @@ function CodeLinksCheck() {
           </ul>
         </div>
       ))}
+    </section>
+  );
+}
+
+/** Open notes across the model, oldest first, each leading to its element. Absent when there are none. */
+function OpenNotes() {
+  const model = useStore((s) => s.model);
+  const notes = model.elements
+    .flatMap((el) => el.notes.filter((n) => !n.resolved).map((note) => ({ note, el })))
+    .sort((a, b) => a.note.createdAt.localeCompare(b.note.createdAt));
+  if (!notes.length) return null;
+  return (
+    <section className="links-check" aria-label="Open notes">
+      <div className="links-head">
+        <span className="links-title">{plural(notes.length, 'open note')}</span>
+      </div>
+      <ul>
+        {notes.map(({ note, el }) => (
+          <li key={`${el.id}-${note.id}`}>
+            <button
+              type="button"
+              className={cx('activity-row', 'note-row', `by-${note.author}`)}
+              onClick={() => {
+                setOverlay(null);
+                navigateToElement(el.id);
+              }}
+            >
+              <span className="activity-author" aria-label={note.author === 'agent' ? 'Agent' : 'You'} />
+              <span className="links-row-text">
+                <span className="note-row-text">{note.text}</span>
+                <span className="note-row-owner">
+                  <KindIcon kind={el.kind} size={12} />
+                  <span>{el.name}</span>
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

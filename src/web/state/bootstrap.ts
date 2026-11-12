@@ -15,6 +15,19 @@ export function bootstrap(): () => void {
     })
     .catch(() => setState({ connection: 'offline' }));
 
+  // Report what the human sees: debounced on change, at once whenever the event stream (re)connects,
+  // so a restarted server knows the view without waiting for a click. The first report waits for the
+  // session, which may restore the last view.
+  let uiTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastUi = '';
+  let sessionSettled = false;
+  const reportUi = () => {
+    clearTimeout(uiTimer);
+    const ui = uiStateOf(getState());
+    lastUi = JSON.stringify(ui);
+    void api.putUi(ui).catch(() => undefined);
+  };
+
   void api
     .session()
     .then((session) => {
@@ -25,7 +38,11 @@ export function bootstrap(): () => void {
         setState({ perspective: ui.perspective ?? 'structure', scopeId: ui.scopeId, flowId: ui.flowId });
       }
     })
-    .catch(() => undefined);
+    .catch(() => undefined)
+    .finally(() => {
+      sessionSettled = true;
+      reportUi();
+    });
 
   void api
     .journal(0)
@@ -53,12 +70,12 @@ export function bootstrap(): () => void {
     },
     agent: setAgent,
     focus: handleFocusRequest,
-    status: (connection) => setState({ connection }),
+    status: (connection) => {
+      setState({ connection });
+      if (connection === 'live' && sessionSettled) reportUi();
+    },
   });
 
-  // Report what the human sees, debounced.
-  let uiTimer: ReturnType<typeof setTimeout> | undefined;
-  let lastUi = '';
   const unsubscribeUi = useStore.subscribe((s) => {
     const ui = uiStateOf(s);
     const key = JSON.stringify(ui);

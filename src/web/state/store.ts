@@ -186,7 +186,9 @@ export function receiveSnapshot(snapshot: Snapshot, entry?: JournalEntry) {
   );
   const next: Partial<State> = { server: snapshot, loaded: true };
   if (entry && !state.journal.some((j) => j.revision === entry.revision && j.at === entry.at)) {
-    next.journal = [...state.journal, entry].slice(-500);
+    // A coalesced entry replaces the entry it grew from.
+    const merged = (j: JournalEntry) => entry.firstRevision !== undefined && j.actor === entry.actor && j.revision >= entry.firstRevision && j.revision < entry.revision;
+    next.journal = [...state.journal.filter((j) => !merged(j)), entry].slice(-500);
   }
   setDocument(snapshot, pending, next);
   if (entry?.actor === 'agent') onAgentEntry(entry);

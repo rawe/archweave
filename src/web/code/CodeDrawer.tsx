@@ -5,7 +5,7 @@ import { api, type CodeFile } from '../api.ts';
 import { IconButton, Tip } from '../chrome/primitives.tsx';
 import { keepLink, linkProblem, reanchorLink } from '../state/codeLinks.ts';
 import { closeCode, commit, getState, navigateToElement, navigateToRelation, toast, useStore } from '../state/store.ts';
-import { sameLink } from '../lib/codeRefs.ts';
+import { editorUrl, sameLink } from '../lib/codeRefs.ts';
 import { copyText, cx } from '../lib/dom.ts';
 import { lineRange, linesLabel } from '../lib/format.ts';
 import { KindIcon } from '../lib/kinds.tsx';
@@ -106,7 +106,7 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
     return out;
   }, [model, code.path]);
 
-  // Where "Link selection" would attach the range.
+  // Where "Link lines" would attach the range.
   const target = (() => {
     if (perspective === 'flows' && flowId && stepIndex !== null) {
       const flow = model.flows.find((f) => f.id === flowId);
@@ -149,7 +149,7 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
     if (a && b) setRange({ a: Number(a.dataset.line), b: Number(b.dataset.line) });
   }
 
-  const editorUrl = hostPath ? `vscode://file/${hostPath.replace(/\/$/, '')}/${code.path}:${range ? Math.min(range.a, range.b) : (code.startLine ?? 1)}` : null;
+  const editorLink = hostPath ? editorUrl(hostPath, code.path, range ? Math.min(range.a, range.b) : (code.startLine ?? 1)) : null;
   const marked = (n: number) => !!code.startLine && n >= code.startLine && n <= (code.endLine ?? code.startLine);
   const suggested = (n: number) => !!suggestion && n >= suggestion.startLine && n <= suggestion.endLine;
   const suggestedLines = suggestion ? linesLabel(suggestion.startLine, suggestion.endLine) : '';
@@ -211,9 +211,9 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
             </button>
           )}
           {range && !target && <span className="muted small">Select an element to link these lines</span>}
-          {editorUrl && (
+          {editorLink && (
             <Tip label="Open in editor">
-              <a className="icon-btn" href={editorUrl} aria-label="Open in editor">
+              <a className="icon-btn" href={editorLink} aria-label="Open in editor">
                 <ExternalLink size={15} strokeWidth={1.7} />
               </a>
             </Tip>

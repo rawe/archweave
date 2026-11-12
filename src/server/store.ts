@@ -1,5 +1,5 @@
 import { type Actor, type ChangeResult, type ChangeSet, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
-import { applyChangeSet, describeChanges, diffModels, parseChangeSet } from './changes.ts';
+import { applyChangeSet, type Collection, describeChanges, describeEdit, diffModels, onlyUpdated, parseChangeSet } from './changes.ts';
 import { integrityProblems } from './integrity.ts';
 import type { CodeAccess } from './stale.ts';
 
@@ -30,6 +30,17 @@ interface UndoStep {
 
 export const JOURNAL_CAP = 500;
 const UNDO_CAP = 50;
+/** Quick edits of one item by one actor, without an explicit summary, share a journal entry within this window. */
+export const COALESCE_MS = 60_000;
+
+/** The last journal entry, while later edits may still be merged into it. */
+interface OpenEdit {
+  entry: JournalEntry;
+  collection: Collection;
+  id: string;
+  /** The item before the first edit the entry holds. */
+  before: object | undefined;
+}
 
 /**
  * The single owner of the model, layout, revision, journal and undo history.
@@ -42,6 +53,7 @@ export class Store {
   private revision: number;
   private entries: JournalEntry[];
   private undoStack: UndoStep[] = [];
+  private openEdit?: OpenEdit;
   private listeners = new Set<(change: StoreChange) => void>();
   private now: () => Date;
   private code?: CodeAccess;
@@ -80,7 +92,11 @@ export class Store {
     if (applied.modelChanged) {
       this.pushUndo();
       this.revision += 1;
-      entry = this.record(actor, changes.summary?.trim() || describeChanges(created, updated, removed), { created, updated, removed });
+      const summary = changes.summary?.trim();
+      const target = summary ? undefined : onlyUpdated({ created, updated, removed });
+      entry = target
+        ? this.recordEdit(actor, target, { created, updated, removed }, applied.model)
+        : this.record(actor, summary || describeChanges(created, updated, removed), { created, updated, removed });
     }
     if (applied.modelChanged) this.model = applied.model;
     this.layout = applied.layout;
@@ -132,6 +148,7 @@ export class Store {
     if (nextModel) {
       this.model = nextModel;
       this.undoStack = [];
+      this.openEdit = undefined;
       this.revision += 1;
     }
     if (nextLayout) this.layout = nextLayout;
@@ -152,6 +169,33 @@ export class Store {
     const entry: JournalEntry = { revision: this.revision, at: this.now().toISOString(), actor, summary, ...lists };
     this.entries.push(entry);
     if (this.entries.length > JOURNAL_CAP) this.entries.splice(0, this.entries.length - JOURNAL_CAP);
+    this.openEdit = undefined;
+    return entry;
+  }
+
+  /**
+   * Journals an update of one item without an explicit summary. It is merged into the previous entry
+   * when that one is the same kind of edit, by the same actor, of the same item, less than COALESCE_MS old.
+   * The merged entry takes the current revision (so `since` queries still return it), remembers the
+   * first one in `firstRevision`, and its summary names everything changed since the first edit.
+   */
+  private recordEdit(actor: Actor, target: { collection: Collection; id: string }, lists: Pick<JournalEntry, 'created' | 'updated' | 'removed'>, after: Model): JournalEntry {
+    const now = this.now();
+    const open = this.openEdit;
+    const last = this.entries.at(-1);
+    const item = (model: Model) => (model[target.collection] as { id: string }[]).find((x) => x.id === target.id);
+    const merge =
+      open && last && open.entry === last && last.actor === actor && open.collection === target.collection && open.id === target.id && now.getTime() - Date.parse(last.at) < COALESCE_MS;
+    const before = merge ? open.before : item(this.model);
+    const summary = describeEdit(target.collection, before, item(after)!, after);
+    if (!merge) {
+      const entry = this.record(actor, summary, lists);
+      this.openEdit = { entry, ...target, before };
+      return entry;
+    }
+    const entry: JournalEntry = { ...last, revision: this.revision, firstRevision: last.firstRevision ?? last.revision, at: now.toISOString(), summary };
+    this.entries[this.entries.length - 1] = entry;
+    this.openEdit = { ...open, entry };
     return entry;
   }
 

@@ -9,7 +9,7 @@ import { KindIcon } from '../lib/kinds.tsx';
 import { CodeRefs } from './CodeRefs.tsx';
 import { InlineText, MarkdownField, Section } from './fields.tsx';
 
-export function saveSteps(flow: Flow, steps: FlowStep[], summary: string) {
+export function saveSteps(flow: Flow, steps: FlowStep[], summary?: string) {
   void commit({ summary, flows: [{ id: flow.id, steps }] });
 }
 
@@ -22,8 +22,7 @@ export function StepInspector({ flow, stepIndex, index }: { flow: Flow; stepInde
   if (!step) return null;
   const from = index.byId.get(step.from);
   const to = index.byId.get(step.to);
-  const update = (p: Partial<FlowStep>, summary = `Edited step ${stepIndex + 1} of ${flow.name}`) =>
-    saveSteps(flow, flow.steps.map((s, i) => (i === stepIndex ? { ...s, ...p } : s)), summary);
+  const update = (p: Partial<FlowStep>) => saveSteps(flow, flow.steps.map((s, i) => (i === stepIndex ? { ...s, ...p } : s)));
   const move = (delta: number) => {
     const target = stepIndex + delta;
     if (target < 0 || target >= flow.steps.length) return;

@@ -47,7 +47,7 @@ function FlowHeader({ flow }: { flow: Flow }) {
     <header className="flow-head">
       <div className="flow-head-main">
         <InlineText className="flow-name" value={flow.name} label="Flow name" allowEmpty={false} maxLength={120} onCommit={(name) => void commit({ summary: `Renamed flow ${flow.name} to ${name}`, flows: [{ id: flow.id, name }] })} />
-        <InlineText multiline className="flow-summary" value={flow.summary} placeholder="What this scenario shows" label="Flow summary" maxLength={280} onCommit={(summary) => void commit({ summary: `Edited flow ${flow.name}`, flows: [{ id: flow.id, summary }] })} />
+        <InlineText multiline className="flow-summary" value={flow.summary} placeholder="What this scenario shows" label="Flow summary" maxLength={280} onCommit={(summary) => void commit({ flows: [{ id: flow.id, summary }] })} />
       </div>
       <button ref={moreRef} type="button" className="icon-btn" aria-label="Flow actions" onClick={() => setMenu(true)}>
         <Ellipsis size={16} strokeWidth={1.7} />

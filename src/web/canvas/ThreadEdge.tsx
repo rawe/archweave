@@ -15,7 +15,8 @@ export interface ThreadData extends Record<string, unknown> {
   fresh?: number;
   planned: boolean;
   carries: { id: string; name: string }[];
-  showLabel: boolean;
+  /** Close zoom: a merged thread shows its count. */
+  near: boolean;
   /** Attachment points from port assignment; without it the thread runs between the centers. */
   route?: Route;
   onSelect?: (id: string) => void;
@@ -52,11 +53,10 @@ function ThreadEdgeImpl({ id, source, target, data, selected }: EdgeProps<Thread
   const count = data.relations.length;
   const label = threadLabel(data.relations);
   const lit = selected || data.focus;
-  // A label wider than its thread would sit on top of the nodes; such labels wait for hover.
-  const fits = Math.hypot(b.x - a.x, b.y - a.y) >= Math.min(label.length * 6.4, 200) + 40;
-  const showText = !!label && (data.hover || ((data.showLabel || lit) && fits));
+  // Labels pile up on a busy canvas; a thread shows its label only while hovered or selected.
+  const showText = !!label && (data.hover || !!selected);
   // At rest a merged thread shows only its data diamond; the count appears on focus, hover or close zoom.
-  const showCount = count > 1 && (lit || data.hover || data.showLabel);
+  const showCount = count > 1 && (lit || data.hover || data.near);
   const hasMarker = data.carries.length > 0 || showCount;
   const cls = cx(
     'thread',

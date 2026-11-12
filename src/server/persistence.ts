@@ -18,6 +18,7 @@ const IdLists = z
   .default({ elements: [], relations: [], flows: [] });
 const JournalLine = z.object({
   revision: z.number().int().positive(),
+  firstRevision: z.number().int().positive().optional(),
   at: z.string(),
   actor: Actor,
   summary: z.string(),

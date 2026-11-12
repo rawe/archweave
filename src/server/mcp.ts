@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { ChangeSet, CODE_EXPECTED_KINDS, type CodeRef, ElementKind, type FocusRequest, Id, type Model, normalizeCodePath, Perspective, type UiState } from '../shared/model.ts';
+import { ChangeSet, CODE_EXPECTED_KINDS, type CodeRef, ElementKind, type FocusRequest, Id, type JournalEntry, type Model, normalizeCodePath, Perspective, type UiState } from '../shared/model.ts';
 import { ancestorsOf, descendantsOf, projectStructure } from '../shared/projection.ts';
 import { EXPORT_FORMATS, exportModel } from './export.ts';
 import { GUIDE } from './guide.ts';
@@ -89,7 +89,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'What the human is looking at',
       description:
-        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids; in the data perspective: `dataView`, either the catalog of all structures by owner or the focused structure with its fields, the structures it references and that reference it, and the elements using it by verb), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes, and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
+        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids; in the data perspective: `dataView`, either the catalog of all structures by owner or the focused structure with its fields, the structures it references and that reference it, and the elements using it by verb), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes (the 20 most recent; `olderHumanChangesOmitted` counts the rest, which get_changes lists), and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
       annotations: { ...readOnly, idempotentHint: false },
     },
     async () => {
@@ -101,7 +101,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const flow = ui.flowId ? v.flowsById.get(ui.flowId) : undefined;
       const selectedElements = ui.selectedElementIds.map((id) => v.expandElement(id) ?? { id, missing: true });
       const selectedRelations = ui.selectedRelationIds.map((id) => v.expandRelation(id) ?? { id, missing: true });
-      const humanChanges = store.journal({ since: session.agentCursor, actor: 'human' });
+      const humanChanges = recentHumanChanges(store.journal({ since: session.agentCursor, actor: 'human' }));
       const staleCount = (await stale.check(snapshot.model)).length;
       session.advanceAgentCursor(snapshot.revision);
       const nothingSelected = !selectedElements.length && !selectedRelations.length;
@@ -126,7 +126,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         selection: { elements: selectedElements, relations: selectedRelations },
         ...(nothingSelected ? { hint: 'Nothing is selected. If the request refers to something specific, ask the human to select it in ArchWeave, or work from the scope and visible elements.' } : {}),
         openNotes: openNotes(snapshot.model),
-        humanChanges,
+        ...humanChanges,
         staleLinks: staleCount,
       });
     },
@@ -269,10 +269,10 @@ Semantics:
     },
     async ({ dryRun, ...changes }) => {
       if (dryRun) return ok({ dryRun: true, ...store.preview(changes, 'agent') });
-      const humanChanges = store.journal({ since: session.agentCursor, actor: 'human' });
+      const { humanChanges, olderHumanChangesOmitted } = recentHumanChanges(store.journal({ since: session.agentCursor, actor: 'human' }));
       const result = store.apply(changes, 'agent');
       session.advanceAgentCursor(result.revision);
-      return ok(humanChanges.length ? { ...result, humanChangesSinceYouLastLooked: humanChanges } : result);
+      return ok(humanChanges.length ? { ...result, humanChangesSinceYouLastLooked: humanChanges, ...(olderHumanChangesOmitted ? { olderHumanChangesOmitted } : {}) } : result);
     },
   );
 
@@ -426,6 +426,14 @@ function visibleIn(v: ModelView, ui: UiState, scopeId: string | undefined): Reco
       relationIds: e.relations.slice(0, THREAD_ID_CAP).map((r) => r.id),
     })),
   };
+}
+
+export const HUMAN_CHANGES_CAP = 20;
+
+/** The human's most recent journal entries, and how many older ones were left out (absent when none were). */
+export function recentHumanChanges(entries: JournalEntry[]): { humanChanges: JournalEntry[]; olderHumanChangesOmitted?: number } {
+  const omitted = Math.max(0, entries.length - HUMAN_CHANGES_CAP);
+  return { humanChanges: entries.slice(omitted), ...(omitted ? { olderHumanChangesOmitted: omitted } : {}) };
 }
 
 function timeAgo(iso: string): string {

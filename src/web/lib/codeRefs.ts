@@ -65,3 +65,9 @@ export function groupByFile(stale: StaleLink[]): { path: string; links: StaleLin
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([path, links]) => ({ path, links: [...links].sort((a, b) => (a.ref.startLine ?? 0) - (b.ref.startLine ?? 0)) }));
 }
+
+/** The VS Code link that opens `path` (repo-relative) at `line`, for a repository at `hostPath` on the host. */
+export function editorUrl(hostPath: string, path: string, line: number): string {
+  const root = hostPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  return `vscode://file/${root}/${path.replace(/^\/+/, '')}:${line}`;
+}

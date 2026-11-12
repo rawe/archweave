@@ -17,16 +17,24 @@ import { toggleTheme } from '../lib/theme.ts';
 /** Global keyboard map. Overlays handle their own keys and stop propagation. */
 export function useShortcuts() {
   useEffect(() => {
+    // The state as it was when the key went down. A focused canvas node handles Escape itself
+    // (it deselects) before the event reaches the window; Escape must not then also drill out.
+    let atKeyDown = getState();
+    const onKeyCapture = () => {
+      atKeyDown = getState();
+    };
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       const s = getState();
+      const modal = document.querySelector('[aria-modal="true"]');
       if (mod && e.key.toLowerCase() === 'k') {
+        if (modal && s.overlay !== 'palette') return;
         e.preventDefault();
         setOverlay(s.overlay === 'palette' ? null : 'palette');
         return;
       }
       if (isTypingTarget(e.target) || e.defaultPrevented) return;
-      if (s.overlay && s.overlay !== 'activity') return;
+      if (modal || (s.overlay && s.overlay !== 'activity')) return;
 
       if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -88,12 +96,14 @@ export function useShortcuts() {
           e.preventDefault();
           void deleteSelection();
           return;
-        case 'Escape':
+        case 'Escape': {
           if (s.overlay) return setOverlay(null);
           if (s.code) return closeCode();
-          if (s.selection.elementIds.length || s.selection.relationIds.length || s.stepIndex !== null) return clearSelection();
+          const before = atKeyDown;
+          if (before.selection.elementIds.length || before.selection.relationIds.length || before.stepIndex !== null) return clearSelection();
           if (s.perspective === 'structure') scopeOut();
           return;
+        }
         case 'ArrowRight':
         case 'ArrowLeft':
         case 'j':
@@ -112,8 +122,12 @@ export function useShortcuts() {
         }
       }
     };
+    window.addEventListener('keydown', onKeyCapture, true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKeyCapture, true);
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 }
 

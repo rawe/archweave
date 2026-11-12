@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StaleLink } from '../../src/shared/model.ts';
-import { editRef, groupByFile, replaceRef, staleFor, withRange } from '../../src/web/lib/codeRefs.ts';
+import { editorUrl, editRef, groupByFile, replaceRef, staleFor, withRange } from '../../src/web/lib/codeRefs.ts';
 
 const sealed = { path: 'src/a.ts', symbol: 'run', startLine: 10, endLine: 14, digest: 'abc123', note: 'entry' };
 
@@ -67,5 +67,16 @@ describe('stale links', () => {
     ]);
     expect(groups.map((g) => g.path)).toEqual(['src/a.ts', 'src/z.ts']);
     expect(groups[0]!.links.map((l) => l.ref.startLine)).toEqual([4, 40]);
+  });
+});
+
+describe('editorUrl', () => {
+  it('joins the host path and the repo path with single slashes', () => {
+    expect(editorUrl('/Users/me/shop', 'src/a.ts', 12)).toBe('vscode://file/Users/me/shop/src/a.ts:12');
+    expect(editorUrl('/Users/me/shop/', 'src/a.ts', 1)).toBe('vscode://file/Users/me/shop/src/a.ts:1');
+  });
+
+  it('accepts a Windows host path', () => {
+    expect(editorUrl('C:\\work\\shop', 'src/a.ts', 3)).toBe('vscode://file/C:/work/shop/src/a.ts:3');
   });
 });

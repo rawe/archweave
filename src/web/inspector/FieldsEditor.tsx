@@ -6,6 +6,7 @@ import { Tip } from '../chrome/primitives.tsx';
 import { commit, navigateToElement } from '../state/store.ts';
 import { scopePath, type ModelIndex } from '../state/selectors.ts';
 import { cx } from '../lib/dom.ts';
+import { fieldLinkTargets } from '../lib/fieldLinks.ts';
 import { KindIcon } from '../lib/kinds.tsx';
 import { InlineText, Section } from './fields.tsx';
 
@@ -15,17 +16,18 @@ export function FieldsEditor({ el, index }: { el: Element; index: ModelIndex }) 
   const [newName, setNewName] = useState('');
   const newRef = useRef<HTMLInputElement>(null);
 
-  const save = (next: Field[], summary: string) => void commit({ summary, elements: [{ id: el.id, fields: next }] });
-  const update = (i: number, patch: Partial<Field>, summary: string) => {
+  // Without a summary the server describes the edit, and merges quick field edits into one journal entry.
+  const save = (next: Field[]) => void commit({ elements: [{ id: el.id, fields: next }] });
+  const update = (i: number, patch: Partial<Field>) => {
     const next = fields.map((f, j) => (j === i ? { ...f, ...patch } : f));
     for (const f of next) for (const k of Object.keys(f) as (keyof Field)[]) if (f[k] === undefined) delete f[k];
-    save(next, summary);
+    save(next);
   };
   const add = () => {
     const name = newName.trim();
     if (!name) return;
     setNewName('');
-    save([...fields, { name, type: '' }], `Added field ${name} to ${el.name}`);
+    save([...fields, { name, type: '' }]);
     requestAnimationFrame(() => {
       const inputs = document.querySelectorAll<HTMLInputElement>('.field-row .field-type');
       inputs[inputs.length - 1]?.focus();
@@ -38,6 +40,7 @@ export function FieldsEditor({ el, index }: { el: Element; index: ModelIndex }) 
         {fields.map((f, i) => (
           <FieldRow
             key={`${i}-${f.name}`}
+            structureId={el.id}
             field={f}
             index={index}
             dragging={drag?.from === i}
@@ -51,11 +54,11 @@ export function FieldsEditor({ el, index }: { el: Element; index: ModelIndex }) 
               const [moved] = next.splice(drag.from, 1);
               next.splice(i, 0, moved!);
               setDrag(null);
-              save(next, `Reordered fields of ${el.name}`);
+              save(next);
             }}
             onDragEnd={() => setDrag(null)}
-            onChange={(patch, summary) => update(i, patch, summary ?? `Edited field ${f.name} of ${el.name}`)}
-            onRemove={() => save(fields.filter((_, j) => j !== i), `Removed field ${f.name} from ${el.name}`)}
+            onChange={(patch) => update(i, patch)}
+            onRemove={() => save(fields.filter((_, j) => j !== i))}
           />
         ))}
         <li className="field-row is-new">
@@ -86,6 +89,7 @@ export function FieldsEditor({ el, index }: { el: Element; index: ModelIndex }) 
 }
 
 function FieldRow({
+  structureId,
   field,
   index,
   dragging,
@@ -98,6 +102,7 @@ function FieldRow({
   onChange,
   onRemove,
 }: {
+  structureId: string;
   field: Field;
   index: ModelIndex;
   dragging: boolean;
@@ -107,7 +112,7 @@ function FieldRow({
   onDragOver: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
-  onChange: (patch: Partial<Field>, summary?: string) => void;
+  onChange: (patch: Partial<Field>) => void;
   onRemove: () => void;
 }) {
   const [picking, setPicking] = useState(false);
@@ -175,9 +180,9 @@ function FieldRow({
         <Picker
           anchor={linkRef}
           placeholder="Link to structure"
-          items={index.data.map((d) => ({ id: d.id, label: d.name, detail: scopePath(d, index), icon: <KindIcon kind="data" size={13} /> }))}
+          items={fieldLinkTargets(index.data, structureId).map((d) => ({ id: d.id, label: d.name, detail: scopePath(d, index), icon: <KindIcon kind="data" size={13} /> }))}
           onClose={() => setPicking(false)}
-          onPick={(item) => onChange({ ref: item.id, type: field.type || item.label }, `Linked ${field.name} to ${item.label}`)}
+          onPick={(item) => onChange({ ref: item.id, type: field.type || item.label })}
         />
       )}
     </li>

@@ -521,3 +521,83 @@ describe('Store integrity', () => {
     expect(store.apply({ expectedRevision: revision, elements: [{ id: 'web', summary: 'x' }] }, 'human').revision).toBe(revision + 1);
   });
 });
+
+describe('Store journal coalescing', () => {
+  function clocked() {
+    let t = Date.parse('2026-01-02T03:04:05Z');
+    const store = new Store({ now: () => new Date(t) });
+    store.apply({ summary: 'Seed', elements: [{ id: 'order', kind: 'data', name: 'Order' }, { id: 'web', kind: 'app', name: 'Web' }] }, 'agent');
+    return { store, advance: (ms: number) => (t += ms) };
+  }
+  const fields = (...names: string[]) => names.map((name) => ({ name, type: 'string' }));
+
+  it('merges quick summary-less edits of one item by one actor into one entry', () => {
+    const { store, advance } = clocked();
+    store.apply({ elements: [{ id: 'order', fields: fields('id') }] }, 'human');
+    advance(20_000);
+    store.apply({ elements: [{ id: 'order', fields: fields('id', 'total') }] }, 'human');
+    advance(20_000);
+    store.apply({ elements: [{ id: 'order', summary: 'A placed order.' }] }, 'human');
+    const human = store.journal({ actor: 'human' });
+    expect(human).toHaveLength(1);
+    expect(human[0]).toMatchObject({
+      revision: 4,
+      firstRevision: 2,
+      at: '2026-01-02T03:04:45.000Z',
+      summary: 'Edited Order: summary, fields',
+      updated: { elements: ['order'], relations: [], flows: [] },
+    });
+    // Undo still steps back one edit at a time.
+    store.undo();
+    expect(store.snapshot().model.elements.find((e) => e.id === 'order')?.fields.map((f) => f.name)).toEqual(['id', 'total']);
+  });
+
+  it('still answers since queries for a revision inside the merged range', () => {
+    const { store } = clocked();
+    store.apply({ elements: [{ id: 'order', fields: fields('id') }] }, 'human');
+    const seen = store.currentRevision;
+    store.apply({ elements: [{ id: 'order', fields: fields('id', 'total') }] }, 'human');
+    expect(store.journal({ since: seen, actor: 'human' }).map((e) => e.revision)).toEqual([store.currentRevision]);
+    expect(store.journal({ since: store.currentRevision })).toEqual([]);
+  });
+
+  it('keeps entries apart for another item, another actor, an explicit summary, a create, or after a minute', () => {
+    const { store, advance } = clocked();
+    store.apply({ elements: [{ id: 'order', summary: 'a' }] }, 'human');
+    store.apply({ elements: [{ id: 'web', summary: 'b' }] }, 'human');
+    store.apply({ elements: [{ id: 'web', summary: 'c' }] }, 'agent');
+    store.apply({ elements: [{ id: 'web', summary: 'd' }] }, 'human');
+    store.apply({ summary: 'Described the web app', elements: [{ id: 'web', summary: 'e' }] }, 'human');
+    store.apply({ elements: [{ id: 'web', summary: 'f' }] }, 'human');
+    store.apply({ elements: [{ id: 'web', summary: 'g' }, { kind: 'queue', name: 'Events' }] }, 'human');
+    store.apply({ elements: [{ id: 'order', summary: 'h' }] }, 'human');
+    advance(60_000);
+    store.apply({ elements: [{ id: 'order', summary: 'i' }] }, 'human');
+    expect(store.journal().slice(1).map((e) => [e.actor, e.summary])).toEqual([
+      ['human', 'Edited Order: summary'],
+      ['human', 'Edited Web: summary'],
+      ['agent', 'Edited Web: summary'],
+      ['human', 'Edited Web: summary'],
+      ['human', 'Described the web app'],
+      ['human', 'Edited Web: summary'],
+      ['human', 'Added 1 element; updated 1 element'],
+      ['human', 'Edited Order: summary'],
+      ['human', 'Edited Order: summary'],
+    ]);
+  });
+
+  it('does not merge across an undo', () => {
+    const { store } = clocked();
+    store.apply({ elements: [{ id: 'order', summary: 'a' }] }, 'human');
+    store.undo();
+    store.apply({ elements: [{ id: 'order', summary: 'b' }] }, 'human');
+    expect(store.journal().slice(1).map((e) => e.summary)).toEqual(['Edited Order: summary', 'Undo: Edited Order: summary', 'Edited Order: summary']);
+  });
+
+  it('names a relation by its ends', () => {
+    const { store } = clocked();
+    store.apply({ summary: 'Link', relations: [{ id: 'web-uses-order', from: 'web', to: 'order', kind: 'reads' }] }, 'agent');
+    store.apply({ relations: [{ id: 'web-uses-order', label: 'shows', technology: 'HTTP' }] }, 'human');
+    expect(store.journal().at(-1)?.summary).toBe('Edited Web → Order: label, technology');
+  });
+});

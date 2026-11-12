@@ -23,7 +23,8 @@ export const STATUS_OPTIONS: { value: Status; label: string }[] = [
 ];
 
 export function ElementInspector({ el, index }: { el: Element; index: ModelIndex }) {
-  const patch = (p: Omit<PlainElementPatch, 'id'>, summary = `Edited ${el.name}`) => void commit({ summary, elements: [{ id: el.id, ...p }] });
+  // Without a summary the server describes the edit, and merges quick edits of this element into one journal entry.
+  const patch = (p: Omit<PlainElementPatch, 'id'>, summary?: string) => void commit({ summary, elements: [{ id: el.id, ...p }] });
   const [kindMenu, setKindMenu] = useState(false);
   const kindRef = useRef<HTMLButtonElement>(null);
   const isData = el.kind === 'data';
@@ -81,7 +82,7 @@ export function ElementInspector({ el, index }: { el: Element; index: ModelIndex
         <MarkdownField value={el.description} onCommit={(description) => patch({ description })} placeholder="Add a description" label="Description" />
       </div>
 
-      <CodeRefs owner={{ type: 'element', id: el.id }} refs={el.codeRefs} onChange={(codeRefs) => patch({ codeRefs }, `Updated code links of ${el.name}`)} />
+      <CodeRefs owner={{ type: 'element', id: el.id }} refs={el.codeRefs} onChange={(codeRefs) => patch({ codeRefs })} />
 
       {isData ? (
         <>
@@ -93,7 +94,7 @@ export function ElementInspector({ el, index }: { el: Element; index: ModelIndex
               value={el.example ?? ''}
               placeholder={el.format === 'xml' ? '<order id="…">' : '{ "id": "…" }'}
               label="Example payload"
-              onCommit={(example) => patch({ example }, `Edited the example of ${el.name}`)}
+              onCommit={(example) => patch({ example })}
             />
           </Section>
           <UsedBy el={el} index={index} />
