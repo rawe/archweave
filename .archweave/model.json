@@ -14,8 +14,7 @@
           "path": "src/shared/model.ts",
           "symbol": "AgentPresence",
           "startLine": 303,
-          "endLine": 307,
-          "digest": "r4K2pA-LIy2b"
+          "digest": "ifHPZnDL7Mav"
         }
       ],
       "format": "json",
@@ -43,16 +42,15 @@
       "kind": "data",
       "name": "API error",
       "summary": "Error body of REST failures: a readable message and, for invalid change sets, the validation details.",
-      "description": "400 for ChangeError/PathError/ExportError/bad requests, 403 from the host guard, 409 for nothing to undo, 415 for a non-JSON body. The browser turns `error` into an error toast.",
+      "description": "400 for ChangeError/PathError/ExportError/bad requests, 403 from the host guard, 409 for nothing to undo or a change set built from an older revision (`RevisionConflict`), 415 for a non-JSON body. The browser turns `error` into an error toast.",
       "parentId": "rest-api",
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
           "symbol": "onError",
           "startLine": 27,
-          "endLine": 32,
           "note": "Maps errors to status codes",
-          "digest": "RQfMHsv--cs-"
+          "digest": "Om9RjN16RnRm"
         }
       ],
       "format": "json",
@@ -83,29 +81,25 @@
           "path": "src/web/chrome/TopBar.tsx",
           "symbol": "TopBar",
           "startLine": 28,
-          "endLine": 55,
-          "digest": "jmJbPCjEos9I"
+          "digest": "YVJ_gtbFdwKI"
         },
         {
           "path": "src/web/chrome/ExportDialog.tsx",
           "symbol": "ExportDialog",
           "startLine": 23,
-          "endLine": 140,
-          "digest": "-miZaoucv_um"
+          "digest": "1JD9A_xDruyV"
         },
         {
           "path": "src/web/chrome/Activity.tsx",
           "symbol": "ActivityPopover",
           "startLine": 74,
-          "endLine": 123,
-          "digest": "rXjs-qiryb-7"
+          "digest": "xr1Bdh4gt-f9"
         },
         {
           "path": "src/web/chrome/Palette.tsx",
           "symbol": "Palette",
           "startLine": 28,
-          "endLine": 174,
-          "digest": "-uPuLVew8dbT"
+          "digest": "EH7Ce535dGvf"
         }
       ]
     },
@@ -114,16 +108,14 @@
       "kind": "data",
       "name": "apply_changes input",
       "summary": "A ChangeSet with a required summary and an optional dryRun flag.",
-      "description": "Result: ChangeResult (with `dryRun: true` when validating only), plus `humanChangesSinceYouLastLooked` when the human changed the model since the agent last looked.",
+      "description": "Result: ChangeResult (with `dryRun: true` when validating only), plus `humanChangesSinceYouLastLooked` when the human changed the model since the agent last looked. A stale `expectedRevision` is a tool error.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
           "path": "src/server/mcp.ts",
-          "symbol": "registerTool",
-          "startLine": 234,
-          "endLine": 268,
+          "startLine": 243,
           "note": "apply_changes registration and handler",
-          "digest": "NqRbJpxii71W"
+          "digest": "PxpdZXM7tjkJ"
         }
       ],
       "format": "json (MCP tool arguments)",
@@ -166,9 +158,8 @@
           "path": "src/server/app.ts",
           "symbol": "createArchWeave",
           "startLine": 40,
-          "endLine": 94,
           "note": "Wires store, persistence, session, routes and MCP",
-          "digest": "Hr559QQgbSj0"
+          "digest": "zSAPQuGamCVP"
         },
         {
           "path": "Dockerfile"
@@ -191,15 +182,13 @@
           "path": "src/server/canonical.ts",
           "symbol": "canonicalModel",
           "startLine": 8,
-          "endLine": 17,
-          "digest": "HZXX189MMpaO"
+          "digest": "aMRUGtml2MUf"
         },
         {
           "path": "src/server/canonical.ts",
           "symbol": "canonicalLayout",
           "startLine": 29,
-          "endLine": 38,
-          "digest": "VSq2_pa9WF-A"
+          "digest": "AMDMpyBnjM4M"
         }
       ]
     },
@@ -208,29 +197,26 @@
       "kind": "module",
       "name": "Change engine",
       "summary": "Applies a change set to a draft copy of the model with upsert semantics, list helpers and referential checks.",
-      "description": "`Draft.run`: meta → removals (cascade to descendants, relations, flow steps, layout) → element/relation/flow upserts → integrity checks → clean-up of data references lost by the change set (with warnings). Errors are collected and thrown together as one `ChangeError` naming each entry, with did-you-mean suggestions.\n\nWith a sealer (the server host hands the store `StaleLinks.sealer`), every code ref a change set writes is sealed: a ref re-sent at an unchanged location keeps its seal, so resending a list never accepts drift; new or relocated refs and refs sent in `addCodeRefs` are sealed afresh; a digest sent by a client is never stored. A ref that is stale already when written comes back as a warning.",
+      "description": "`Draft.run`: meta → removals (cascade to descendants, relations, flow steps, layout) → element/relation/flow upserts → integrity checks → clean-up of data references lost by the change set (with warnings) → the same `integrityProblems` check the store runs on load, so no change set can persist a model that would not load again. Errors are collected and thrown together as one `ChangeError` naming each entry, with did-you-mean suggestions.\n\nWith code access (the server host hands the store `StaleLinks.access`), code ref paths are normalized against the repository (an absolute path inside it becomes repo-relative, one outside is an error) and every ref a change set writes is sealed:\n- same location and digest as the stored ref: kept as is, without reading the file, so resending a list never accepts drift;\n- a digest at a new location: a claim that the code there is the sealed text, verified against the file; the change set is rejected when it is not (this is how repair's moves are checked);\n- no digest: sealed afresh to the current text, which is how a ref re-sent in `addCodeRefs` accepts edited code.\n\nA ref that is stale already when written comes back as a warning.",
       "parentId": "model-store",
       "codeRefs": [
         {
           "path": "src/server/changes.ts",
           "symbol": "applyChangeSet",
-          "startLine": 62,
-          "endLine": 64,
-          "digest": "-IWWqA1de0u8"
+          "startLine": 65,
+          "digest": "AwaMT2XHGO_J"
         },
         {
           "path": "src/server/changes.ts",
           "symbol": "Draft",
-          "startLine": 78,
-          "endLine": 582,
-          "digest": "TGa1m6M8_vta"
+          "startLine": 81,
+          "digest": "wZxtEuJ3gt81"
         },
         {
           "path": "src/server/changes.ts",
           "symbol": "parseChangeSet",
           "startLine": 53,
-          "endLine": 58,
-          "digest": "OBDXNHzCli_n"
+          "digest": "oAUcWTc5OCB5"
         }
       ]
     },
@@ -245,8 +231,7 @@
           "path": "src/shared/model.ts",
           "symbol": "ChangeResult",
           "startLine": 267,
-          "endLine": 273,
-          "digest": "Lo1xkb73FVWb"
+          "digest": "1rnHiItVZXov"
         }
       ],
       "format": "json",
@@ -286,9 +271,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "ChangeSet",
-          "startLine": 240,
-          "endLine": 258,
-          "digest": "WbSpwm6FfKoZ"
+          "startLine": 242,
+          "digest": "JcIaEwQ2DYYM"
         }
       ],
       "format": "json",
@@ -333,6 +317,12 @@
           "optional": true,
           "description": "Partial layout update; null clears",
           "ref": "layout"
+        },
+        {
+          "name": "expectedRevision",
+          "type": "integer ≥ 0",
+          "optional": true,
+          "description": "Revision the change set was built from; at another revision nothing is applied (409 over REST, a tool error over MCP). Ignored by layout-only change sets"
         }
       ],
       "example": "{\n  \"summary\": \"Added Billing\",\n  \"elements\": [{ \"id\": \"billing\", \"kind\": \"service\", \"name\": \"Billing\", \"status\": \"planned\" }],\n  \"relations\": [{ \"from\": \"checkout\", \"to\": \"billing\", \"kind\": \"calls\", \"label\": \"charges card\" }]\n}"
@@ -341,16 +331,15 @@
       "id": "check-code-links-result",
       "kind": "data",
       "name": "check_code_links result",
-      "summary": "Stale code refs with their owner's name and built elements without code refs; with `repair: true`, also what was re-anchored and sealed.",
+      "summary": "Stale code refs with their owner's name and built elements without code refs; with `repair: true`, also what was re-anchored.",
       "description": "Actors, externals and systems are exempt from `builtWithoutCode`. With `repair: true`, `stale` lists what still needs attention after the repair.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
           "path": "src/server/mcp.ts",
-          "symbol": "registerTool",
-          "startLine": 270,
-          "endLine": 330,
-          "digest": "uSAg2swDFxZy"
+          "startLine": 280,
+          "note": "check_code_links registration and handler",
+          "digest": "rtp0pogyFGuq"
         }
       ],
       "format": "json (MCP tool result)",
@@ -368,7 +357,7 @@
           "name": "hint",
           "type": "string",
           "optional": true,
-          "description": "Read-only call: how many refs moved or are unsealed, i.e. what repair would handle"
+          "description": "Read-only call: how many refs moved, i.e. what repair would handle"
         },
         {
           "name": "revision",
@@ -387,12 +376,6 @@
           "type": "{ownerType, ownerId, ownerName, step?, path, symbol?, from: {startLine, endLine}, to: {startLine, endLine}}[]",
           "optional": true,
           "description": "repair only: the moved refs that were re-anchored"
-        },
-        {
-          "name": "sealed",
-          "type": "number",
-          "optional": true,
-          "description": "repair only: unsealed refs that got a seal"
         }
       ]
     },
@@ -409,22 +392,19 @@
           "path": "src/web/state/store.ts",
           "symbol": "useStore",
           "startLine": 119,
-          "endLine": 146,
-          "digest": "1B8htvweOQS7"
+          "digest": "5_bZUIV9K9a2"
         },
         {
           "path": "src/web/state/store.ts",
           "symbol": "commit",
-          "startLine": 197,
-          "endLine": 213,
-          "digest": "XDYLoI_bt04w"
+          "startLine": 199,
+          "digest": "-6v_dBjRDR1B"
         },
         {
           "path": "src/web/state/store.ts",
           "symbol": "receiveSnapshot",
           "startLine": 181,
-          "endLine": 193,
-          "digest": "rS330KDy2cVz"
+          "digest": "14-9CklBWYld"
         }
       ]
     },
@@ -440,15 +420,13 @@
           "path": "src/web/code/CodeDrawer.tsx",
           "symbol": "CodeDrawer",
           "startLine": 26,
-          "endLine": 37,
-          "digest": "onE0-AGcF0Cp"
+          "digest": "5gMKssQJgA5r"
         },
         {
           "path": "src/web/code/highlight.ts",
           "symbol": "highlightLines",
           "startLine": 66,
-          "endLine": 88,
-          "digest": "V5IOWEDZlNA6"
+          "digest": "a_WcXf1e9KWE"
         }
       ]
     },
@@ -463,15 +441,13 @@
           "path": "src/server/repo.ts",
           "symbol": "FileContent",
           "startLine": 16,
-          "endLine": 24,
-          "digest": "Ep0MDE_QjX88"
+          "digest": "6htpnHzYY-ju"
         },
         {
           "path": "src/web/api.ts",
           "symbol": "CodeFile",
           "startLine": 55,
-          "endLine": 62,
-          "digest": "O9QZl9FM3xd3"
+          "digest": "UGVYuugLeBY2"
         }
       ],
       "format": "json",
@@ -518,38 +494,34 @@
       "kind": "component",
       "name": "Code link checker",
       "summary": "Checks code refs against the repository; for sealed refs it compares the linked text, so it tells moved code from edited code.",
-      "description": "A ref with a line range is **sealed** when it is written: `seal` stores a `digest` of the linked lines (SHA-256 over the trimmed lines, first 12 base64url characters) in the ref.\n\n`verdict` checks a sealed ref by its text: digest still matches → only the plain checks; the same text found verbatim elsewhere in the file (nearest first, with its symbol inside) → `moved` with a `suggestion`; otherwise → `changed`, with a suggestion where the symbol is now when that is unambiguous. Unsealed refs get only the plain checks: missing-file, line-out-of-range, symbol-not-found, symbol-outside-range.\n\nFile facts are cached by mtime and size. A symbol matches as a whole identifier outside quotes; for qualified names (`Store.apply`) the last segment is enough. `seal` is synchronous because the store applies change sets synchronously. Used by `GET /api/code/stale`, `get_context` (count), `find_by_code` (check per ref), `check_code_links` and the change engine (sealing).",
+      "description": "A ref with a line range is **sealed** when it is written: `seal` stores a `digest` of the linked lines (SHA-256 over the trimmed lines, first 12 base64url characters) in the ref.\n\n`verdict` checks a sealed ref by its text: digest still matches → only the plain checks; the same text found verbatim elsewhere in the file (nearest first, with its symbol inside) → `moved` with a `suggestion`; otherwise → `changed`, with a suggestion where the symbol is now when that is unambiguous. Unsealed refs get only the plain checks: missing-file, line-out-of-range, symbol-not-found, symbol-outside-range.\n\nFile facts are cached by mtime and size. A symbol matches as a whole identifier outside quotes; for qualified names (`Store.apply`) the last segment is enough. Binary files (a NUL byte in the first 8000 bytes) and files over 1 MB are checked for existence only and never sealed. `access` gives the store what it needs to write refs: `seal` (synchronous, because the store applies change sets synchronously) and `normalizePath`. Used by `GET /api/code/stale`, `get_context` (count), `find_by_code` (check per ref), `check_code_links` and the change engine (sealing, verifying sent digests, normalizing paths).",
       "parentId": "archweave-server",
       "codeRefs": [
         {
           "path": "src/server/stale.ts",
           "symbol": "StaleLinks",
-          "startLine": 72,
-          "endLine": 146,
-          "digest": "0C0B4cHgVY0z"
+          "startLine": 78,
+          "digest": "3wqnhSwN9T_m"
         },
         {
           "path": "src/server/stale.ts",
           "symbol": "verdict",
-          "startLine": 153,
-          "endLine": 175,
+          "startLine": 168,
           "note": "Per-ref check: text of sealed refs first, then lines and symbol",
-          "digest": "xiyuTuh3NP8Q"
+          "digest": "A5zebxaY023d"
         },
         {
           "path": "src/server/stale.ts",
           "symbol": "symbolLines",
           "startLine": 302,
-          "endLine": 319,
-          "digest": "GnmLnhvNyLPh"
+          "digest": "oDpY79ShPDLo"
         },
         {
           "path": "src/server/stale.ts",
           "symbol": "findMoved",
           "startLine": 253,
-          "endLine": 275,
           "note": "Finds where sealed text moved to",
-          "digest": "4BG1CewG48cb"
+          "digest": "WDmc4w59V1Me"
         }
       ]
     },
@@ -557,24 +529,22 @@
       "id": "code-link-repair",
       "kind": "module",
       "name": "Code link repair",
-      "summary": "Re-anchors moved code refs and seals unsealed ones that still check out, in one journaled change set.",
-      "description": "`repairCodeLinks` inspects the refs in scope (with `scopeId`: the subtree, plus relations and flow steps touching it) and applies one change set through the store: moved refs get their suggested range and a fresh seal; unsealed refs with a line range that pass every check are re-sent in `addCodeRefs`, which seals them. `changed` and other stale refs are never touched and come back in `stale`.\n\nThe check is asynchronous, so if the revision changed meanwhile it starts over (3 attempts). Agents reach it through `check_code_links` with `repair: true` (actor agent), the browser through `POST /api/code/repair` (actor human).",
+      "summary": "Re-anchors moved code refs in one journaled, revision-checked change set.",
+      "description": "`repairCodeLinks` inspects the refs in scope (with `scopeId`: the subtree, plus relations and flow steps touching it) and applies one change set through the store with `expectedRevision` set: moved refs get their suggested range and keep their digest, so the store verifies the text at each new range. `changed` and other stale refs are never touched and come back in `stale`. There is no separate sealing step: a ref is sealed whenever it is written.\n\nWhen the model or a file changed between check and apply (a `RevisionConflict`, or a digest that no longer matches), it checks once more (2 attempts); what it still cannot apply is reported in `stale`, not written. Agents reach it through `check_code_links` with `repair: true` (actor agent), the browser through `POST /api/code/repair` (actor human).",
       "parentId": "code-link-checker",
       "codeRefs": [
         {
           "path": "src/server/repair.ts",
           "symbol": "repairChangeSet",
-          "startLine": 91,
-          "endLine": 122,
-          "note": "One patch per owner: relocated list plus addCodeRefs to seal",
-          "digest": "FE7kyNjPoqPI"
+          "startLine": 89,
+          "note": "One patch per owner: moved refs relocated with their digests",
+          "digest": "RArZSH0QYucQ"
         },
         {
           "path": "src/server/repair.ts",
           "symbol": "repairCodeLinks",
-          "startLine": 52,
-          "endLine": 85,
-          "digest": "l5NIeu_0km2r"
+          "startLine": 53,
+          "digest": "DTp-CvTeVl1Y"
         }
       ]
     },
@@ -583,15 +553,14 @@
       "kind": "data",
       "name": "CodeRef",
       "summary": "A link from the model into the repository: path, optional symbol and line range, sealed by the server.",
-      "description": "Paths are stored normalized: repo-relative, forward slashes, no `./`. A ref may point at a directory.\n\nA ref with a line range carries a `digest`, the seal of the linked lines, computed by the server whenever the ref is written. It lets the checker tell moved code from edited code. Clients never send or edit it.",
+      "description": "Paths are stored normalized: repo-relative, forward slashes, no `./`; an absolute path inside the repository is made relative, one outside it is rejected. A ref may point at a directory.\n\nA ref with a line range carries a `digest`, the seal of the linked lines, computed by the server whenever the ref is written. It lets the checker tell moved code from edited code. A ref written with a digest claims it is still the same code: kept when unchanged, verified against the file when its location changed, rejected when the text there differs. Clients send a ref without digest to seal it to the current text and never invent one.\n\nLink a large unit by its declaration line (`symbol` + `startLine`, no `endLine`): the one-line seal follows the unit when it moves and survives edits to its body. A range is for a short passage whose exact lines are the point.",
       "parentId": "shared-contract",
       "codeRefs": [
         {
           "path": "src/shared/model.ts",
           "symbol": "CodeRef",
           "startLine": 44,
-          "endLine": 55,
-          "digest": "V_QSEzOAzC1C"
+          "digest": "E6uMiMgnz8hE"
         }
       ],
       "format": "typescript (zod)",
@@ -627,10 +596,10 @@
           "name": "digest",
           "type": "string",
           "optional": true,
-          "description": "Seal of the linked lines (12 base64url chars of SHA-256 over trimmed lines); set by the server, a sent digest is ignored"
+          "description": "Seal of the linked lines (12 base64url chars of SHA-256 over trimmed lines), set by the server. A sent digest must match the text at the ref's range, or the change set is rejected"
         }
       ],
-      "example": "{ \"path\": \"src/server/store.ts\", \"symbol\": \"Store\", \"startLine\": 39, \"endLine\": 154, \"digest\": \"EXORIAAk8fMI\" }"
+      "example": "{ \"path\": \"src/server/store.ts\", \"symbol\": \"Store\", \"startLine\": 39, \"digest\": \"AyXzWVf-9Uh1\" }"
     },
     {
       "id": "coding-agent",
@@ -661,8 +630,7 @@
           "path": "src/server/persistence.ts",
           "symbol": "Persistence",
           "startLine": 46,
-          "endLine": 248,
-          "digest": "Qx0bFzt5RGYC"
+          "digest": "76nksfsyWp1d"
         }
       ]
     },
@@ -678,22 +646,19 @@
           "path": "src/web/data/DataView.tsx",
           "symbol": "DataView",
           "startLine": 15,
-          "endLine": 44,
-          "digest": "EAPGXamXzDXx"
+          "digest": "pZAztg3avdxF"
         },
         {
           "path": "src/web/data/DataCatalog.tsx",
           "symbol": "DataCatalog",
           "startLine": 15,
-          "endLine": 114,
-          "digest": "hoXHbB9Lmtfy"
+          "digest": "gYQ4ZEznPQte"
         },
         {
           "path": "src/web/data/DataFocus.tsx",
           "symbol": "DataFocus",
           "startLine": 22,
-          "endLine": 197,
-          "digest": "T8dmWquHuWhx"
+          "digest": "Qal14Zx3YkNV"
         },
         {
           "path": "src/web/data/focusLayout.ts",
@@ -720,15 +685,13 @@
           "path": "src/shared/model.ts",
           "symbol": "Element",
           "startLine": 80,
-          "endLine": 100,
-          "digest": "fJc2NI_nqyVX"
+          "digest": "ZB-x32k4M6Ey"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "ELEMENT_KINDS",
           "startLine": 15,
-          "endLine": 27,
-          "digest": "0t9OaZNq5teC"
+          "digest": "G1Sq19BzuIo-"
         }
       ],
       "format": "typescript (zod)",
@@ -817,22 +780,19 @@
           "path": "src/shared/model.ts",
           "symbol": "ElementPatch",
           "startLine": 215,
-          "endLine": 225,
-          "digest": "T2SdOx7pfwCr"
+          "digest": "Uu9OcuzbA-0f"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "patchShape",
           "startLine": 174,
-          "endLine": 178,
-          "digest": "ZGIrJIvImRMy"
+          "digest": "HDuWtQHdTfbY"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "RelationPatch",
           "startLine": 227,
-          "endLine": 228,
-          "digest": "snDK79-Guath"
+          "digest": "7a6GGLu1ZKgy"
         }
       ],
       "format": "typescript (zod)",
@@ -943,15 +903,13 @@
           "path": "src/server/export.ts",
           "symbol": "exportModel",
           "startLine": 23,
-          "endLine": 40,
-          "digest": "GHNl60B-iyqo"
+          "digest": "ToE8xiDjHLwT"
         },
         {
           "path": "src/server/export.ts",
           "symbol": "DocumentWriter",
           "startLine": 48,
-          "endLine": 216,
-          "digest": "DG8uBTPn0UAk"
+          "digest": "7dmt57QFadqj"
         }
       ]
     },
@@ -966,8 +924,7 @@
           "path": "src/shared/model.ts",
           "symbol": "Field",
           "startLine": 61,
-          "endLine": 68,
-          "digest": "5LL5Betiv7JX"
+          "digest": "VY4x8SOkC40t"
         }
       ],
       "format": "typescript (zod)",
@@ -1011,17 +968,14 @@
         {
           "path": "src/server/views.ts",
           "symbol": "findByCode",
-          "startLine": 282,
-          "endLine": 312,
-          "digest": "hEHgffHH5_QU"
+          "startLine": 338,
+          "digest": "djF_8eUIyAkU"
         },
         {
           "path": "src/server/mcp.ts",
-          "symbol": "registerTool",
-          "startLine": 190,
-          "endLine": 232,
+          "startLine": 191,
           "note": "find_by_code registration",
-          "digest": "nkUsKoOxmWA9"
+          "digest": "bcbAYXr__jqI"
         }
       ],
       "format": "json (MCP tool result)",
@@ -1065,8 +1019,7 @@
           "path": "src/shared/model.ts",
           "symbol": "Flow",
           "startLine": 142,
-          "endLine": 148,
-          "digest": "8EZChoMDDV33"
+          "digest": "LRuudqL9mCDH"
         }
       ],
       "format": "typescript (zod)",
@@ -1102,8 +1055,7 @@
           "path": "src/shared/model.ts",
           "symbol": "FlowPatch",
           "startLine": 233,
-          "endLine": 239,
-          "digest": "nNrRVHKPxSZA"
+          "digest": "gNClVRQ_kKIO"
         }
       ],
       "format": "typescript (zod)",
@@ -1157,8 +1109,7 @@
           "path": "src/shared/model.ts",
           "symbol": "FlowStep",
           "startLine": 132,
-          "endLine": 140,
-          "digest": "SvleigymlZNo"
+          "digest": "DltbqUh-CJ-r"
         }
       ],
       "format": "typescript (zod)",
@@ -1202,15 +1153,13 @@
           "path": "src/web/flows/FlowsView.tsx",
           "symbol": "FlowsView",
           "startLine": 14,
-          "endLine": 41,
-          "digest": "8CVyVdNCI0aA"
+          "digest": "tcFQCLWUsiOt"
         },
         {
           "path": "src/web/flows/SequenceDiagram.tsx",
           "symbol": "SequenceDiagram",
           "startLine": 69,
-          "endLine": 252,
-          "digest": "X1DULYWL1umd"
+          "digest": "1a3cdgudJ_Lc"
         }
       ]
     },
@@ -1225,8 +1174,7 @@
           "path": "src/shared/model.ts",
           "symbol": "FocusRequest",
           "startLine": 310,
-          "endLine": 316,
-          "digest": "nCARof2V5agh"
+          "digest": "cKOJ0ox4aUmy"
         }
       ],
       "format": "json",
@@ -1267,11 +1215,9 @@
       "codeRefs": [
         {
           "path": "src/server/mcp.ts",
-          "symbol": "registerTool",
-          "startLine": 345,
-          "endLine": 383,
+          "startLine": 346,
           "note": "focus_ui registration and handler",
-          "digest": "l0bvSLFVxYsm"
+          "digest": "oQ69S8pNibt8"
         }
       ],
       "format": "json (MCP tool arguments)",
@@ -1312,17 +1258,14 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "visibleIn",
-          "startLine": 412,
-          "endLine": 429,
-          "digest": "3c0q7AcL94TC"
+          "startLine": 408,
+          "digest": "bWoykl9flrlN"
         },
         {
           "path": "src/server/mcp.ts",
-          "symbol": "registerTool",
-          "startLine": 87,
-          "endLine": 133,
+          "startLine": 88,
           "note": "get_context registration and handler",
-          "digest": "Gr3loPzvrK8L"
+          "digest": "Qgm7Wi0T3olV"
         }
       ],
       "format": "json (MCP tool result)",
@@ -1397,6 +1340,12 @@
         {
           "name": "staleLinks",
           "type": "integer"
+        },
+        {
+          "name": "ui.dataView",
+          "type": "{state: 'catalog', structures, groups: {owner, count}[]} | {state: 'focus', structure, references, referencedBy, users: {verb, elements}[]}",
+          "optional": true,
+          "description": "Data perspective: the catalog, or the first selected data structure in focus, as the browser draws it"
         }
       ]
     },
@@ -1409,11 +1358,9 @@
       "codeRefs": [
         {
           "path": "src/server/mcp.ts",
-          "symbol": "registerTool",
-          "startLine": 135,
-          "endLine": 154,
+          "startLine": 136,
           "note": "get_model registration",
-          "digest": "tkLvfnuEh-sr"
+          "digest": "48eQ629pozuy"
         }
       ],
       "format": "json (MCP tool arguments)",
@@ -1468,9 +1415,8 @@
           "path": "src/server/version.ts",
           "symbol": "serverVersion",
           "startLine": 7,
-          "endLine": 9,
           "note": "Version reported by the health check: ARCHWEAVE_VERSION, else package.json",
-          "digest": "2otgrfA49FJx"
+          "digest": "HA8mXrRy3Lln"
         }
       ],
       "notes": [
@@ -1506,29 +1452,25 @@
           "path": "src/web/inspector/Inspector.tsx",
           "symbol": "Inspector",
           "startLine": 15,
-          "endLine": 73,
-          "digest": "Y8DjRyD8VFAN"
+          "digest": "6DLBf_tzay6T"
         },
         {
           "path": "src/web/inspector/ElementInspector.tsx",
           "symbol": "ElementInspector",
-          "startLine": 24,
-          "endLine": 120,
-          "digest": "C3mZ3lYDyMUe"
+          "startLine": 25,
+          "digest": "Jj-o9GGFdCHC"
         },
         {
           "path": "src/web/inspector/CodeRefs.tsx",
           "symbol": "CodeRefs",
           "startLine": 18,
-          "endLine": 114,
-          "digest": "ckmA4NsGbJYU"
+          "digest": "aKWx16k_ax5A"
         },
         {
           "path": "src/web/inspector/sections.tsx",
           "symbol": "Notes",
           "startLine": 16,
-          "endLine": 94,
-          "digest": "1p26tYGCrzDJ"
+          "digest": "_WVIcEVjgmZD"
         }
       ]
     },
@@ -1537,22 +1479,20 @@
       "kind": "module",
       "name": "Integrity check",
       "summary": "Finds graph problems a schema cannot: duplicate ids, unknown references, non-data data refs, containment cycles.",
-      "description": "Used whenever a model enters from outside the store (startup load, disk reload). A model with problems is refused: startup exits with the list, a reload is ignored and logged.",
+      "description": "Used whenever a model enters from outside the store (startup load, disk reload) and by the change engine after every change set, so no change set can persist a model that would not load. A loaded model with problems is refused: startup exits with the list, a reload is ignored and logged; a change set with problems is a validation error.",
       "parentId": "model-store",
       "codeRefs": [
         {
           "path": "src/server/integrity.ts",
           "symbol": "integrityProblems",
           "startLine": 8,
-          "endLine": 71,
-          "digest": "x3APqiyccI2p"
+          "digest": "hxf3UZ0EwaAU"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "parseModel",
           "startLine": 186,
-          "endLine": 191,
-          "digest": "oNzxY3TaOl_0"
+          "digest": "q90jPgjctCe-"
         }
       ]
     },
@@ -1567,8 +1507,7 @@
           "path": "src/shared/model.ts",
           "symbol": "JournalEntry",
           "startLine": 276,
-          "endLine": 284,
-          "digest": "ocSMStkxFHPs"
+          "digest": "Bzh5TPuDgDlA"
         }
       ],
       "format": "json",
@@ -1616,15 +1555,13 @@
           "path": "src/server/persistence.ts",
           "symbol": "JournalLine",
           "startLine": 19,
-          "endLine": 27,
-          "digest": "RsA01n9eN0l4"
+          "digest": "ML7AZiL5vV6A"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "readJournal",
           "startLine": 229,
-          "endLine": 247,
-          "digest": "mkXlMB0RfdzD"
+          "digest": "6q8BbmB9NE57"
         }
       ],
       "format": "json lines",
@@ -1681,8 +1618,7 @@
           "path": "src/server/canonical.ts",
           "symbol": "canonicalLayout",
           "startLine": 29,
-          "endLine": 38,
-          "digest": "VSq2_pa9WF-A"
+          "digest": "AMDMpyBnjM4M"
         },
         {
           "path": "src/server/persistence.ts",
@@ -1713,15 +1649,13 @@
           "path": "src/server/mcp.ts",
           "symbol": "handleMcpRequest",
           "startLine": 28,
-          "endLine": 53,
-          "digest": "z4ncC0mtfA0Y"
+          "digest": "7MdXoWCQ28zH"
         },
         {
           "path": "src/server/mcp.ts",
           "symbol": "createMcpServer",
           "startLine": 72,
-          "endLine": 409,
-          "digest": "vdjjp-JaBHKI"
+          "digest": "iqXgpBwW9ATT"
         }
       ]
     },
@@ -1750,8 +1684,7 @@
           "path": "src/shared/model.ts",
           "symbol": "Model",
           "startLine": 150,
-          "endLine": 158,
-          "digest": "8K79CDdKvKjp"
+          "digest": "v4yDShwxdXM8"
         }
       ],
       "format": "typescript (zod)",
@@ -1797,22 +1730,19 @@
           "path": "src/web/state/actions.ts",
           "symbol": "createElement",
           "startLine": 16,
-          "endLine": 32,
-          "digest": "8TzUHBJSV1KL"
+          "digest": "Bm0tYDYLJg0Y"
         },
         {
           "path": "src/web/state/actions.ts",
           "symbol": "connect",
           "startLine": 34,
-          "endLine": 44,
-          "digest": "0kGc0Kx6xB4a"
+          "digest": "3w0zlsD_WHYp"
         },
         {
           "path": "src/web/state/actions.ts",
           "symbol": "deleteSelection",
           "startLine": 63,
-          "endLine": 86,
-          "digest": "hKdWO583oCbE"
+          "digest": "y_G0fFvkI6JA"
         }
       ]
     },
@@ -1828,8 +1758,7 @@
           "path": "src/server/canonical.ts",
           "symbol": "canonicalModel",
           "startLine": 8,
-          "endLine": 17,
-          "digest": "HZXX189MMpaO"
+          "digest": "aMRUGtml2MUf"
         },
         {
           "path": "src/server/persistence.ts",
@@ -1882,22 +1811,19 @@
           "path": "src/shared/model.ts",
           "symbol": "Model",
           "startLine": 150,
-          "endLine": 158,
-          "digest": "8K79CDdKvKjp"
+          "digest": "v4yDShwxdXM8"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "ChangeSet",
-          "startLine": 240,
-          "endLine": 258,
-          "digest": "WbSpwm6FfKoZ"
+          "startLine": 242,
+          "digest": "JcIaEwQ2DYYM"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "slugify",
           "startLine": 366,
-          "endLine": 376,
-          "digest": "VUcNHRx_ksJ0"
+          "digest": "Q02Oq3HI094t"
         }
       ]
     },
@@ -1906,7 +1832,7 @@
       "kind": "component",
       "name": "Model store",
       "summary": "Single in-memory owner of model, layout, revision, journal and undo; every mutation goes through it.",
-      "description": "`apply(changeSet, actor)` validates and applies atomically, bumps the revision, records a journal entry (last 500) and an undo step (last 50), then notifies subscribers. Layout-only change sets are neither journaled nor undoable and do not bump the revision. `replace` takes over a model/layout reloaded from disk (clears undo); `undo` restores the previous model but keeps the human's current arrangement.",
+      "description": "`apply(changeSet, actor)` validates and applies atomically, bumps the revision, records a journal entry (last 500) and an undo step (last 50), then notifies subscribers. A change set whose `expectedRevision` is not the current revision throws `RevisionConflict` and applies nothing; `preview` (dry run) checks it too. Layout-only change sets ignore `expectedRevision`, are neither journaled nor undoable and do not bump the revision. `replace` takes over a model/layout reloaded from disk (clears undo); `undo` restores the previous model but keeps the human's current arrangement.",
       "parentId": "archweave-server",
       "technology": "TypeScript",
       "codeRefs": [
@@ -1914,22 +1840,19 @@
           "path": "src/server/store.ts",
           "symbol": "Store",
           "startLine": 39,
-          "endLine": 154,
-          "digest": "EXORIAAk8fMI"
+          "digest": "AyXzWVf-9Uh1"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "apply",
           "startLine": 71,
-          "endLine": 88,
-          "digest": "QNSsfERSc6a8"
+          "digest": "_CeYYA-xVY3W"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "replace",
           "startLine": 128,
-          "endLine": 139,
-          "digest": "p32SuIa_y7Bz"
+          "digest": "9kw6PMYj7_0Q"
         }
       ]
     },
@@ -1937,24 +1860,22 @@
       "id": "model-views",
       "kind": "module",
       "name": "Model views",
-      "summary": "Read-side projections the MCP tools return: outline, expanded element, search and find-by-code.",
-      "description": "`ModelView` indexes one model snapshot and builds the agent-facing shapes: compact elements, outlines with lifted relation threads, fully expanded elements/relations, data users and field refs, ranked search results and code-path lookups.",
+      "summary": "Read-side projections the MCP tools return: outline, expanded element, search, find-by-code and the data perspective.",
+      "description": "`ModelView` indexes one model snapshot and builds the agent-facing shapes: compact elements, outlines with lifted relation threads, fully expanded elements/relations, data users and field refs, ranked search results and code-path lookups. `dataCatalog` and `dataFocus` describe the data perspective for `get_context` the way the browser draws it.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
           "path": "src/server/views.ts",
           "symbol": "ModelView",
           "startLine": 42,
-          "endLine": 313,
-          "digest": "DkJPj6IKn521"
+          "digest": "-MYHNBSK4O9E"
         },
         {
           "path": "src/server/suggest.ts",
           "symbol": "didYouMean",
           "startLine": 26,
-          "endLine": 29,
           "note": "Did-you-mean hints in errors",
-          "digest": "pfLZDGfdKLKX"
+          "digest": "9j_WLaL-Q92n"
         }
       ]
     },
@@ -1970,8 +1891,7 @@
           "path": "src/server/repo.ts",
           "symbol": "Repo",
           "startLine": 34,
-          "endLine": 203,
-          "digest": "FdcSUjYpHqca"
+          "digest": "RzsCsECjA2ek"
         }
       ]
     },
@@ -1980,7 +1900,7 @@
       "kind": "module",
       "name": "Modeling guide",
       "summary": "The text that tells agents how to structure, name, link and change the model.",
-      "description": "Sent as the MCP server `instructions` on initialize and returned by the `get_guide` tool. Its \"Keep code links working\" section tells agents how sealing works, to repair moved refs with `check_code_links` (`repair: true`) instead of recomputing lines, and how to fix or re-seal changed refs.",
+      "description": "Sent as the MCP server `instructions` on initialize and returned by the `get_guide` tool. Its \"Link the code\" section asks for large units to be linked by their declaration line (`symbol` + `startLine`) so links survive edits; \"Keep code links working\" explains sealing, repairing moved refs with `check_code_links` (`repair: true`) instead of recomputing lines, and fixing changed refs or re-sending them without digest to accept them.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
@@ -2002,8 +1922,7 @@
           "path": "src/shared/model.ts",
           "symbol": "Note",
           "startLine": 71,
-          "endLine": 78,
-          "digest": "atOcjDDe8yGt"
+          "digest": "BGLvu8sZLecO"
         }
       ],
       "format": "typescript (zod)",
@@ -2042,9 +1961,8 @@
         {
           "path": "src/web/state/apply.ts",
           "symbol": "applyLocal",
-          "startLine": 26,
-          "endLine": 164,
-          "digest": "BpSVkfYz8dyr"
+          "startLine": 46,
+          "digest": "50BCosypWCMX"
         }
       ]
     },
@@ -2061,22 +1979,19 @@
           "path": "src/server/persistence.ts",
           "symbol": "Persistence",
           "startLine": 46,
-          "endLine": 248,
-          "digest": "Qx0bFzt5RGYC"
+          "digest": "76nksfsyWp1d"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "writePending",
           "startLine": 126,
-          "endLine": 148,
-          "digest": "iyxiQrZ4Q8bt"
+          "digest": "qaX4URwP2l-A"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "reloadIfChanged",
           "startLine": 178,
-          "endLine": 203,
-          "digest": "AEwBjEjIvWFR"
+          "digest": "bqipVgubQNUy"
         }
       ]
     },
@@ -2092,15 +2007,13 @@
           "path": "src/shared/model.ts",
           "symbol": "Relation",
           "startLine": 116,
-          "endLine": 129,
-          "digest": "491tl-8SBu6v"
+          "digest": "cWpOojPVrJAa"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "RELATION_KINDS",
           "startLine": 102,
-          "endLine": 112,
-          "digest": "6NX0OzT2R7w3"
+          "digest": "1vuYsXm7t5mm"
         }
       ],
       "format": "typescript (zod)",
@@ -2167,22 +2080,19 @@
           "path": "src/server/repo.ts",
           "symbol": "Repo",
           "startLine": 34,
-          "endLine": 203,
-          "digest": "FdcSUjYpHqca"
+          "digest": "RzsCsECjA2ek"
         },
         {
           "path": "src/server/repo.ts",
           "symbol": "normalize",
           "startLine": 53,
-          "endLine": 67,
-          "digest": "L6wnkgBTWQgo"
+          "digest": "IU1ehTwmqAnT"
         },
         {
           "path": "src/server/repo.ts",
           "symbol": "readFile",
           "startLine": 117,
-          "endLine": 142,
-          "digest": "wPG4OjNmN0H4"
+          "digest": "1ACd0sCqO9Uv"
         }
       ]
     },
@@ -2191,7 +2101,7 @@
       "kind": "component",
       "name": "REST & event API",
       "summary": "Serves the browser: snapshot, change sets, undo, journal, UI state, code files, stale links and their repair, export and the live event stream.",
-      "description": "Routes under `/api`:\n- `GET /health` (see Health check)\n- `GET /snapshot`, `POST /changes` (actor `human`), `POST /undo`, `GET /journal?since=`\n- `GET /session`, `PUT /session/ui` (what the human sees)\n- `GET /events` — SSE: `snapshot`, `agent`, `focus` events, with a keep-alive comment every 25 s; events are queued per connection so they arrive in order\n- `GET /code/file?path=`, `GET /code/files?q=&limit=`, `GET /code/stale`\n- `POST /code/repair` (optional body `{scopeId}`): re-anchors moved refs and seals unsealed ones as the human\n- `GET /export?format=&scope=&perspectives=&code=`\n\n`broadcastStoreChanges` turns every store change into a `snapshot` event carrying the full snapshot (and the journal entry when there is one). `ChangeError`/`PathError` map to 400 with `{error, details}`.",
+      "description": "Routes under `/api`:\n- `GET /health` (see Health check)\n- `GET /snapshot`, `POST /changes` (actor `human`; 409 when `expectedRevision` is out of date), `POST /undo`, `GET /journal?since=`\n- `GET /session`, `PUT /session/ui` (what the human sees)\n- `GET /events` — SSE: `snapshot`, `agent`, `focus` events, with a keep-alive comment every 25 s; events are queued per connection so they arrive in order\n- `GET /code/file?path=`, `GET /code/files?q=&limit=`, `GET /code/stale`\n- `POST /code/repair` (optional body `{scopeId}`): re-anchors moved refs as the human\n- `GET /export?format=&scope=&perspectives=&code=`\n\n`broadcastStoreChanges` turns every store change into a `snapshot` event carrying the full snapshot (and the journal entry when there is one). `RevisionConflict` maps to 409, `ChangeError`/`PathError` to 400 with `{error, details}`.",
       "parentId": "archweave-server",
       "technology": "Hono, Server-Sent Events",
       "codeRefs": [
@@ -2199,8 +2109,7 @@
           "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
           "startLine": 147,
-          "endLine": 149,
-          "digest": "--ZMkrEFJAIj"
+          "digest": "QHc1_pweEM4o"
         },
         {
           "path": "src/server/routes.ts",
@@ -2213,8 +2122,7 @@
           "path": "src/server/routes.ts",
           "symbol": "apiRoutes",
           "startLine": 23,
-          "endLine": 144,
-          "digest": "DeCeNacTlcXe"
+          "digest": "QyKRr0053Yau"
         }
       ]
     },
@@ -2229,15 +2137,13 @@
           "path": "src/server/config.ts",
           "symbol": "Config",
           "startLine": 4,
-          "endLine": 16,
-          "digest": "2SE8wXqoe3jz"
+          "digest": "v3lqwx-9jy5D"
         },
         {
           "path": "src/server/config.ts",
           "symbol": "configFromEnv",
           "startLine": 18,
-          "endLine": 33,
-          "digest": "66evwcXei6g4"
+          "digest": "SeKd734BkQy9"
         }
       ],
       "format": "environment variables",
@@ -2298,16 +2204,14 @@
           "path": "src/server/session.ts",
           "symbol": "ServerEvent",
           "startLine": 3,
-          "endLine": 6,
-          "digest": "58V08YWnugd-"
+          "digest": "ZUvc67MXmp5I"
         },
         {
           "path": "src/web/api.ts",
           "symbol": "EventHandlers",
           "startLine": 96,
-          "endLine": 101,
           "note": "Browser side handlers",
-          "digest": "dg7MAgjghC82"
+          "digest": "Sxp7EpYDXV3V"
         }
       ],
       "format": "text/event-stream, JSON data",
@@ -2360,36 +2264,31 @@
           "path": "src/server/app.ts",
           "symbol": "createArchWeave",
           "startLine": 40,
-          "endLine": 94,
-          "digest": "Hr559QQgbSj0"
+          "digest": "zSAPQuGamCVP"
         },
         {
           "path": "src/server/app.ts",
           "symbol": "hostGuard",
           "startLine": 99,
-          "endLine": 120,
-          "digest": "4cO0KB377bLp"
+          "digest": "ZF4DngL4edaC"
         },
         {
           "path": "src/server/app.ts",
           "symbol": "jsonBodyGuard",
           "startLine": 135,
-          "endLine": 141,
-          "digest": "jG_WFimFUSN8"
+          "digest": "SY3NUGVNSI4H"
         },
         {
           "path": "src/server/app.ts",
           "symbol": "serveWeb",
           "startLine": 157,
-          "endLine": 173,
-          "digest": "zNvH0D_RWBky"
+          "digest": "5GLhtqxMBh61"
         },
         {
           "path": "src/server/config.ts",
           "symbol": "configFromEnv",
           "startLine": 18,
-          "endLine": 33,
-          "digest": "66evwcXei6g4"
+          "digest": "SeKd734BkQy9"
         }
       ]
     },
@@ -2406,22 +2305,19 @@
           "path": "src/web/api.ts",
           "symbol": "subscribe",
           "startLine": 104,
-          "endLine": 117,
-          "digest": "KB8zsNzshVqe"
+          "digest": "q8_Wgv5JQXg3"
         },
         {
           "path": "src/web/state/bootstrap.ts",
           "symbol": "bootstrap",
           "startLine": 7,
-          "endLine": 94,
-          "digest": "I6q_yPR7R3XJ"
+          "digest": "DtZsrMyX2hCs"
         },
         {
           "path": "src/web/api.ts",
           "symbol": "api",
-          "startLine": 73,
-          "endLine": 98,
-          "digest": "cfJp764KQZhb"
+          "startLine": 72,
+          "digest": "Q636lzmbROQG"
         }
       ]
     },
@@ -2437,8 +2333,7 @@
           "path": "src/server/session.ts",
           "symbol": "Session",
           "startLine": 14,
-          "endLine": 86,
-          "digest": "7SGWuMJ4xUo4"
+          "digest": "iYSK32IrhBee"
         }
       ]
     },
@@ -2506,8 +2401,7 @@
           "path": "src/shared/model.ts",
           "symbol": "Snapshot",
           "startLine": 344,
-          "endLine": 348,
-          "digest": "UgoKCEEx2YKb"
+          "digest": "EMfJlbtDbHZw"
         }
       ],
       "format": "json",
@@ -2540,8 +2434,7 @@
           "path": "src/shared/model.ts",
           "symbol": "StaleLink",
           "startLine": 333,
-          "endLine": 342,
-          "digest": "e6gif_JCBl_E"
+          "digest": "NSTVuPXab-Jy"
         }
       ],
       "format": "json",
@@ -2583,7 +2476,7 @@
       "kind": "component",
       "name": "Structure canvas",
       "summary": "Draws one scope's children and outside neighbors as nodes with relation threads; drill in, select, connect, drag.",
-      "description": "Uses the shared structure projection, so relations between descendants are lifted to the visible nodes and merged into threads. Nodes without a stored position are placed with ELK's layered algorithm and the positions are committed as a layout-only change set; positions the human set meanwhile win.",
+      "description": "Uses the shared structure projection, so relations between descendants are lifted to the visible nodes and merged into threads. Nodes without a stored position are placed around the stored ones with ELK's layered algorithm and committed as a layout-only change set; positions the human set meanwhile win. Stored positions are never replaced automatically; only Tidy re-lays a scope (`layoutAll`).",
       "parentId": "web-ui",
       "technology": "React Flow 12, elkjs",
       "codeRefs": [
@@ -2591,22 +2484,19 @@
           "path": "src/web/canvas/StructureCanvas.tsx",
           "symbol": "StructureCanvas",
           "startLine": 57,
-          "endLine": 669,
-          "digest": "RloeCtwUjPvw"
+          "digest": "8jvOuG2w8yJ0"
         },
         {
           "path": "src/web/canvas/useAutoPlace.ts",
           "symbol": "useAutoPlace",
           "startLine": 15,
-          "endLine": 80,
-          "digest": "3s1KgqmT3j4-"
+          "digest": "VxNCMkcYl6E7"
         },
         {
           "path": "src/web/lib/layout.ts",
           "symbol": "layoutAll",
           "startLine": 59,
-          "endLine": 100,
-          "digest": "SIHPzTsJrpz0"
+          "digest": "JwKCUHwzdwcJ"
         }
       ]
     },
@@ -2622,15 +2512,13 @@
           "path": "src/shared/projection.ts",
           "symbol": "projectStructure",
           "startLine": 71,
-          "endLine": 121,
-          "digest": "cYPc-Rq5xB_H"
+          "digest": "o-alV8tYPFJo"
         },
         {
           "path": "src/shared/projection.ts",
           "symbol": "descendantsOf",
           "startLine": 50,
-          "endLine": 69,
-          "digest": "i_sLvRR1MxvF"
+          "digest": "hBXFeKp2VCNn"
         }
       ]
     },
@@ -2646,8 +2534,7 @@
           "path": "src/shared/model.ts",
           "symbol": "UiState",
           "startLine": 293,
-          "endLine": 301,
-          "digest": "WtiaqICCzate"
+          "digest": "xHsDT-MVTSCw"
         }
       ],
       "format": "json",
@@ -2694,8 +2581,7 @@
           "path": "src/web/App.tsx",
           "symbol": "App",
           "startLine": 19,
-          "endLine": 53,
-          "digest": "SH6UqU3uPybH"
+          "digest": "Bj0PAP6gJREd"
         },
         {
           "path": "index.html"
@@ -2733,6 +2619,21 @@
       "label": "reads activity, toasts and presence; runs commands"
     },
     {
+      "id": "change-engine-calls-integrity-check",
+      "from": "change-engine",
+      "to": "integrity-check",
+      "kind": "calls",
+      "label": "re-checks the model after every change set",
+      "codeRefs": [
+        {
+          "path": "src/server/changes.ts",
+          "symbol": "integrityProblems",
+          "startLine": 132,
+          "digest": "dpBEB2Zwrh56"
+        }
+      ]
+    },
+    {
       "id": "change-engine-consumes-change-set",
       "from": "change-engine",
       "to": "change-set",
@@ -2750,14 +2651,13 @@
       "id": "change-engine-uses-code-link-checker",
       "from": "change-engine",
       "to": "code-link-checker",
-      "label": "seals the code refs it writes",
+      "label": "seals and verifies the code refs it writes, normalizes their paths",
       "codeRefs": [
         {
           "path": "src/server/changes.ts",
           "symbol": "sealed",
-          "startLine": 319,
-          "endLine": 325,
-          "digest": "UOL6B7DzgifB"
+          "startLine": 342,
+          "digest": "Rt_bZ62grvS6"
         }
       ]
     },
@@ -2834,8 +2734,8 @@
         {
           "path": "src/server/repair.ts",
           "symbol": "apply",
-          "startLine": 68,
-          "digest": "xU8TfQECtKcy"
+          "startLine": 64,
+          "digest": "98hkixiT3HST"
         }
       ]
     },
@@ -2930,8 +2830,7 @@
           "path": "src/server/export.ts",
           "symbol": "flowchart",
           "startLine": 218,
-          "endLine": 237,
-          "digest": "YNlSzhgJIUlq"
+          "digest": "cyh2Hjf6wAMC"
         }
       ]
     },
@@ -3018,9 +2917,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "repairCodeLinks",
-          "startLine": 303,
-          "endLine": 313,
-          "digest": "nA1UUDbYbibs"
+          "startLine": 309,
+          "digest": "ESF3bXJvnEKD"
         }
       ]
     },
@@ -3106,10 +3004,9 @@
       "codeRefs": [
         {
           "path": "src/server/mcp.ts",
-          "symbol": "visibleIn",
-          "startLine": 412,
-          "endLine": 429,
-          "digest": "3c0q7AcL94TC"
+          "symbol": "projectStructure",
+          "startLine": 415,
+          "digest": "NUzjJMkZG5VY"
         }
       ]
     },
@@ -3162,8 +3059,7 @@
           "path": "src/server/store.ts",
           "symbol": "record",
           "startLine": 151,
-          "endLine": 156,
-          "digest": "tcpFeZDK8-wP"
+          "digest": "6h-LhPgBRsdB"
         }
       ]
     },
@@ -3178,8 +3074,7 @@
           "path": "src/server/store.ts",
           "symbol": "snapshot",
           "startLine": 58,
-          "endLine": 60,
-          "digest": "pNF30iKYi_fR"
+          "digest": "DPQCVwBrXfBA"
         }
       ]
     },
@@ -3233,8 +3128,7 @@
           "path": "src/server/persistence.ts",
           "symbol": "load",
           "startLine": 67,
-          "endLine": 78,
-          "digest": "yS6NGTnqU-fN"
+          "digest": "viZDPYbvU-p-"
         }
       ]
     },
@@ -3249,8 +3143,7 @@
           "path": "src/server/persistence.ts",
           "symbol": "attach",
           "startLine": 81,
-          "endLine": 99,
-          "digest": "cmPhayXbaaym"
+          "digest": "VIg-U6PILZIv"
         }
       ]
     },
@@ -3277,8 +3170,7 @@
           "path": "src/server/persistence.ts",
           "symbol": "writeFile",
           "startLine": 150,
-          "endLine": 162,
-          "digest": "vwoEbmYuGANz"
+          "digest": "oubgOhfGuCCG"
         }
       ]
     },
@@ -3294,8 +3186,7 @@
           "path": "src/server/repo.ts",
           "symbol": "gitFiles",
           "startLine": 165,
-          "endLine": 177,
-          "digest": "m-QgjrPZ4sna"
+          "digest": "IjFv9wacnyTj"
         }
       ]
     },
@@ -3327,9 +3218,10 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 109,
-          "endLine": 117,
-          "digest": "Ka7aGf63Xydw"
+          "symbol": "repairCodeLinks",
+          "startLine": 116,
+          "note": "POST /api/code/repair",
+          "digest": "CIa3NjZs5OG6"
         }
       ]
     },
@@ -3407,8 +3299,7 @@
           "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
           "startLine": 147,
-          "endLine": 149,
-          "digest": "--ZMkrEFJAIj"
+          "digest": "QHc1_pweEM4o"
         }
       ]
     },
@@ -3448,10 +3339,10 @@
         {
           "path": "src/server/app.ts",
           "symbol": "load",
-          "startLine": 42,
-          "endLine": 51,
+          "startLine": 43,
+          "endLine": 47,
           "note": "Persistence.load, then new Store(loaded)",
-          "digest": "sBFNJ1PnNyWB"
+          "digest": "BA3S4Bm8VTOT"
         }
       ]
     },
@@ -3502,8 +3393,7 @@
           "path": "src/server/app.ts",
           "symbol": "serveWeb",
           "startLine": 157,
-          "endLine": 173,
-          "digest": "zNvH0D_RWBky"
+          "digest": "5GLhtqxMBh61"
         }
       ]
     },
@@ -3544,8 +3434,7 @@
           "path": "src/web/state/bootstrap.ts",
           "symbol": "uiStateOf",
           "startLine": 96,
-          "endLine": 104,
-          "digest": "eYF2Adal4JqD"
+          "digest": "-xvi_hULXzCg"
         }
       ]
     },
@@ -3564,8 +3453,7 @@
           "path": "src/web/api.ts",
           "symbol": "subscribe",
           "startLine": 104,
-          "endLine": 117,
-          "digest": "KB8zsNzshVqe"
+          "digest": "q8_Wgv5JQXg3"
         }
       ]
     },
@@ -3639,8 +3527,7 @@
               "path": "src/server/store.ts",
               "symbol": "apply",
               "startLine": 71,
-              "endLine": 88,
-              "digest": "QNSsfERSc6a8"
+              "digest": "_CeYYA-xVY3W"
             }
           ]
         },
@@ -3653,9 +3540,8 @@
             {
               "path": "src/server/changes.ts",
               "symbol": "run",
-              "startLine": 110,
-              "endLine": 138,
-              "digest": "-K8nKh8wky3d"
+              "startLine": 113,
+              "digest": "MxIIj4sYL4U7"
             }
           ]
         },
@@ -3681,8 +3567,7 @@
               "path": "src/server/routes.ts",
               "symbol": "broadcastStoreChanges",
               "startLine": 147,
-              "endLine": 149,
-              "digest": "--ZMkrEFJAIj"
+              "digest": "QHc1_pweEM4o"
             }
           ]
         },
@@ -3698,8 +3583,7 @@
               "path": "src/server/session.ts",
               "symbol": "publish",
               "startLine": 79,
-              "endLine": 81,
-              "digest": "kEbv409Mc6vh"
+              "digest": "A5lW5g4zdOSp"
             }
           ]
         },
@@ -3730,8 +3614,7 @@
               "path": "src/server/persistence.ts",
               "symbol": "attach",
               "startLine": 81,
-              "endLine": 99,
-              "digest": "cmPhayXbaaym"
+              "digest": "VIg-U6PILZIv"
             }
           ]
         },
@@ -3753,15 +3636,13 @@
               "path": "src/web/state/store.ts",
               "symbol": "receiveSnapshot",
               "startLine": 181,
-              "endLine": 193,
-              "digest": "rS330KDy2cVz"
+              "digest": "14-9CklBWYld"
             },
             {
               "path": "src/web/state/store.ts",
               "symbol": "onAgentEntry",
               "startLine": 239,
-              "endLine": 269,
-              "digest": "R9EIiTWvFiBa"
+              "digest": "3NIAkHO8bQhJ"
             }
           ]
         },
@@ -3775,8 +3656,7 @@
               "path": "src/web/canvas/useAutoPlace.ts",
               "symbol": "useAutoPlace",
               "startLine": 15,
-              "endLine": 80,
-              "digest": "3s1KgqmT3j4-"
+              "digest": "VxNCMkcYl6E7"
             }
           ]
         },
@@ -3793,8 +3673,7 @@
               "path": "src/server/persistence.ts",
               "symbol": "writePending",
               "startLine": 126,
-              "endLine": 148,
-              "digest": "iyxiQrZ4Q8bt"
+              "digest": "qaX4URwP2l-A"
             }
           ]
         }
@@ -3847,8 +3726,7 @@
               "path": "src/web/state/store.ts",
               "symbol": "handleFocusRequest",
               "startLine": 421,
-              "endLine": 441,
-              "digest": "_TJ7rW_ofWP7"
+              "digest": "i522OO9nSfUz"
             }
           ]
         },
@@ -3901,29 +3779,29 @@
           "from": "code-link-repair",
           "to": "code-link-checker",
           "label": "inspect refs in scope",
-          "description": "Starts over if the model revision changed during the check."
+          "description": "Checks once more if the model or a file changed before the repair could be applied."
         },
         {
           "from": "code-link-repair",
           "to": "model-store",
           "label": "apply(repair change set)",
-          "description": "Moved refs get their suggested range; unsealed refs that check out are re-sent in addCodeRefs. One journal entry."
+          "description": "Moved refs get their suggested range and keep their digest; sent with expectedRevision. One journal entry."
         },
         {
           "from": "model-store",
           "to": "change-engine",
-          "label": "applyChangeSet(changes, sealer)"
+          "label": "applyChangeSet(changes, code)"
         },
         {
           "from": "change-engine",
           "to": "code-link-checker",
-          "label": "seal(ref)",
-          "description": "Relocated and re-sent refs get a fresh digest of their lines."
+          "label": "verify digest at the new range",
+          "description": "Each relocated ref claims its sealed text now sits at the new range; seal(ref) checks it, and the change set is rejected when it does not match."
         },
         {
           "from": "mcp-endpoint",
           "to": "coding-agent",
-          "label": "repaired, sealed, still stale",
+          "label": "repaired, still stale",
           "dataIds": [
             "check-code-links-result"
           ]
@@ -3931,8 +3809,8 @@
         {
           "from": "coding-agent",
           "to": "mcp-endpoint",
-          "label": "apply_changes: fix or re-seal changed refs",
-          "description": "A wrong ref is replaced (removeCodeRefs + addCodeRefs); a ref that is still right is re-sent in addCodeRefs to accept its new text."
+          "label": "apply_changes: fix or accept changed refs",
+          "description": "A wrong ref is replaced (removeCodeRefs + addCodeRefs); a ref that is still right is re-sent without its digest in addCodeRefs, which seals it to its new text."
         }
       ]
     },
@@ -3958,8 +3836,7 @@
               "path": "src/server/persistence.ts",
               "symbol": "scheduleReload",
               "startLine": 164,
-              "endLine": 172,
-              "digest": "68oZH4Gu7l75"
+              "digest": "XLJXsAC0Qzfn"
             }
           ]
         },
@@ -3977,8 +3854,7 @@
               "path": "src/server/persistence.ts",
               "symbol": "reloadIfChanged",
               "startLine": 178,
-              "endLine": 203,
-              "digest": "AEwBjEjIvWFR"
+              "digest": "bqipVgubQNUy"
             }
           ]
         },
@@ -3995,8 +3871,7 @@
               "path": "src/server/store.ts",
               "symbol": "replace",
               "startLine": 128,
-              "endLine": 139,
-              "digest": "p32SuIa_y7Bz"
+              "digest": "9kw6PMYj7_0Q"
             }
           ]
         },
@@ -4010,8 +3885,7 @@
               "path": "src/server/store.ts",
               "symbol": "parseModel",
               "startLine": 186,
-              "endLine": 191,
-              "digest": "oNzxY3TaOl_0"
+              "digest": "q90jPgjctCe-"
             }
           ]
         },
@@ -4079,8 +3953,7 @@
               "path": "src/web/chrome/ExportDialog.tsx",
               "symbol": "ExportDialog",
               "startLine": 23,
-              "endLine": 140,
-              "digest": "-miZaoucv_um"
+              "digest": "1JD9A_xDruyV"
             }
           ]
         },
@@ -4096,8 +3969,7 @@
               "path": "src/web/api.ts",
               "symbol": "exportUrl",
               "startLine": 89,
-              "endLine": 93,
-              "digest": "h1c0XnBmjRYj"
+              "digest": "ReH9xn-3l_nj"
             }
           ]
         },
@@ -4121,8 +3993,7 @@
               "path": "src/server/export.ts",
               "symbol": "exportModel",
               "startLine": 23,
-              "endLine": 40,
-              "digest": "GHNl60B-iyqo"
+              "digest": "ToE8xiDjHLwT"
             }
           ]
         },
@@ -4135,8 +4006,7 @@
               "path": "src/server/export.ts",
               "symbol": "flowchart",
               "startLine": 218,
-              "endLine": 237,
-              "digest": "YNlSzhgJIUlq"
+              "digest": "cyh2Hjf6wAMC"
             }
           ]
         },
@@ -4177,8 +4047,8 @@
             {
               "path": "src/web/inspector/ElementInspector.tsx",
               "symbol": "commit",
-              "startLine": 25,
-              "digest": "alnQQyRuxiXB"
+              "startLine": 26,
+              "digest": "JbzAuEmvcma6"
             }
           ]
         },
@@ -4190,9 +4060,8 @@
             {
               "path": "src/web/state/apply.ts",
               "symbol": "applyLocal",
-              "startLine": 26,
-              "endLine": 164,
-              "digest": "BpSVkfYz8dyr"
+              "startLine": 46,
+              "digest": "50BCosypWCMX"
             }
           ]
         },
@@ -4204,9 +4073,8 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "commit",
-              "startLine": 197,
-              "endLine": 213,
-              "digest": "XDYLoI_bt04w"
+              "startLine": 199,
+              "digest": "-6v_dBjRDR1B"
             }
           ]
         },
@@ -4259,8 +4127,7 @@
               "path": "src/web/state/store.ts",
               "symbol": "prune",
               "startLine": 172,
-              "endLine": 179,
-              "digest": "dy7rBbBA6ItZ"
+              "digest": "QJNt6miLmaUV"
             }
           ]
         }
@@ -4280,8 +4147,7 @@
               "path": "src/web/canvas/StructureCanvas.tsx",
               "symbol": "onSelectNodes",
               "startLine": 232,
-              "endLine": 243,
-              "digest": "p2-Bq4kCRU-q"
+              "digest": "7ri5bhIR5EUe"
             }
           ]
         },
@@ -4332,8 +4198,7 @@
               "path": "src/server/session.ts",
               "symbol": "setUi",
               "startLine": 33,
-              "endLine": 37,
-              "digest": "cZm9LMXV3ngr"
+              "digest": "ywkod4NaxVVS"
             }
           ]
         },
@@ -4349,10 +4214,9 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 95,
-              "endLine": 132,
-              "note": "get_context handler",
-              "digest": "wvK4iuC6rEt5"
+              "startLine": 88,
+              "note": "get_context registration and handler",
+              "digest": "Qgm7Wi0T3olV"
             }
           ]
         },
