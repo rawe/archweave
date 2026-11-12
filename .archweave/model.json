@@ -13,8 +13,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "AgentPresence",
-          "startLine": 280,
-          "endLine": 284
+          "startLine": 296,
+          "endLine": 300,
+          "digest": "r4K2pA-LIy2b"
         }
       ],
       "format": "json",
@@ -48,9 +49,10 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "onError",
-          "startLine": 26,
-          "endLine": 31,
-          "note": "Maps errors to status codes"
+          "startLine": 27,
+          "endLine": 32,
+          "note": "Maps errors to status codes",
+          "digest": "RQfMHsv--cs-"
         }
       ],
       "format": "json",
@@ -81,25 +83,29 @@
           "path": "src/web/chrome/TopBar.tsx",
           "symbol": "TopBar",
           "startLine": 28,
-          "endLine": 55
+          "endLine": 55,
+          "digest": "jmJbPCjEos9I"
         },
         {
           "path": "src/web/chrome/ExportDialog.tsx",
           "symbol": "ExportDialog",
           "startLine": 23,
-          "endLine": 140
+          "endLine": 140,
+          "digest": "-miZaoucv_um"
         },
         {
           "path": "src/web/chrome/Activity.tsx",
           "symbol": "ActivityPopover",
-          "startLine": 68,
-          "endLine": 115
+          "startLine": 74,
+          "endLine": 123,
+          "digest": "rXjs-qiryb-7"
         },
         {
           "path": "src/web/chrome/Palette.tsx",
           "symbol": "Palette",
-          "startLine": 27,
-          "endLine": 167
+          "startLine": 28,
+          "endLine": 171,
+          "digest": "F9hhkt3aP3dX"
         }
       ]
     },
@@ -114,9 +120,10 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 213,
-          "endLine": 246,
-          "note": "apply_changes registration and handler"
+          "startLine": 234,
+          "endLine": 268,
+          "note": "apply_changes registration and handler",
+          "digest": "NqRbJpxii71W"
         }
       ],
       "format": "json (MCP tool arguments)",
@@ -158,9 +165,10 @@
         {
           "path": "src/server/app.ts",
           "symbol": "createArchWeave",
-          "startLine": 42,
-          "endLine": 96,
-          "note": "Wires store, persistence, session, routes and MCP"
+          "startLine": 40,
+          "endLine": 94,
+          "note": "Wires store, persistence, session, routes and MCP",
+          "digest": "Hr559QQgbSj0"
         },
         {
           "path": "Dockerfile"
@@ -183,13 +191,15 @@
           "path": "src/server/canonical.ts",
           "symbol": "canonicalModel",
           "startLine": 8,
-          "endLine": 17
+          "endLine": 17,
+          "digest": "HZXX189MMpaO"
         },
         {
           "path": "src/server/canonical.ts",
           "symbol": "canonicalLayout",
           "startLine": 29,
-          "endLine": 38
+          "endLine": 38,
+          "digest": "VSq2_pa9WF-A"
         }
       ]
     },
@@ -198,26 +208,29 @@
       "kind": "module",
       "name": "Change engine",
       "summary": "Applies a change set to a draft copy of the model with upsert semantics, list helpers and referential checks.",
-      "description": "`Draft.run`: meta → removals (cascade to descendants, relations, flow steps, layout) → element/relation/flow upserts → integrity checks → clean-up of data references lost by the change set (with warnings). Errors are collected and thrown together as one `ChangeError` naming each entry, with did-you-mean suggestions.",
+      "description": "`Draft.run`: meta → removals (cascade to descendants, relations, flow steps, layout) → element/relation/flow upserts → integrity checks → clean-up of data references lost by the change set (with warnings). Errors are collected and thrown together as one `ChangeError` naming each entry, with did-you-mean suggestions.\n\nWith a sealer (the server host hands the store `StaleLinks.sealer`), every code ref a change set writes is sealed: a ref re-sent at an unchanged location keeps its seal, so resending a list never accepts drift; new or relocated refs and refs sent in `addCodeRefs` are sealed afresh; a digest sent by a client is never stored. A ref that is stale already when written comes back as a warning.",
       "parentId": "model-store",
       "codeRefs": [
         {
           "path": "src/server/changes.ts",
           "symbol": "applyChangeSet",
-          "startLine": 57,
-          "endLine": 59
+          "startLine": 62,
+          "endLine": 64,
+          "digest": "-IWWqA1de0u8"
         },
         {
           "path": "src/server/changes.ts",
           "symbol": "Draft",
-          "startLine": 72,
-          "endLine": 538
+          "startLine": 78,
+          "endLine": 582,
+          "digest": "TGa1m6M8_vta"
         },
         {
           "path": "src/server/changes.ts",
           "symbol": "parseChangeSet",
-          "startLine": 49,
-          "endLine": 54
+          "startLine": 51,
+          "endLine": 56,
+          "digest": "OBDXNHzCli_n"
         }
       ]
     },
@@ -231,8 +244,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "ChangeResult",
-          "startLine": 244,
-          "endLine": 250
+          "startLine": 260,
+          "endLine": 266,
+          "digest": "Lo1xkb73FVWb"
         }
       ],
       "format": "json",
@@ -272,8 +286,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "ChangeSet",
-          "startLine": 224,
-          "endLine": 242
+          "startLine": 240,
+          "endLine": 258,
+          "digest": "WbSpwm6FfKoZ"
         }
       ],
       "format": "json",
@@ -326,16 +341,17 @@
       "id": "check-code-links-result",
       "kind": "data",
       "name": "check_code_links result",
-      "summary": "Stale code refs with their owner's name, and built elements that have no code ref at all.",
-      "description": "Actors, externals and systems are exempt from `builtWithoutCode`.",
+      "summary": "Stale code refs with their owner's name and built elements without code refs; with `repair: true`, also what was re-anchored and sealed.",
+      "description": "Actors, externals and systems are exempt from `builtWithoutCode`. With `repair: true`, `stale` lists what still needs attention after the repair.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 248,
-          "endLine": 282,
-          "note": "check_code_links registration and handler"
+          "startLine": 270,
+          "endLine": 324,
+          "note": "check_code_links registration and handler",
+          "digest": "x7EByk_l9ZNH"
         }
       ],
       "format": "json (MCP tool result)",
@@ -348,6 +364,36 @@
         {
           "name": "builtWithoutCode",
           "type": "CompactElement[]"
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "optional": true,
+          "description": "Read-only call: how many refs moved or are unsealed, i.e. what repair would handle"
+        },
+        {
+          "name": "revision",
+          "type": "number",
+          "optional": true,
+          "description": "repair only"
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "optional": true,
+          "description": "repair only: the journal summary, when anything changed"
+        },
+        {
+          "name": "repaired",
+          "type": "{ownerType, ownerId, ownerName, step?, path, symbol?, from: {startLine, endLine}, to: {startLine, endLine}}[]",
+          "optional": true,
+          "description": "repair only: the moved refs that were re-anchored"
+        },
+        {
+          "name": "sealed",
+          "type": "number",
+          "optional": true,
+          "description": "repair only: unsealed refs that got a seal"
         }
       ]
     },
@@ -363,20 +409,23 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "useStore",
-          "startLine": 118,
-          "endLine": 145
+          "startLine": 120,
+          "endLine": 147,
+          "digest": "1B8htvweOQS7"
         },
         {
           "path": "src/web/state/store.ts",
           "symbol": "commit",
-          "startLine": 195,
-          "endLine": 211
+          "startLine": 197,
+          "endLine": 213,
+          "digest": "XDYLoI_bt04w"
         },
         {
           "path": "src/web/state/store.ts",
           "symbol": "receiveSnapshot",
-          "startLine": 180,
-          "endLine": 192
+          "startLine": 182,
+          "endLine": 194,
+          "digest": "rS330KDy2cVz"
         }
       ]
     },
@@ -391,14 +440,16 @@
         {
           "path": "src/web/code/CodeDrawer.tsx",
           "symbol": "CodeDrawer",
-          "startLine": 24,
-          "endLine": 35
+          "startLine": 26,
+          "endLine": 37,
+          "digest": "onE0-AGcF0Cp"
         },
         {
           "path": "src/web/code/highlight.ts",
           "symbol": "highlightLines",
           "startLine": 66,
-          "endLine": 88
+          "endLine": 88,
+          "digest": "V5IOWEDZlNA6"
         }
       ]
     },
@@ -413,13 +464,15 @@
           "path": "src/server/repo.ts",
           "symbol": "FileContent",
           "startLine": 16,
-          "endLine": 24
+          "endLine": 24,
+          "digest": "Ep0MDE_QjX88"
         },
         {
           "path": "src/web/api.ts",
           "symbol": "CodeFile",
-          "startLine": 54,
-          "endLine": 61
+          "startLine": 55,
+          "endLine": 62,
+          "digest": "O9QZl9FM3xd3"
         }
       ],
       "format": "json",
@@ -465,27 +518,64 @@
       "id": "code-link-checker",
       "kind": "component",
       "name": "Code link checker",
-      "summary": "Finds code refs that no longer match the repository: missing files, lines out of range, symbols not found or outside their range.",
-      "description": "File facts are cached by mtime. A symbol matches as a whole identifier outside quotes; for qualified names (`Store.apply`) the last segment is enough. Used by `GET /api/code/stale`, `get_context` (count) and `check_code_links`.",
+      "summary": "Checks code refs against the repository; for sealed refs it compares the linked text, so it tells moved code from edited code.",
+      "description": "A ref with a line range is **sealed** when it is written: `seal` stores a `digest` of the linked lines (SHA-256 over the trimmed lines, first 12 base64url characters) in the ref.\n\n`verdict` checks a sealed ref by its text: digest still matches → only the plain checks; the same text found verbatim elsewhere in the file (nearest first, with its symbol inside) → `moved` with a `suggestion`; otherwise → `changed`, with a suggestion where the symbol is now when that is unambiguous. Unsealed refs get only the plain checks: missing-file, line-out-of-range, symbol-not-found, symbol-outside-range.\n\nFile facts are cached by mtime and size. A symbol matches as a whole identifier outside quotes; for qualified names (`Store.apply`) the last segment is enough. `seal` is synchronous because the store applies change sets synchronously. Used by `GET /api/code/stale`, `get_context` (count), `find_by_code` (check per ref), `check_code_links` and the change engine (sealing).",
       "parentId": "archweave-server",
       "codeRefs": [
         {
           "path": "src/server/stale.ts",
           "symbol": "StaleLinks",
-          "startLine": 31,
-          "endLine": 70
+          "startLine": 72,
+          "endLine": 146,
+          "digest": "0C0B4cHgVY0z"
         },
         {
           "path": "src/server/stale.ts",
-          "symbol": "staleReason",
-          "startLine": 72,
-          "endLine": 85
+          "symbol": "verdict",
+          "startLine": 153,
+          "endLine": 175,
+          "note": "Per-ref check: text of sealed refs first, then lines and symbol",
+          "digest": "xiyuTuh3NP8Q"
         },
         {
           "path": "src/server/stale.ts",
           "symbol": "symbolLines",
-          "startLine": 91,
-          "endLine": 108
+          "startLine": 287,
+          "endLine": 304,
+          "digest": "GnmLnhvNyLPh"
+        },
+        {
+          "path": "src/server/stale.ts",
+          "symbol": "findMoved",
+          "startLine": 238,
+          "endLine": 260,
+          "note": "Finds where sealed text moved to",
+          "digest": "4BG1CewG48cb"
+        }
+      ]
+    },
+    {
+      "id": "code-link-repair",
+      "kind": "module",
+      "name": "Code link repair",
+      "summary": "Re-anchors moved code refs and seals unsealed ones that still check out, in one journaled change set.",
+      "description": "`repairCodeLinks` inspects the refs in scope (with `scopeId`: the subtree, plus relations and flow steps touching it) and applies one change set through the store: moved refs get their suggested range and a fresh seal; unsealed refs with a line range that pass every check are re-sent in `addCodeRefs`, which seals them. `changed` and other stale refs are never touched and come back in `stale`.\n\nThe check is asynchronous, so if the revision changed meanwhile it starts over (3 attempts). Agents reach it through `check_code_links` with `repair: true` (actor agent), the browser through `POST /api/code/repair` (actor human).",
+      "parentId": "code-link-checker",
+      "codeRefs": [
+        {
+          "path": "src/server/repair.ts",
+          "symbol": "repairCodeLinks",
+          "startLine": 52,
+          "endLine": 84,
+          "digest": "CQHpasOGx74h"
+        },
+        {
+          "path": "src/server/repair.ts",
+          "symbol": "repairChangeSet",
+          "startLine": 90,
+          "endLine": 121,
+          "note": "One patch per owner: relocated list plus addCodeRefs to seal",
+          "digest": "FE7kyNjPoqPI"
         }
       ]
     },
@@ -493,15 +583,16 @@
       "id": "code-ref",
       "kind": "data",
       "name": "CodeRef",
-      "summary": "A link from the model into the repository: path, optional symbol and line range.",
-      "description": "Paths are stored normalized: repo-relative, forward slashes, no `./`. A ref may point at a directory.",
+      "summary": "A link from the model into the repository: path, optional symbol and line range, sealed by the server.",
+      "description": "Paths are stored normalized: repo-relative, forward slashes, no `./`. A ref may point at a directory.\n\nA ref with a line range carries a `digest`, the seal of the linked lines, computed by the server whenever the ref is written. It lets the checker tell moved code from edited code. Clients never send or edit it.",
       "parentId": "shared-contract",
       "codeRefs": [
         {
           "path": "src/shared/model.ts",
           "symbol": "CodeRef",
-          "startLine": 39,
-          "endLine": 46
+          "startLine": 44,
+          "endLine": 55,
+          "digest": "V_QSEzOAzC1C"
         }
       ],
       "format": "typescript (zod)",
@@ -532,9 +623,15 @@
           "type": "string",
           "optional": true,
           "description": "Why this location matters"
+        },
+        {
+          "name": "digest",
+          "type": "string",
+          "optional": true,
+          "description": "Seal of the linked lines (12 base64url chars of SHA-256 over trimmed lines); set by the server, a sent digest is ignored"
         }
       ],
-      "example": "{ \"path\": \"src/server/store.ts\", \"symbol\": \"Store\", \"startLine\": 36, \"endLine\": 149 }"
+      "example": "{ \"path\": \"src/server/store.ts\", \"symbol\": \"Store\", \"startLine\": 39, \"endLine\": 154, \"digest\": \"EXORIAAk8fMI\" }"
     },
     {
       "id": "coding-agent",
@@ -548,7 +645,8 @@
           "path": "src/server/guide.ts",
           "symbol": "GUIDE",
           "startLine": 2,
-          "note": "Modeling guide every agent receives as MCP instructions"
+          "note": "Modeling guide every agent receives as MCP instructions",
+          "digest": "pe8qtvInlkzn"
         }
       ]
     },
@@ -564,7 +662,8 @@
           "path": "src/server/persistence.ts",
           "symbol": "Persistence",
           "startLine": 46,
-          "endLine": 248
+          "endLine": 248,
+          "digest": "Qx0bFzt5RGYC"
         }
       ]
     },
@@ -580,19 +679,22 @@
           "path": "src/web/data/DataView.tsx",
           "symbol": "DataView",
           "startLine": 15,
-          "endLine": 44
+          "endLine": 44,
+          "digest": "EAPGXamXzDXx"
         },
         {
           "path": "src/web/data/DataCatalog.tsx",
           "symbol": "DataCatalog",
           "startLine": 15,
-          "endLine": 114
+          "endLine": 114,
+          "digest": "hoXHbB9Lmtfy"
         },
         {
           "path": "src/web/data/DataFocus.tsx",
           "symbol": "DataFocus",
           "startLine": 22,
-          "endLine": 197
+          "endLine": 197,
+          "digest": "T8dmWquHuWhx"
         },
         {
           "path": "src/web/data/focusLayout.ts",
@@ -618,14 +720,16 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Element",
-          "startLine": 68,
-          "endLine": 88
+          "startLine": 78,
+          "endLine": 98,
+          "digest": "fJc2NI_nqyVX"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "ELEMENT_KINDS",
           "startLine": 15,
-          "endLine": 27
+          "endLine": 27,
+          "digest": "0t9OaZNq5teC"
         }
       ],
       "format": "typescript (zod)",
@@ -713,20 +817,23 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "ElementPatch",
-          "startLine": 197,
-          "endLine": 207
+          "startLine": 213,
+          "endLine": 223,
+          "digest": "T2SdOx7pfwCr"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "patchShape",
-          "startLine": 162,
-          "endLine": 166
+          "startLine": 172,
+          "endLine": 176,
+          "digest": "ZGIrJIvImRMy"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "RelationPatch",
-          "startLine": 209,
-          "endLine": 210
+          "startLine": 225,
+          "endLine": 226,
+          "digest": "snDK79-Guath"
         }
       ],
       "format": "typescript (zod)",
@@ -793,9 +900,10 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 108,
-          "endLine": 128,
-          "note": "GET /api/export"
+          "startLine": 118,
+          "endLine": 138,
+          "note": "GET /api/export",
+          "digest": "xZM0deML25NB"
         }
       ],
       "format": "query string / MCP arguments",
@@ -836,13 +944,15 @@
           "path": "src/server/export.ts",
           "symbol": "exportModel",
           "startLine": 23,
-          "endLine": 40
+          "endLine": 40,
+          "digest": "GHNl60B-iyqo"
         },
         {
           "path": "src/server/export.ts",
           "symbol": "DocumentWriter",
           "startLine": 48,
-          "endLine": 216
+          "endLine": 216,
+          "digest": "DG8uBTPn0UAk"
         }
       ]
     },
@@ -856,8 +966,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Field",
-          "startLine": 49,
-          "endLine": 56
+          "startLine": 59,
+          "endLine": 66,
+          "digest": "5LL5Betiv7JX"
         }
       ],
       "format": "typescript (zod)",
@@ -894,40 +1005,53 @@
       "id": "find-by-code-result",
       "kind": "data",
       "name": "find_by_code result",
-      "summary": "Elements, relations and flow steps whose code refs touch given paths, and the paths nothing links to.",
+      "summary": "Elements, relations and flow steps whose code refs touch given paths, with the current check of every ref, and the paths nothing links to.",
+      "description": "Every returned ref carries `check` (\"ok\" or a stale reason, including moved and changed) and, when known, `suggestion`. `hint` says what to do next: repair moved refs with `check_code_links`, fix the others with `apply_changes`.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
           "path": "src/server/views.ts",
           "symbol": "findByCode",
-          "startLine": 280,
-          "endLine": 310
+          "startLine": 282,
+          "endLine": 312,
+          "digest": "hEHgffHH5_QU"
         },
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 191,
-          "endLine": 211,
-          "note": "find_by_code registration"
+          "startLine": 190,
+          "endLine": 232,
+          "note": "find_by_code registration",
+          "digest": "nkUsKoOxmWA9"
         }
       ],
       "format": "json (MCP tool result)",
       "fields": [
         {
           "name": "elements",
-          "type": "(CompactElement & {codeRefs})[]"
+          "type": "(CompactElement & {codeRefs: (CodeRef & {check, suggestion?})[]})[]"
         },
         {
           "name": "relations",
-          "type": "(compact Relation & {codeRefs})[]"
+          "type": "(compact Relation & {codeRefs: (CodeRef & {check, suggestion?})[]})[]"
         },
         {
           "name": "flowSteps",
-          "type": "{flowId, flowName, step, from, to, label, codeRefs}[]"
+          "type": "{flowId, flowName, step, from, to, label, codeRefs: (CodeRef & {check, suggestion?})[]}[]"
         },
         {
           "name": "unmatchedPaths",
           "type": "string[]"
+        },
+        {
+          "name": "codeLinks",
+          "type": "Record<check, number>",
+          "description": "Returned refs counted per check"
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "optional": true
         }
       ]
     },
@@ -941,8 +1065,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Flow",
-          "startLine": 130,
-          "endLine": 136
+          "startLine": 140,
+          "endLine": 146,
+          "digest": "8EZChoMDDV33"
         }
       ],
       "format": "typescript (zod)",
@@ -977,8 +1102,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FlowPatch",
-          "startLine": 215,
-          "endLine": 222
+          "startLine": 231,
+          "endLine": 237,
+          "digest": "nNrRVHKPxSZA"
         }
       ],
       "format": "typescript (zod)",
@@ -1031,8 +1157,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FlowStep",
-          "startLine": 120,
-          "endLine": 128
+          "startLine": 130,
+          "endLine": 138,
+          "digest": "SvleigymlZNo"
         }
       ],
       "format": "typescript (zod)",
@@ -1076,13 +1203,15 @@
           "path": "src/web/flows/FlowsView.tsx",
           "symbol": "FlowsView",
           "startLine": 14,
-          "endLine": 41
+          "endLine": 41,
+          "digest": "8CVyVdNCI0aA"
         },
         {
           "path": "src/web/flows/SequenceDiagram.tsx",
           "symbol": "SequenceDiagram",
           "startLine": 69,
-          "endLine": 252
+          "endLine": 252,
+          "digest": "X1DULYWL1umd"
         }
       ]
     },
@@ -1096,8 +1225,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FocusRequest",
-          "startLine": 287,
-          "endLine": 293
+          "startLine": 303,
+          "endLine": 309,
+          "digest": "nCARof2V5agh"
         }
       ],
       "format": "json",
@@ -1139,9 +1269,10 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 301,
-          "endLine": 339,
-          "note": "focus_ui registration and handler"
+          "startLine": 343,
+          "endLine": 381,
+          "note": "focus_ui registration and handler",
+          "digest": "l0bvSLFVxYsm"
         }
       ],
       "format": "json (MCP tool arguments)",
@@ -1182,15 +1313,17 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "visibleIn",
-          "startLine": 364,
-          "endLine": 381
+          "startLine": 406,
+          "endLine": 423,
+          "digest": "3c0q7AcL94TC"
         },
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 88,
-          "endLine": 134,
-          "note": "get_context registration and handler"
+          "startLine": 87,
+          "endLine": 133,
+          "note": "get_context registration and handler",
+          "digest": "Gr3loPzvrK8L"
         }
       ],
       "format": "json (MCP tool result)",
@@ -1278,9 +1411,10 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 136,
-          "endLine": 155,
-          "note": "get_model registration"
+          "startLine": 135,
+          "endLine": 154,
+          "note": "get_model registration",
+          "digest": "tkLvfnuEh-sr"
         }
       ],
       "format": "json (MCP tool arguments)",
@@ -1313,27 +1447,31 @@
       "kind": "component",
       "name": "Health check",
       "summary": "Tells Docker and people whether the server is up and its model is loaded.",
-      "description": "`GET /api/health` returns `{ status: 'ok', version, revision }`: the server version (same as the MCP server reports) and the current model revision.\n\nIt is an `/api` route, registered before the static UI handler, so it answers whether or not the web UI is built. The Host guard still applies; the Docker `HEALTHCHECK` calls `http://127.0.0.1:$PORT/api/health` from inside the container with `node -e fetch(...)`, so the runtime image needs no curl or wget.",
+      "description": "`GET /api/health` returns `{ status: 'ok', version, revision }`: the server version (same as the MCP server reports) and the current model revision. The version is `ARCHWEAVE_VERSION` when set (the Docker image sets it from its `VERSION` build arg), else the version in package.json, inlined into the bundle.\n\nIt is an `/api` route, registered before the static UI handler, so it answers whether or not the web UI is built. The Host guard still applies; the Docker `HEALTHCHECK` calls `http://127.0.0.1:$PORT/api/health` from inside the container with `node -e fetch(...)`, so the runtime image needs no curl or wget.",
       "parentId": "archweave-server",
       "technology": "Hono route, Docker HEALTHCHECK",
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 33,
-          "endLine": 34,
-          "note": "GET /api/health"
+          "startLine": 34,
+          "endLine": 35,
+          "note": "GET /api/health",
+          "digest": "TPC6ES0qyIB8"
         },
         {
           "path": "Dockerfile",
           "startLine": 33,
           "endLine": 34,
-          "note": "HEALTHCHECK probing /api/health"
+          "note": "HEALTHCHECK probing /api/health",
+          "digest": "1CXxTNb9r_7k"
         },
         {
-          "path": "src/server/app.ts",
-          "symbol": "VERSION",
-          "startLine": 17,
-          "note": "Version reported by the health check"
+          "path": "src/server/version.ts",
+          "symbol": "serverVersion",
+          "startLine": 7,
+          "endLine": 9,
+          "note": "Version reported by the health check: ARCHWEAVE_VERSION, else package.json",
+          "digest": "2otgrfA49FJx"
         }
       ],
       "notes": [
@@ -1349,6 +1487,12 @@
           "text": "Done: GET /api/health returns { status: 'ok', version, revision } and is served without the web UI built (covered in tests/app.test.ts). The Dockerfile HEALTHCHECK probes it every 30s with node's fetch. Version is the server's VERSION constant (0.1.0), not the ARCHWEAVE_VERSION build arg, matching what the MCP server reports.",
           "author": "agent",
           "createdAt": "2026-11-12T22:20:28.368Z"
+        },
+        {
+          "id": "note-3",
+          "text": "Update: since c8a2c60 the version no longer comes from a VERSION constant in app.ts. src/server/version.ts takes ARCHWEAVE_VERSION (set in the Docker image from the VERSION build arg) or falls back to package.json; health check and MCP server info both report it via Config.version.",
+          "author": "agent",
+          "createdAt": "2026-11-12T22:43:13.920Z"
         }
       ]
     },
@@ -1363,25 +1507,29 @@
           "path": "src/web/inspector/Inspector.tsx",
           "symbol": "Inspector",
           "startLine": 15,
-          "endLine": 73
+          "endLine": 73,
+          "digest": "Y8DjRyD8VFAN"
         },
         {
           "path": "src/web/inspector/ElementInspector.tsx",
           "symbol": "ElementInspector",
           "startLine": 24,
-          "endLine": 120
+          "endLine": 120,
+          "digest": "C3mZ3lYDyMUe"
         },
         {
           "path": "src/web/inspector/CodeRefs.tsx",
           "symbol": "CodeRefs",
-          "startLine": 30,
-          "endLine": 104
+          "startLine": 18,
+          "endLine": 114,
+          "digest": "ckmA4NsGbJYU"
         },
         {
           "path": "src/web/inspector/sections.tsx",
           "symbol": "Notes",
           "startLine": 16,
-          "endLine": 94
+          "endLine": 94,
+          "digest": "1p26tYGCrzDJ"
         }
       ]
     },
@@ -1397,13 +1545,15 @@
           "path": "src/server/integrity.ts",
           "symbol": "integrityProblems",
           "startLine": 8,
-          "endLine": 71
+          "endLine": 71,
+          "digest": "x3APqiyccI2p"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "parseModel",
-          "startLine": 161,
-          "endLine": 166
+          "startLine": 166,
+          "endLine": 171,
+          "digest": "oNzxY3TaOl_0"
         }
       ]
     },
@@ -1417,8 +1567,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "JournalEntry",
-          "startLine": 253,
-          "endLine": 261
+          "startLine": 269,
+          "endLine": 277,
+          "digest": "ocSMStkxFHPs"
         }
       ],
       "format": "json",
@@ -1466,13 +1617,15 @@
           "path": "src/server/persistence.ts",
           "symbol": "JournalLine",
           "startLine": 19,
-          "endLine": 27
+          "endLine": 27,
+          "digest": "RsA01n9eN0l4"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "readJournal",
           "startLine": 229,
-          "endLine": 247
+          "endLine": 247,
+          "digest": "mkXlMB0RfdzD"
         }
       ],
       "format": "json lines",
@@ -1496,8 +1649,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Layout",
-          "startLine": 152,
-          "endLine": 155
+          "startLine": 162,
+          "endLine": 165,
+          "digest": "r4MX1G-HYPt2"
         }
       ],
       "format": "typescript (zod)",
@@ -1528,12 +1682,14 @@
           "path": "src/server/canonical.ts",
           "symbol": "canonicalLayout",
           "startLine": 29,
-          "endLine": 38
+          "endLine": 38,
+          "digest": "VSq2_pa9WF-A"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "LAYOUT_FILE",
-          "startLine": 10
+          "startLine": 10,
+          "digest": "yGN7KpQDPrwN"
         }
       ],
       "format": "json",
@@ -1557,14 +1713,16 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "handleMcpRequest",
-          "startLine": 29,
-          "endLine": 54
+          "startLine": 28,
+          "endLine": 53,
+          "digest": "z4ncC0mtfA0Y"
         },
         {
           "path": "src/server/mcp.ts",
           "symbol": "createMcpServer",
-          "startLine": 73,
-          "endLine": 361
+          "startLine": 72,
+          "endLine": 403,
+          "digest": "cRho4RCIKiYB"
         }
       ]
     },
@@ -1573,7 +1731,7 @@
       "kind": "app",
       "name": "MCP shell client",
       "summary": "Command-line MCP client for agents and scripts without a native MCP connection.",
-      "description": "`node scripts/mcp-call.mjs instructions | tools | <tool> [json | @file.json]`. Speaks real MCP (Streamable HTTP) via the official SDK; `ARCHWEAVE_URL` selects the server and `ARCHWEAVE_CLIENT` the client name shown as agent presence.",
+      "description": "`node scripts/mcp-call.mjs instructions | tools | <tool> [json | @file.json]`. Speaks real MCP (Streamable HTTP) via the official SDK; `ARCHWEAVE_URL` selects the server and `ARCHWEAVE_CLIENT` the client name shown as agent presence. JSON results are pretty-printed when stdout is a terminal or `ARCHWEAVE_PRETTY=1`, one line otherwise (`ARCHWEAVE_PRETTY=0` forces one line).",
       "technology": "Node script, MCP SDK client",
       "codeRefs": [
         {
@@ -1592,8 +1750,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Model",
-          "startLine": 138,
-          "endLine": 146
+          "startLine": 148,
+          "endLine": 156,
+          "digest": "8K79CDdKvKjp"
         }
       ],
       "format": "typescript (zod)",
@@ -1639,19 +1798,22 @@
           "path": "src/web/state/actions.ts",
           "symbol": "createElement",
           "startLine": 16,
-          "endLine": 32
+          "endLine": 32,
+          "digest": "8TzUHBJSV1KL"
         },
         {
           "path": "src/web/state/actions.ts",
           "symbol": "connect",
           "startLine": 34,
-          "endLine": 44
+          "endLine": 44,
+          "digest": "0kGc0Kx6xB4a"
         },
         {
           "path": "src/web/state/actions.ts",
           "symbol": "deleteSelection",
           "startLine": 63,
-          "endLine": 86
+          "endLine": 86,
+          "digest": "hKdWO583oCbE"
         }
       ]
     },
@@ -1667,12 +1829,14 @@
           "path": "src/server/canonical.ts",
           "symbol": "canonicalModel",
           "startLine": 8,
-          "endLine": 17
+          "endLine": 17,
+          "digest": "HZXX189MMpaO"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "MODEL_FILE",
-          "startLine": 9
+          "startLine": 9,
+          "digest": "kVyNFK5duZiP"
         }
       ],
       "format": "json",
@@ -1718,20 +1882,23 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Model",
-          "startLine": 138,
-          "endLine": 146
+          "startLine": 148,
+          "endLine": 156,
+          "digest": "8K79CDdKvKjp"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "ChangeSet",
-          "startLine": 224,
-          "endLine": 242
+          "startLine": 240,
+          "endLine": 258,
+          "digest": "WbSpwm6FfKoZ"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "slugify",
-          "startLine": 326,
-          "endLine": 336
+          "startLine": 359,
+          "endLine": 369,
+          "digest": "VUcNHRx_ksJ0"
         }
       ]
     },
@@ -1747,20 +1914,23 @@
         {
           "path": "src/server/store.ts",
           "symbol": "Store",
-          "startLine": 36,
-          "endLine": 149
+          "startLine": 39,
+          "endLine": 154,
+          "digest": "EXORIAAk8fMI"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "apply",
-          "startLine": 66,
-          "endLine": 83
+          "startLine": 71,
+          "endLine": 88,
+          "digest": "QNSsfERSc6a8"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "replace",
-          "startLine": 115,
-          "endLine": 126
+          "startLine": 120,
+          "endLine": 131,
+          "digest": "p32SuIa_y7Bz"
         }
       ]
     },
@@ -1776,14 +1946,16 @@
           "path": "src/server/views.ts",
           "symbol": "ModelView",
           "startLine": 42,
-          "endLine": 311
+          "endLine": 313,
+          "digest": "DkJPj6IKn521"
         },
         {
           "path": "src/server/suggest.ts",
           "symbol": "didYouMean",
           "startLine": 26,
           "endLine": 29,
-          "note": "Did-you-mean hints in errors"
+          "note": "Did-you-mean hints in errors",
+          "digest": "pfLZDGfdKLKX"
         }
       ]
     },
@@ -1799,7 +1971,8 @@
           "path": "src/server/repo.ts",
           "symbol": "Repo",
           "startLine": 34,
-          "endLine": 178
+          "endLine": 203,
+          "digest": "FdcSUjYpHqca"
         }
       ]
     },
@@ -1808,13 +1981,14 @@
       "kind": "module",
       "name": "Modeling guide",
       "summary": "The text that tells agents how to structure, name, link and change the model.",
-      "description": "Sent as the MCP server `instructions` on initialize and returned by the `get_guide` tool.",
+      "description": "Sent as the MCP server `instructions` on initialize and returned by the `get_guide` tool. Its \"Keep code links working\" section tells agents how sealing works, to repair moved refs with `check_code_links` (`repair: true`) instead of recomputing lines, and how to fix or re-seal changed refs.",
       "parentId": "mcp-endpoint",
       "codeRefs": [
         {
           "path": "src/server/guide.ts",
           "symbol": "GUIDE",
-          "startLine": 2
+          "startLine": 2,
+          "digest": "pe8qtvInlkzn"
         }
       ]
     },
@@ -1828,8 +2002,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Note",
-          "startLine": 59,
-          "endLine": 66
+          "startLine": 69,
+          "endLine": 76,
+          "digest": "atOcjDDe8yGt"
         }
       ],
       "format": "typescript (zod)",
@@ -1868,8 +2043,9 @@
         {
           "path": "src/web/state/apply.ts",
           "symbol": "applyLocal",
-          "startLine": 25,
-          "endLine": 149
+          "startLine": 26,
+          "endLine": 164,
+          "digest": "BpSVkfYz8dyr"
         }
       ]
     },
@@ -1886,19 +2062,22 @@
           "path": "src/server/persistence.ts",
           "symbol": "Persistence",
           "startLine": 46,
-          "endLine": 248
+          "endLine": 248,
+          "digest": "Qx0bFzt5RGYC"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "writePending",
           "startLine": 126,
-          "endLine": 148
+          "endLine": 148,
+          "digest": "iyxiQrZ4Q8bt"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "reloadIfChanged",
           "startLine": 178,
-          "endLine": 203
+          "endLine": 203,
+          "digest": "AEwBjEjIvWFR"
         }
       ]
     },
@@ -1913,14 +2092,16 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Relation",
-          "startLine": 104,
-          "endLine": 117
+          "startLine": 114,
+          "endLine": 127,
+          "digest": "491tl-8SBu6v"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "RELATION_KINDS",
-          "startLine": 90,
-          "endLine": 100
+          "startLine": 100,
+          "endLine": 110,
+          "digest": "6NX0OzT2R7w3"
         }
       ],
       "format": "typescript (zod)",
@@ -1980,26 +2161,29 @@
       "kind": "component",
       "name": "Repository access",
       "summary": "Read-only, path-confined access to the modeled repository: normalize paths, read files, list and fuzzy-search files.",
-      "description": "Rejects paths outside the repository (after resolving symlinks) and anything inside `.git`. Files over 1 MiB are truncated; binary files are reported, not returned. File listing uses `git ls-files --cached --others --exclude-standard`, falling back to a directory walk, cached for 5 s.",
+      "description": "Rejects paths outside the repository (after resolving symlinks) and anything inside `.git`. Files over 1 MiB are truncated; binary files are reported, not returned. File listing uses `git ls-files --cached --others --exclude-standard`, falling back to a directory walk, cached for 5 s.\n\n`info` returns path, type, mtime and size for the code link checker's cache; `resolveSync`/`infoSync` serve the store's synchronous write path, where refs are sealed.",
       "parentId": "archweave-server",
       "codeRefs": [
         {
           "path": "src/server/repo.ts",
           "symbol": "Repo",
           "startLine": 34,
-          "endLine": 178
+          "endLine": 203,
+          "digest": "FdcSUjYpHqca"
         },
         {
           "path": "src/server/repo.ts",
           "symbol": "normalize",
           "startLine": 53,
-          "endLine": 67
+          "endLine": 67,
+          "digest": "L6wnkgBTWQgo"
         },
         {
           "path": "src/server/repo.ts",
           "symbol": "readFile",
-          "startLine": 92,
-          "endLine": 117
+          "startLine": 117,
+          "endLine": 142,
+          "digest": "wPG4OjNmN0H4"
         }
       ]
     },
@@ -2007,28 +2191,31 @@
       "id": "rest-api",
       "kind": "component",
       "name": "REST & event API",
-      "summary": "Serves the browser: snapshot, change sets, undo, journal, UI state, code files, stale links, export and the live event stream.",
-      "description": "Routes under `/api`:\n- `GET /snapshot`, `POST /changes` (actor `human`), `POST /undo`, `GET /journal?since=`\n- `GET /session`, `PUT /session/ui` (what the human sees)\n- `GET /events` — SSE: `snapshot`, `agent`, `focus` events, with a keep-alive comment every 25 s; events are queued per connection so they arrive in order\n- `GET /code/file?path=`, `GET /code/files?q=&limit=`, `GET /code/stale`\n- `GET /export?format=&scope=&perspectives=&code=`\n\n`broadcastStoreChanges` turns every store change into a `snapshot` event carrying the full snapshot (and the journal entry when there is one). `ChangeError`/`PathError` map to 400 with `{error, details}`.",
+      "summary": "Serves the browser: snapshot, change sets, undo, journal, UI state, code files, stale links and their repair, export and the live event stream.",
+      "description": "Routes under `/api`:\n- `GET /health` (see Health check)\n- `GET /snapshot`, `POST /changes` (actor `human`), `POST /undo`, `GET /journal?since=`\n- `GET /session`, `PUT /session/ui` (what the human sees)\n- `GET /events` — SSE: `snapshot`, `agent`, `focus` events, with a keep-alive comment every 25 s; events are queued per connection so they arrive in order\n- `GET /code/file?path=`, `GET /code/files?q=&limit=`, `GET /code/stale`\n- `POST /code/repair` (optional body `{scopeId}`): re-anchors moved refs and seals unsealed ones as the human\n- `GET /export?format=&scope=&perspectives=&code=`\n\n`broadcastStoreChanges` turns every store change into a `snapshot` event carrying the full snapshot (and the journal entry when there is one). `ChangeError`/`PathError` map to 400 with `{error, details}`.",
       "parentId": "archweave-server",
       "technology": "Hono, Server-Sent Events",
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
           "symbol": "apiRoutes",
-          "startLine": 22,
-          "endLine": 133
+          "startLine": 23,
+          "endLine": 143,
+          "digest": "-UlrrC3ayuhT"
         },
         {
           "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
-          "startLine": 136,
-          "endLine": 138
+          "startLine": 146,
+          "endLine": 148,
+          "digest": "--ZMkrEFJAIj"
         },
         {
           "path": "src/server/routes.ts",
-          "startLine": 67,
-          "endLine": 93,
-          "note": "GET /api/events SSE stream"
+          "startLine": 68,
+          "endLine": 94,
+          "note": "GET /api/events SSE stream",
+          "digest": "qz5HUbaNB6tN"
         }
       ]
     },
@@ -2042,14 +2229,16 @@
         {
           "path": "src/server/config.ts",
           "symbol": "Config",
-          "startLine": 3,
-          "endLine": 13
+          "startLine": 4,
+          "endLine": 16,
+          "digest": "2SE8wXqoe3jz"
         },
         {
           "path": "src/server/config.ts",
           "symbol": "configFromEnv",
-          "startLine": 15,
-          "endLine": 29
+          "startLine": 18,
+          "endLine": 33,
+          "digest": "66evwcXei6g4"
         }
       ],
       "format": "environment variables",
@@ -2090,6 +2279,11 @@
           "type": "path",
           "optional": true,
           "description": "ARCHWEAVE_WEB_DIR, default dist/web"
+        },
+        {
+          "name": "version",
+          "type": "string",
+          "description": "ARCHWEAVE_VERSION (the Docker image sets it from its VERSION build arg), else the package.json version; reported by the health check and the MCP server info"
         }
       ]
     },
@@ -2105,14 +2299,16 @@
           "path": "src/server/session.ts",
           "symbol": "ServerEvent",
           "startLine": 3,
-          "endLine": 6
+          "endLine": 6,
+          "digest": "58V08YWnugd-"
         },
         {
           "path": "src/web/api.ts",
           "symbol": "EventHandlers",
-          "startLine": 84,
-          "endLine": 89,
-          "note": "Browser side handlers"
+          "startLine": 96,
+          "endLine": 101,
+          "note": "Browser side handlers",
+          "digest": "dg7MAgjghC82"
         }
       ],
       "format": "text/event-stream, JSON data",
@@ -2164,32 +2360,37 @@
         {
           "path": "src/server/app.ts",
           "symbol": "createArchWeave",
-          "startLine": 42,
-          "endLine": 96
+          "startLine": 40,
+          "endLine": 94,
+          "digest": "Hr559QQgbSj0"
         },
         {
           "path": "src/server/app.ts",
           "symbol": "hostGuard",
-          "startLine": 101,
-          "endLine": 122
+          "startLine": 99,
+          "endLine": 120,
+          "digest": "4cO0KB377bLp"
         },
         {
           "path": "src/server/app.ts",
           "symbol": "jsonBodyGuard",
-          "startLine": 137,
-          "endLine": 143
+          "startLine": 135,
+          "endLine": 141,
+          "digest": "jG_WFimFUSN8"
         },
         {
           "path": "src/server/app.ts",
           "symbol": "serveWeb",
-          "startLine": 159,
-          "endLine": 175
+          "startLine": 157,
+          "endLine": 173,
+          "digest": "zNvH0D_RWBky"
         },
         {
           "path": "src/server/config.ts",
           "symbol": "configFromEnv",
-          "startLine": 15,
-          "endLine": 29
+          "startLine": 18,
+          "endLine": 33,
+          "digest": "66evwcXei6g4"
         }
       ]
     },
@@ -2205,20 +2406,23 @@
         {
           "path": "src/web/api.ts",
           "symbol": "api",
-          "startLine": 63,
-          "endLine": 82
+          "startLine": 73,
+          "endLine": 94,
+          "digest": "Nk3qKdSdhG6f"
         },
         {
           "path": "src/web/api.ts",
           "symbol": "subscribe",
-          "startLine": 92,
-          "endLine": 105
+          "startLine": 104,
+          "endLine": 117,
+          "digest": "KB8zsNzshVqe"
         },
         {
           "path": "src/web/state/bootstrap.ts",
           "symbol": "bootstrap",
-          "startLine": 6,
-          "endLine": 94
+          "startLine": 7,
+          "endLine": 94,
+          "digest": "I6q_yPR7R3XJ"
         }
       ]
     },
@@ -2234,7 +2438,8 @@
           "path": "src/server/session.ts",
           "symbol": "Session",
           "startLine": 14,
-          "endLine": 86
+          "endLine": 86,
+          "digest": "7SGWuMJ4xUo4"
         }
       ]
     },
@@ -2247,9 +2452,10 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 50,
-          "endLine": 56,
-          "note": "GET /api/session"
+          "startLine": 51,
+          "endLine": 57,
+          "note": "GET /api/session",
+          "digest": "3tq5bcUr9OhL"
         }
       ],
       "format": "json",
@@ -2300,8 +2506,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Snapshot",
-          "startLine": 304,
-          "endLine": 308
+          "startLine": 337,
+          "endLine": 341,
+          "digest": "UgoKCEEx2YKb"
         }
       ],
       "format": "json",
@@ -2327,14 +2534,15 @@
       "id": "stale-link",
       "kind": "data",
       "name": "StaleLink",
-      "summary": "A code ref whose target no longer matches the repository, with its owner and the reason.",
+      "summary": "A code ref that no longer matches the repository, with its owner, the reason and, for moved or changed code, a suggested new range.",
       "parentId": "shared-contract",
       "codeRefs": [
         {
           "path": "src/shared/model.ts",
           "symbol": "StaleLink",
-          "startLine": 296,
-          "endLine": 302
+          "startLine": 326,
+          "endLine": 335,
+          "digest": "e6gif_JCBl_E"
         }
       ],
       "format": "json",
@@ -2354,7 +2562,20 @@
         },
         {
           "name": "reason",
-          "type": "'missing-file' | 'line-out-of-range' | 'symbol-not-found' | 'symbol-outside-range'"
+          "type": "'missing-file' | 'line-out-of-range' | 'symbol-not-found' | 'symbol-outside-range' | 'moved' | 'changed'",
+          "description": "moved and changed only for sealed refs"
+        },
+        {
+          "name": "step",
+          "type": "number",
+          "optional": true,
+          "description": "Flow refs: the 1-based step that holds the ref"
+        },
+        {
+          "name": "suggestion",
+          "type": "{startLine, endLine}",
+          "optional": true,
+          "description": "moved: always, the new range; changed: where the symbol is now, when unambiguous"
         }
       ]
     },
@@ -2371,19 +2592,22 @@
           "path": "src/web/canvas/StructureCanvas.tsx",
           "symbol": "StructureCanvas",
           "startLine": 57,
-          "endLine": 669
+          "endLine": 669,
+          "digest": "RloeCtwUjPvw"
         },
         {
           "path": "src/web/canvas/useAutoPlace.ts",
           "symbol": "useAutoPlace",
           "startLine": 15,
-          "endLine": 80
+          "endLine": 80,
+          "digest": "3s1KgqmT3j4-"
         },
         {
           "path": "src/web/lib/layout.ts",
           "symbol": "layoutAll",
           "startLine": 63,
-          "endLine": 104
+          "endLine": 104,
+          "digest": "SIHPzTsJrpz0"
         }
       ]
     },
@@ -2399,13 +2623,15 @@
           "path": "src/shared/projection.ts",
           "symbol": "projectStructure",
           "startLine": 71,
-          "endLine": 121
+          "endLine": 121,
+          "digest": "cYPc-Rq5xB_H"
         },
         {
           "path": "src/shared/projection.ts",
           "symbol": "descendantsOf",
           "startLine": 50,
-          "endLine": 69
+          "endLine": 69,
+          "digest": "i_sLvRR1MxvF"
         }
       ]
     },
@@ -2420,8 +2646,9 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "UiState",
-          "startLine": 270,
-          "endLine": 278
+          "startLine": 286,
+          "endLine": 294,
+          "digest": "WtiaqICCzate"
         }
       ],
       "format": "json",
@@ -2468,7 +2695,8 @@
           "path": "src/web/App.tsx",
           "symbol": "App",
           "startLine": 19,
-          "endLine": 53
+          "endLine": 53,
+          "digest": "SH6UqU3uPybH"
         },
         {
           "path": "index.html"
@@ -2494,7 +2722,8 @@
         {
           "path": "src/web/chrome/ExportDialog.tsx",
           "symbol": "exportUrl",
-          "startLine": 69
+          "startLine": 69,
+          "digest": "8QGCl7mSDnT4"
         }
       ]
     },
@@ -2519,6 +2748,21 @@
       "label": "reports ids and warnings"
     },
     {
+      "id": "change-engine-uses-code-link-checker",
+      "from": "change-engine",
+      "to": "code-link-checker",
+      "label": "seals the code refs it writes",
+      "codeRefs": [
+        {
+          "path": "src/server/changes.ts",
+          "symbol": "sealed",
+          "startLine": 319,
+          "endLine": 325,
+          "digest": "UOL6B7DzgifB"
+        }
+      ]
+    },
+    {
       "id": "change-engine-uses-model-schema",
       "from": "change-engine",
       "to": "model-schema",
@@ -2538,7 +2782,8 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "applyChanges",
-          "startLine": 199
+          "startLine": 201,
+          "digest": "AtersBpa9ffe"
         }
       ]
     },
@@ -2562,7 +2807,8 @@
         {
           "path": "src/web/code/CodeDrawer.tsx",
           "symbol": "codeFile",
-          "startLine": 55
+          "startLine": 61,
+          "digest": "oOjzSmynAoke"
         }
       ]
     },
@@ -2578,6 +2824,21 @@
       "from": "code-link-checker",
       "to": "repo-access",
       "label": "stats and reads referenced files"
+    },
+    {
+      "id": "code-link-repair-calls-model-store",
+      "from": "code-link-repair",
+      "to": "model-store",
+      "kind": "calls",
+      "label": "applies one repair change set",
+      "codeRefs": [
+        {
+          "path": "src/server/repair.ts",
+          "symbol": "apply",
+          "startLine": 67,
+          "digest": "xU8TfQECtKcy"
+        }
+      ]
     },
     {
       "id": "coding-agent-calls-mcp-endpoint",
@@ -2625,8 +2886,9 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 34,
-          "note": "GET /api/health"
+          "startLine": 35,
+          "note": "GET /api/health",
+          "digest": "T6tovgSbVEMt"
         }
       ]
     },
@@ -2669,7 +2931,8 @@
           "path": "src/server/export.ts",
           "symbol": "flowchart",
           "startLine": 218,
-          "endLine": 237
+          "endLine": 237,
+          "digest": "YNlSzhgJIUlq"
         }
       ]
     },
@@ -2703,7 +2966,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "currentRevision",
-          "startLine": 34
+          "startLine": 35,
+          "digest": "T6tovgSbVEMt"
         }
       ]
     },
@@ -2717,7 +2981,8 @@
         {
           "path": "src/web/inspector/CodeRefs.tsx",
           "symbol": "codeFiles",
-          "startLine": 36
+          "startLine": 25,
+          "digest": "TvbyOekvviDt"
         }
       ]
     },
@@ -2745,6 +3010,22 @@
       ]
     },
     {
+      "id": "mcp-endpoint-calls-code-link-repair",
+      "from": "mcp-endpoint",
+      "to": "code-link-repair",
+      "kind": "calls",
+      "label": "check_code_links with repair: true",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "repairCodeLinks",
+          "startLine": 299,
+          "endLine": 309,
+          "digest": "YLkO-hGnttXa"
+        }
+      ]
+    },
+    {
       "id": "mcp-endpoint-calls-exporter",
       "from": "mcp-endpoint",
       "to": "exporter",
@@ -2766,8 +3047,9 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "apply",
-          "startLine": 239,
-          "endLine": 245
+          "startLine": 261,
+          "endLine": 267,
+          "digest": "-P-59-YPkUaO"
         }
       ]
     },
@@ -2806,12 +3088,14 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "touchAgent",
-          "startLine": 45
+          "startLine": 44,
+          "digest": "slBs_4rbGy0-"
         },
         {
           "path": "src/server/mcp.ts",
           "symbol": "publish",
-          "startLine": 331
+          "startLine": 373,
+          "digest": "QnX7ev4upoLi"
         }
       ]
     },
@@ -2824,8 +3108,9 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "visibleIn",
-          "startLine": 364,
-          "endLine": 381
+          "startLine": 406,
+          "endLine": 423,
+          "digest": "3c0q7AcL94TC"
         }
       ]
     },
@@ -2877,8 +3162,9 @@
         {
           "path": "src/server/store.ts",
           "symbol": "record",
-          "startLine": 138,
-          "endLine": 143
+          "startLine": 143,
+          "endLine": 148,
+          "digest": "tcpFeZDK8-wP"
         }
       ]
     },
@@ -2892,8 +3178,9 @@
         {
           "path": "src/server/store.ts",
           "symbol": "snapshot",
-          "startLine": 53,
-          "endLine": 55
+          "startLine": 58,
+          "endLine": 60,
+          "digest": "pNF30iKYi_fR"
         }
       ]
     },
@@ -2925,7 +3212,8 @@
           "path": "src/server/persistence.ts",
           "symbol": "replace",
           "startLine": 196,
-          "endLine": 200
+          "endLine": 200,
+          "digest": "eUmNca6Vte1h"
         }
       ]
     },
@@ -2946,7 +3234,8 @@
           "path": "src/server/persistence.ts",
           "symbol": "load",
           "startLine": 67,
-          "endLine": 78
+          "endLine": 78,
+          "digest": "yS6NGTnqU-fN"
         }
       ]
     },
@@ -2961,7 +3250,8 @@
           "path": "src/server/persistence.ts",
           "symbol": "attach",
           "startLine": 81,
-          "endLine": 99
+          "endLine": 99,
+          "digest": "cmPhayXbaaym"
         }
       ]
     },
@@ -2988,7 +3278,8 @@
           "path": "src/server/persistence.ts",
           "symbol": "writeFile",
           "startLine": 150,
-          "endLine": 162
+          "endLine": 162,
+          "digest": "vwoEbmYuGANz"
         }
       ]
     },
@@ -3003,8 +3294,9 @@
         {
           "path": "src/server/repo.ts",
           "symbol": "gitFiles",
-          "startLine": 140,
-          "endLine": 152
+          "startLine": 165,
+          "endLine": 177,
+          "digest": "m-QgjrPZ4sna"
         }
       ]
     },
@@ -3021,7 +3313,25 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "check",
-          "startLine": 106
+          "startLine": 107,
+          "digest": "aKDQ7WJAWc-Q"
+        }
+      ]
+    },
+    {
+      "id": "rest-api-calls-code-link-repair",
+      "from": "rest-api",
+      "to": "code-link-repair",
+      "kind": "calls",
+      "label": "repairs code links for the human",
+      "technology": "HTTP POST /api/code/repair",
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 109,
+          "endLine": 116,
+          "note": "POST /api/code/repair",
+          "digest": "Jgod1Jfe5CAv"
         }
       ]
     },
@@ -3038,8 +3348,9 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "exportModel",
-          "startLine": 108,
-          "endLine": 128
+          "startLine": 118,
+          "endLine": 138,
+          "digest": "xZM0deML25NB"
         }
       ]
     },
@@ -3059,7 +3370,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "apply",
-          "startLine": 38
+          "startLine": 39,
+          "digest": "Nrsr2R517fjL"
         }
       ]
     },
@@ -3076,8 +3388,9 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "readFile",
-          "startLine": 95,
-          "endLine": 104
+          "startLine": 96,
+          "endLine": 105,
+          "digest": "1NFK1BbPjSof"
         }
       ]
     },
@@ -3095,8 +3408,9 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
-          "startLine": 136,
-          "endLine": 138
+          "startLine": 146,
+          "endLine": 148,
+          "digest": "--ZMkrEFJAIj"
         }
       ]
     },
@@ -3113,14 +3427,16 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "setUi",
-          "startLine": 58,
-          "endLine": 65
+          "startLine": 59,
+          "endLine": 66,
+          "digest": "DTMLJDICb-Bl"
         },
         {
           "path": "src/server/routes.ts",
           "symbol": "subscribe",
-          "startLine": 67,
-          "endLine": 93
+          "startLine": 68,
+          "endLine": 94,
+          "digest": "qz5HUbaNB6tN"
         }
       ]
     },
@@ -3134,9 +3450,10 @@
         {
           "path": "src/server/app.ts",
           "symbol": "load",
-          "startLine": 44,
-          "endLine": 52,
-          "note": "Persistence.load, then new Store(loaded)"
+          "startLine": 42,
+          "endLine": 51,
+          "note": "Persistence.load, then new Store(loaded)",
+          "digest": "sBFNJ1PnNyWB"
         }
       ]
     },
@@ -3156,7 +3473,8 @@
         {
           "path": "src/server/app.ts",
           "symbol": "handleMcpRequest",
-          "startLine": 62
+          "startLine": 60,
+          "digest": "gkWTGBUJAiTv"
         }
       ]
     },
@@ -3169,8 +3487,9 @@
         {
           "path": "src/server/app.ts",
           "symbol": "apiRoutes",
-          "startLine": 59,
-          "endLine": 61
+          "startLine": 57,
+          "endLine": 59,
+          "digest": "rpWz9VPLU3X9"
         }
       ]
     },
@@ -3184,8 +3503,9 @@
         {
           "path": "src/server/app.ts",
           "symbol": "serveWeb",
-          "startLine": 159,
-          "endLine": 175
+          "startLine": 157,
+          "endLine": 173,
+          "digest": "zNvH0D_RWBky"
         }
       ]
     },
@@ -3226,7 +3546,8 @@
           "path": "src/web/state/bootstrap.ts",
           "symbol": "uiStateOf",
           "startLine": 96,
-          "endLine": 104
+          "endLine": 104,
+          "digest": "eYF2Adal4JqD"
         }
       ]
     },
@@ -3244,8 +3565,9 @@
         {
           "path": "src/web/api.ts",
           "symbol": "subscribe",
-          "startLine": 92,
-          "endLine": 105
+          "startLine": 104,
+          "endLine": 117,
+          "digest": "KB8zsNzshVqe"
         }
       ]
     },
@@ -3278,7 +3600,8 @@
         {
           "path": "src/web/canvas/StructureCanvas.tsx",
           "symbol": "projectStructure",
-          "startLine": 75
+          "startLine": 75,
+          "digest": "pd5OIoUFLnq_"
         }
       ]
     }
@@ -3299,9 +3622,10 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 239,
-              "endLine": 245,
-              "note": "apply_changes handler"
+              "startLine": 261,
+              "endLine": 267,
+              "note": "apply_changes handler",
+              "digest": "-P-59-YPkUaO"
             }
           ]
         },
@@ -3316,8 +3640,9 @@
             {
               "path": "src/server/store.ts",
               "symbol": "apply",
-              "startLine": 66,
-              "endLine": 83
+              "startLine": 71,
+              "endLine": 88,
+              "digest": "QNSsfERSc6a8"
             }
           ]
         },
@@ -3330,8 +3655,9 @@
             {
               "path": "src/server/changes.ts",
               "symbol": "run",
-              "startLine": 103,
-              "endLine": 131
+              "startLine": 110,
+              "endLine": 138,
+              "digest": "-K8nKh8wky3d"
             }
           ]
         },
@@ -3356,8 +3682,9 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "broadcastStoreChanges",
-              "startLine": 136,
-              "endLine": 138
+              "startLine": 146,
+              "endLine": 148,
+              "digest": "--ZMkrEFJAIj"
             }
           ]
         },
@@ -3373,7 +3700,8 @@
               "path": "src/server/session.ts",
               "symbol": "publish",
               "startLine": 79,
-              "endLine": 81
+              "endLine": 81,
+              "digest": "kEbv409Mc6vh"
             }
           ]
         },
@@ -3388,8 +3716,9 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "writeSSE",
-              "startLine": 67,
-              "endLine": 93
+              "startLine": 68,
+              "endLine": 94,
+              "digest": "qz5HUbaNB6tN"
             }
           ]
         },
@@ -3403,7 +3732,8 @@
               "path": "src/server/persistence.ts",
               "symbol": "attach",
               "startLine": 81,
-              "endLine": 99
+              "endLine": 99,
+              "digest": "cmPhayXbaaym"
             }
           ]
         },
@@ -3424,14 +3754,16 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "receiveSnapshot",
-              "startLine": 180,
-              "endLine": 192
+              "startLine": 182,
+              "endLine": 194,
+              "digest": "rS330KDy2cVz"
             },
             {
               "path": "src/web/state/store.ts",
               "symbol": "onAgentEntry",
-              "startLine": 235,
-              "endLine": 265
+              "startLine": 237,
+              "endLine": 267,
+              "digest": "R9EIiTWvFiBa"
             }
           ]
         },
@@ -3445,7 +3777,8 @@
               "path": "src/web/canvas/useAutoPlace.ts",
               "symbol": "useAutoPlace",
               "startLine": 15,
-              "endLine": 80
+              "endLine": 80,
+              "digest": "3s1KgqmT3j4-"
             }
           ]
         },
@@ -3462,7 +3795,8 @@
               "path": "src/server/persistence.ts",
               "symbol": "writePending",
               "startLine": 126,
-              "endLine": 148
+              "endLine": 148,
+              "digest": "iyxiQrZ4Q8bt"
             }
           ]
         }
@@ -3483,9 +3817,10 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 316,
-              "endLine": 338,
-              "note": "focus_ui handler: validates ids, publishes"
+              "startLine": 358,
+              "endLine": 380,
+              "note": "focus_ui handler: validates ids, publishes",
+              "digest": "6kPHV6bzUKBs"
             }
           ]
         },
@@ -3513,8 +3848,9 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "handleFocusRequest",
-              "startLine": 417,
-              "endLine": 437
+              "startLine": 419,
+              "endLine": 439,
+              "digest": "_TJ7rW_ofWP7"
             }
           ]
         },
@@ -3527,6 +3863,78 @@
           "from": "mcp-endpoint",
           "to": "coding-agent",
           "label": "delivered: browsers > 0, or a hint to open the UI"
+        }
+      ]
+    },
+    {
+      "id": "agent-repairs-code-links",
+      "name": "Agent repairs code links after editing code",
+      "summary": "After a code change the agent sees what is linked to the touched files, lets the server re-anchor moved refs in one step, and fixes the edited ones itself.",
+      "steps": [
+        {
+          "from": "coding-agent",
+          "to": "mcp-endpoint",
+          "label": "find_by_code(touched paths)",
+          "description": "Elements, relations and flow steps linked there, each ref with its check.",
+          "dataIds": [
+            "find-by-code-result"
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "code-link-checker",
+          "label": "inspect refs",
+          "description": "Sealed refs are checked by their text: ok, moved (with suggestion) or changed.",
+          "dataIds": [
+            "stale-link"
+          ]
+        },
+        {
+          "from": "coding-agent",
+          "to": "mcp-endpoint",
+          "label": "check_code_links(repair: true)"
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "code-link-repair",
+          "label": "repairCodeLinks(actor: agent)"
+        },
+        {
+          "from": "code-link-repair",
+          "to": "code-link-checker",
+          "label": "inspect refs in scope",
+          "description": "Starts over if the model revision changed during the check."
+        },
+        {
+          "from": "code-link-repair",
+          "to": "model-store",
+          "label": "apply(repair change set)",
+          "description": "Moved refs get their suggested range; unsealed refs that check out are re-sent in addCodeRefs. One journal entry."
+        },
+        {
+          "from": "model-store",
+          "to": "change-engine",
+          "label": "applyChangeSet(changes, sealer)"
+        },
+        {
+          "from": "change-engine",
+          "to": "code-link-checker",
+          "label": "seal(ref)",
+          "description": "Relocated and re-sent refs get a fresh digest of their lines."
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "coding-agent",
+          "label": "repaired, sealed, still stale",
+          "dataIds": [
+            "check-code-links-result"
+          ]
+        },
+        {
+          "from": "coding-agent",
+          "to": "mcp-endpoint",
+          "label": "apply_changes: fix or re-seal changed refs",
+          "description": "A wrong ref is replaced (removeCodeRefs + addCodeRefs); a ref that is still right is re-sent in addCodeRefs to accept its new text."
         }
       ]
     },
@@ -3552,7 +3960,8 @@
               "path": "src/server/persistence.ts",
               "symbol": "scheduleReload",
               "startLine": 164,
-              "endLine": 172
+              "endLine": 172,
+              "digest": "68oZH4Gu7l75"
             }
           ]
         },
@@ -3570,7 +3979,8 @@
               "path": "src/server/persistence.ts",
               "symbol": "reloadIfChanged",
               "startLine": 178,
-              "endLine": 203
+              "endLine": 203,
+              "digest": "AEwBjEjIvWFR"
             }
           ]
         },
@@ -3586,8 +3996,9 @@
             {
               "path": "src/server/store.ts",
               "symbol": "replace",
-              "startLine": 115,
-              "endLine": 126
+              "startLine": 120,
+              "endLine": 131,
+              "digest": "p32SuIa_y7Bz"
             }
           ]
         },
@@ -3600,8 +4011,9 @@
             {
               "path": "src/server/store.ts",
               "symbol": "parseModel",
-              "startLine": 161,
-              "endLine": 166
+              "startLine": 166,
+              "endLine": 171,
+              "digest": "oNzxY3TaOl_0"
             }
           ]
         },
@@ -3646,8 +4058,9 @@
             {
               "path": "src/web/state/bootstrap.ts",
               "symbol": "refreshStale",
-              "startLine": 49,
-              "endLine": 54
+              "startLine": 47,
+              "endLine": 52,
+              "digest": "ffQ9KT6fmNVa"
             }
           ]
         }
@@ -3668,7 +4081,8 @@
               "path": "src/web/chrome/ExportDialog.tsx",
               "symbol": "ExportDialog",
               "startLine": 23,
-              "endLine": 140
+              "endLine": 140,
+              "digest": "-miZaoucv_um"
             }
           ]
         },
@@ -3683,8 +4097,9 @@
             {
               "path": "src/web/api.ts",
               "symbol": "exportUrl",
-              "startLine": 77,
-              "endLine": 81
+              "startLine": 89,
+              "endLine": 93,
+              "digest": "h1c0XnBmjRYj"
             }
           ]
         },
@@ -3708,7 +4123,8 @@
               "path": "src/server/export.ts",
               "symbol": "exportModel",
               "startLine": 23,
-              "endLine": 40
+              "endLine": 40,
+              "digest": "GHNl60B-iyqo"
             }
           ]
         },
@@ -3721,7 +4137,8 @@
               "path": "src/server/export.ts",
               "symbol": "flowchart",
               "startLine": 218,
-              "endLine": 237
+              "endLine": 237,
+              "digest": "YNlSzhgJIUlq"
             }
           ]
         },
@@ -3733,8 +4150,9 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "exportModel",
-              "startLine": 108,
-              "endLine": 128
+              "startLine": 118,
+              "endLine": 138,
+              "digest": "xZM0deML25NB"
             }
           ]
         }
@@ -3761,7 +4179,8 @@
             {
               "path": "src/web/inspector/ElementInspector.tsx",
               "symbol": "commit",
-              "startLine": 25
+              "startLine": 25,
+              "digest": "alnQQyRuxiXB"
             }
           ]
         },
@@ -3773,8 +4192,9 @@
             {
               "path": "src/web/state/apply.ts",
               "symbol": "applyLocal",
-              "startLine": 25,
-              "endLine": 149
+              "startLine": 26,
+              "endLine": 164,
+              "digest": "BpSVkfYz8dyr"
             }
           ]
         },
@@ -3786,8 +4206,9 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "commit",
-              "startLine": 195,
-              "endLine": 211
+              "startLine": 197,
+              "endLine": 213,
+              "digest": "XDYLoI_bt04w"
             }
           ]
         },
@@ -3802,7 +4223,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "apply",
-              "startLine": 38
+              "startLine": 39,
+              "digest": "Nrsr2R517fjL"
             }
           ]
         },
@@ -3838,8 +4260,9 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "prune",
-              "startLine": 171,
-              "endLine": 178
+              "startLine": 173,
+              "endLine": 180,
+              "digest": "dy7rBbBA6ItZ"
             }
           ]
         }
@@ -3859,7 +4282,8 @@
               "path": "src/web/canvas/StructureCanvas.tsx",
               "symbol": "onSelectNodes",
               "startLine": 232,
-              "endLine": 243
+              "endLine": 243,
+              "digest": "p2-Bq4kCRU-q"
             }
           ]
         },
@@ -3876,8 +4300,9 @@
             {
               "path": "src/web/state/bootstrap.ts",
               "symbol": "uiStateOf",
-              "startLine": 61,
-              "endLine": 71
+              "startLine": 59,
+              "endLine": 69,
+              "digest": "Nz-Ojlc9GJJ8"
             }
           ]
         },
@@ -3892,7 +4317,8 @@
             {
               "path": "src/web/api.ts",
               "symbol": "putUi",
-              "startLine": 70
+              "startLine": 80,
+              "digest": "32LvAiOkMcAE"
             }
           ]
         },
@@ -3908,7 +4334,8 @@
               "path": "src/server/session.ts",
               "symbol": "setUi",
               "startLine": 33,
-              "endLine": 37
+              "endLine": 37,
+              "digest": "cZm9LMXV3ngr"
             }
           ]
         },
@@ -3924,9 +4351,10 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 96,
-              "endLine": 133,
-              "note": "get_context handler"
+              "startLine": 95,
+              "endLine": 132,
+              "note": "get_context handler",
+              "digest": "wvK4iuC6rEt5"
             }
           ]
         },
