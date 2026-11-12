@@ -158,13 +158,20 @@ export type Layout = z.infer<typeof Layout>;
 // One mutation path for everyone. The UI posts ChangeSets over REST, the agent
 // sends the same shape through the `apply_changes` MCP tool.
 
+/** `.partial()` keeps `.default()`s in zod v4, which would make every patch overwrite unspecified fields with defaults. */
+function patchShape<S extends z.ZodRawShape>(shape: S) {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, schema]) => [key, ((schema instanceof z.ZodDefault ? schema.unwrap() : schema) as z.ZodType).optional()]),
+  ) as unknown as { [K in keyof S]: z.ZodOptional<S[K] extends z.ZodDefault<infer Inner> ? Inner : S[K]> };
+}
+
 /**
  * Upserts are patches: with an existing id only the given fields change; without
  * an id (or with a new id) the entry is created and `kind` + `name` are required
  * for elements, `from` + `to` for relations, `name` for flows.
  * `parentId: null` moves an element to the top level.
  */
-export const ElementPatch = Element.partial().extend({
+export const ElementPatch = z.object(patchShape(Element.shape)).extend({
   parentId: Id.nullable().optional(),
   /** Convenience: append notes without resending the list. */
   addNotes: z.array(z.string().min(1)).optional(),
@@ -172,10 +179,10 @@ export const ElementPatch = Element.partial().extend({
 });
 export type ElementPatch = z.infer<typeof ElementPatch>;
 
-export const RelationPatch = Relation.partial();
+export const RelationPatch = z.object(patchShape(Relation.shape));
 export type RelationPatch = z.infer<typeof RelationPatch>;
 
-export const FlowPatch = Flow.partial();
+export const FlowPatch = z.object(patchShape(Flow.shape));
 export type FlowPatch = z.infer<typeof FlowPatch>;
 
 export const ChangeSet = z.object({
