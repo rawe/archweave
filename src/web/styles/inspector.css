@@ -826,19 +826,24 @@
   color: var(--ink);
 }
 
+/* the linked structure gets its own line, so name and type keep the full row */
 .field-ref {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 3px;
-  max-width: 40%;
-  min-height: 22px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  gap: 5px;
+  order: 11;
+  flex: 0 0 calc(100% - 52px);
+  margin: 0 0 4px 18px;
+  min-height: 20px;
+  padding: 0 8px;
+  color: var(--ink-2);
   font-size: var(--fs-12);
-  overflow-wrap: anywhere;
-  flex: none;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+.field-ref:hover {
+  color: var(--ink);
 }
 
 .field-ref svg {

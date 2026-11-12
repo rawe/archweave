@@ -22,6 +22,8 @@ export function useAutoPlace(
 ): { positions: Record<string, Position>; placing: boolean } {
   const [computed, setComputed] = useState<Record<string, Record<string, Position>>>({});
   const inflight = useRef(new Set<string>());
+  // Bumped when a job's result had to be dropped, so placement runs again for the current state.
+  const [retry, setRetry] = useState(0);
   const replace = useMemo(() => looksAutoPlaced(stored), [stored]);
   const local = computed[key];
 
@@ -51,7 +53,7 @@ export function useAutoPlace(
         const out: Record<string, Position | null> = {};
         if (replace) {
           // Anything the human did to this canvas meanwhile makes the fresh layout obsolete.
-          if (current !== storedAtStart) return;
+          if (!samePositions(current, storedAtStart ?? {})) return setRetry((n) => n + 1);
           for (const [id, p] of Object.entries(placed)) if (alive.has(id)) out[id] = p;
           for (const id of Object.keys(current)) if (!alive.has(id)) out[id] = null;
         } else {
@@ -62,8 +64,17 @@ export function useAutoPlace(
         setComputed((c) => ({ ...c, [key]: replace ? fresh : { ...(c[key] ?? {}), ...fresh } }));
         await commit({ layout: { [key]: out } });
       })
-      .finally(() => inflight.current.delete(signature));
-  }, [key, missing, nodes, edges, positions, replace, measured]);
+      .finally(() => {
+        inflight.current.delete(signature);
+        // A snapshot that arrived while this job ran found it in flight and skipped; give it its turn.
+        if (latest.current.nodes !== nodes) setRetry((n) => n + 1);
+      });
+  }, [key, missing, nodes, edges, positions, replace, measured, retry]);
 
   return { positions, placing: missing.length > 0 };
+}
+
+function samePositions(a: Record<string, Position>, b: Record<string, Position>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k]!.x === b[k]?.x && a[k]!.y === b[k]?.y);
 }
