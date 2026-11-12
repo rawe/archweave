@@ -2,14 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { ChangeSet, CODE_EXPECTED_KINDS, type CodeRef, ElementKind, type FocusRequest, Id, type Model, Perspective } from '../shared/model.ts';
+import { ChangeSet, CODE_EXPECTED_KINDS, type CodeRef, ElementKind, type FocusRequest, Id, type Model, normalizeCodePath, Perspective, type UiState } from '../shared/model.ts';
 import { ancestorsOf, descendantsOf, projectStructure } from '../shared/projection.ts';
 import { EXPORT_FORMATS, exportModel } from './export.ts';
 import { GUIDE } from './guide.ts';
 import { ownedRefs, repairCodeLinks } from './repair.ts';
 import { PathError, type Repo } from './repo.ts';
 import type { Session } from './session.ts';
-import { type StaleLinks, staleLink, type Verdict } from './stale.ts';
+import type { StaleLinks, Verdict } from './stale.ts';
 import type { Store } from './store.ts';
 import { didYouMean } from './suggest.ts';
 import { compact, ModelView, THREAD_ID_CAP } from './views.ts';
@@ -89,7 +89,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'What the human is looking at',
       description:
-        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes, and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
+        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids; in the data perspective: `dataView`, either the catalog of all structures by owner or the focused structure with its fields, the structures it references and that reference it, and the elements using it by verb), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes, and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
       annotations: { ...readOnly, idempotentHint: false },
     },
     async () => {
@@ -120,7 +120,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           scope: scope ? compact(scope) : ui.scopeId ? { id: ui.scopeId, missing: true } : 'top level',
           breadcrumb: scope ? [...ancestorsOf(scope.id, v.byId), scope].map((e) => ({ id: e.id, name: e.name })) : [],
           ...(flow ? { flow: { id: flow.id, name: flow.name, summary: flow.summary || undefined, steps: flow.steps.map((s, i) => ({ step: i + 1, from: s.from, to: s.to, label: s.label, dataIds: s.dataIds.length ? s.dataIds : undefined })) } } : {}),
-          ...visibleIn(snapshot.model, ui.perspective, scope?.id),
+          ...visibleIn(v, ui, scope?.id),
         },
         ...(uiHint ? { uiHint } : {}),
         selection: { elements: selectedElements, relations: selectedRelations },
@@ -205,7 +205,15 @@ export function createMcpServer(deps: McpDeps): McpServer {
           throw error;
         }
       });
-      const found = view().findByCode(normalized);
+      // Stored paths are compared in their repo-relative form, so refs stored with an absolute path inside the repository match too.
+      const storedForm = (path: string) => {
+        try {
+          return repo.normalize(path);
+        } catch {
+          return normalizeCodePath(path);
+        }
+      };
+      const found = view().findByCode(normalized, storedForm);
       const refs = [...found.elements, ...found.relations, ...found.flowSteps].flatMap((owner) => owner.codeRefs);
       const verdicts = new Map((await stale.inspect(refs.map((ref) => ({ ref })))).map((v) => [v.ref, v]));
       const counts: Record<string, number> = {};
@@ -225,7 +233,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       };
       const hints = [
         counts.moved ? `${counts.moved} moved: call check_code_links with repair: true to re-anchor them.` : '',
-        refs.length - (counts.ok ?? 0) - (counts.moved ?? 0) ? 'Look at the other stale refs in the code and fix them with apply_changes (re-send a ref in addCodeRefs to accept it as is).' : '',
+        refs.length - (counts.ok ?? 0) - (counts.moved ?? 0) ? 'Look at the other stale refs in the code and fix them with apply_changes (re-send a ref without its digest in addCodeRefs to accept it as is).' : '',
       ].filter(Boolean);
       return ok(hints.length ? { ...result, hint: hints.join(' ') } : result);
     },
@@ -247,10 +255,11 @@ Semantics:
   Within one entry a full list is applied first, then removals, then additions and updates. A helper that names something missing is an error.
 - \`parentId: null\` moves an element to the top level. Containment cycles are rejected.
 - New elements default to status "built" when they have code refs or are of a kind without code (actor, external, system), otherwise "planned".
-- Code refs with a line range are sealed by the server (\`digest\`, a hash of the linked lines) so later checks can tell moved code from edited code. Never send a digest; it is ignored. Resending a full list keeps the seals of refs whose location is unchanged; new or changed locations, and refs re-sent in \`addCodeRefs\`, are sealed against the current file. A ref that is stale already when written comes back as a warning.
+- Code refs with a line range are sealed by the server (\`digest\`, a hash of the linked lines) so later checks can tell moved code from edited code. A ref written without a digest is sealed to the current text: re-send a ref without its digest (in \`addCodeRefs\`) to accept edited code as still right. A ref resent exactly as read (same location and digest) keeps its seal. A digest sent with a new location claims the code there is the sealed text; when it is not, the change set is rejected. A ref that is stale already when written comes back as a warning.
+- \`expectedRevision\`: the revision you read; when the model has changed since, nothing is applied and you get an error. Optional.
 - \`remove\` deletes by id. Removing an element also removes its descendants, attached relations and the flow steps that touch it.
 - \`dataIds\` and field \`ref\`s you send must name data structures (kind "data"); otherwise the change set is rejected. References broken by a removal, or by an element no longer being of kind "data", are cleaned up with a warning.
-- Code ref paths are stored normalized (repo-relative, forward slashes, no "./").
+- Code ref paths are stored normalized (repo-relative, forward slashes, no "./"); an absolute path inside the repository is made relative, a path outside it is an error.
 - Do not send \`layout\`.`,
       inputSchema: ChangeSet.extend({
         summary: z.string().min(1).max(200).describe('One line for the activity feed.'),
@@ -278,18 +287,14 @@ Refs with a line range are sealed when written: the server stores a \`digest\` o
 - changed: the text was edited. \`suggestion\`, when present, is where the symbol is now (same length); check it in the code.
 Other reasons, for every ref: missing-file; line-out-of-range (startLine or endLine past the end of the file); symbol-not-found (the \`symbol\`, matched as an identifier, does not occur in the file outside quotes; for "A.b" the last segment is enough); symbol-outside-range (it occurs, but not within startLine..endLine, or on startLine when there is no endLine).
 
-With \`repair: true\` it also changes the model, in one journaled change set: every moved ref (on elements, relations and flow steps) is re-anchored to its suggestion. It returns what it re-anchored and what still needs attention. With \`seal: true\` refs with a line range that have no seal yet but pass every check are sealed (models from before sealing, or refs written while their file was unreadable). Sealing declares the current range right, so verify unsealed ranges against the code first: a passing check does not prove them. Changed and other stale refs are never repaired automatically: look at the code, then fix the ref with apply_changes (a new line range is sealed afresh), or, when the ref is still right, re-send it unchanged in \`addCodeRefs\` (in \`updateSteps\` for flow steps) to re-seal it.`,
+With \`repair: true\` it also changes the model, in one journaled change set: every moved ref (on elements, relations and flow steps) is re-anchored to its suggestion. It returns what it re-anchored and what still needs attention. Changed and other stale refs are never repaired automatically: look at the code, then fix the ref with apply_changes (a new line range without a digest is sealed afresh), or, when the ref is still right, re-send it without its digest in \`addCodeRefs\` (in \`updateSteps\` for flow steps) to re-seal it.`,
       inputSchema: {
         scopeId: Id.optional().describe('Only check this element and everything inside it, and relations and flow steps that touch them.'),
         repair: z.boolean().optional().describe('Re-anchor moved refs. Default false (read only).'),
-        seal: z
-          .boolean()
-          .optional()
-          .describe('Seal refs with a line range that have no seal yet and pass every check. Only after you verified those ranges against the code. Default false.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ scopeId, repair, seal }) => {
+    async ({ scopeId, repair }) => {
       const model = store.snapshot().model;
       const v = new ModelView(model);
       if (scopeId && !v.byId.has(scopeId)) throw new Error(`Unknown element \`${scopeId}\`.${didYouMean(scopeId, v.byId.values())}`);
@@ -300,31 +305,22 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
         .filter((e) => (!inScope || inScope.has(e.id)) && e.status === 'built' && !e.codeRefs.length && CODE_EXPECTED_KINDS.includes(e.kind))
         .map(compact);
       const named = <T extends { ownerType: string; ownerId: string }>(l: T) => ({ ...l, ownerName: nameOf(l.ownerType, l.ownerId) });
-      if (repair || seal) {
-        const result = await repairCodeLinks(store, stale, { actor: 'agent', scopeId, seal });
+      if (repair) {
+        const result = await repairCodeLinks(store, stale, { actor: 'agent', scopeId });
         return ok({
           revision: result.revision,
           ...(result.summary ? { summary: result.summary } : {}),
           repaired: result.repaired.map(named),
-          sealed: result.sealed,
           stale: result.stale.map(named),
           builtWithoutCode,
         });
       }
-      const statuses = await stale.inspect(ownedRefs(model, scopeId));
-      const links = statuses.filter((s) => s.reason).map(staleLink);
+      const links = await stale.checkRefs(ownedRefs(model, scopeId));
       const moved = links.filter((l) => l.reason === 'moved').length;
-      const unsealed = statuses.filter((s) => !s.reason && s.ref.startLine && !s.ref.digest).length;
-      const hints = [
-        moved ? `${moved} moved: call again with repair: true to re-anchor them.` : '',
-        unsealed
-          ? `${unsealed} refs with a line range have no seal yet, so moves cannot be told from edits. A passing check does not prove such a range is right (a range without a symbol passes whenever the file is long enough): verify them against the code, fix the wrong ones, then call again with seal: true.`
-          : '',
-      ].filter(Boolean);
       return ok({
         stale: links.map(named),
         builtWithoutCode,
-        ...(hints.length ? { hint: hints.join(' ') } : {}),
+        ...(moved ? { hint: `${moved} moved: call again with repair: true to re-anchor them.` } : {}),
       });
     },
   );
@@ -409,10 +405,14 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
 }
 
 /** What the browser draws for this perspective, as far as the agent needs it. */
-function visibleIn(model: Model, perspective: Perspective, scopeId: string | undefined): Record<string, unknown> {
-  if (perspective === 'data') return { visible: model.elements.filter((e) => e.kind === 'data').map(compact) };
-  if (perspective !== 'structure') return {};
-  const projection = projectStructure(model, scopeId);
+function visibleIn(v: ModelView, ui: UiState, scopeId: string | undefined): Record<string, unknown> {
+  if (ui.perspective === 'data') {
+    // As in the browser: the first selected data structure is in focus; without one the catalog shows.
+    const focusId = ui.selectedElementIds.find((id) => v.byId.get(id)?.kind === 'data');
+    return { dataView: focusId ? v.dataFocus(focusId) : v.dataCatalog() };
+  }
+  if (ui.perspective !== 'structure') return {};
+  const projection = projectStructure(v.model, scopeId);
   return {
     visible: projection.nodes.map((n) => ({
       ...compact(n.element),

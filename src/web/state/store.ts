@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import type {
   AgentPresence,
-  ChangeSet,
   FocusRequest,
   JournalEntry,
   Layout,
@@ -11,11 +10,11 @@ import type {
   StaleLink,
 } from '../../shared/model.ts';
 import { api, ApiError } from '../api.ts';
-import { applyLocal, isLayoutOnly } from './apply.ts';
+import { applyLocal, isLayoutOnly, type PlainChangeSet } from './apply.ts';
 
 interface Pending {
   seq: number;
-  cs: ChangeSet;
+  cs: PlainChangeSet;
   layoutOnly: boolean;
   ackRevision?: number;
   snapshotsSinceAck: number;
@@ -193,8 +192,11 @@ export function receiveSnapshot(snapshot: Snapshot, entry?: JournalEntry) {
   if (entry?.actor === 'agent') onAgentEntry(entry);
 }
 
-/** Applies a change locally right away and sends it to the server. */
-export async function commit(cs: ChangeSet): Promise<boolean> {
+/**
+ * Applies a change locally right away and sends it to the server. `failure` replaces the toast for an error the
+ * server answered with (a conflict or a rejected change set), e.g. to say what the human should do next.
+ */
+export async function commit(cs: PlainChangeSet, opts: { failure?: string } = {}): Promise<boolean> {
   const p: Pending = { seq: ++seq, cs, layoutOnly: isLayoutOnly(cs), snapshotsSinceAck: 0 };
   setDocument(get().server, [...get().pending, p], p.layoutOnly ? {} : { humanChanged: true });
   try {
@@ -207,7 +209,7 @@ export async function commit(cs: ChangeSet): Promise<boolean> {
     return true;
   } catch (err) {
     dropPending(p.seq);
-    toast({ tone: 'error', text: err instanceof ApiError ? err.message : 'Could not reach the ArchWeave server.' });
+    toast({ tone: 'error', text: err instanceof ApiError ? (opts.failure ?? err.message) : 'Could not reach the ArchWeave server.' });
     return false;
   }
 }

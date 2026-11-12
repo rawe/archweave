@@ -122,7 +122,7 @@ describe('keeping code links anchored through MCP', () => {
     const revision = (await call('get_changes')).revision;
 
     const repaired = await call('check_code_links', { repair: true });
-    expect(repaired).toMatchObject({ revision: revision + 1, summary: 'Re-anchored 5 code links in src/routes.ts', sealed: 0 });
+    expect(repaired).toMatchObject({ revision: revision + 1, summary: 'Re-anchored 5 code links in src/routes.ts' });
     expect(repaired.repaired).toHaveLength(5);
     expect(repaired.repaired[0]).toEqual({ ownerType: 'element', ownerId: 'orders', path: FILE, symbol: 'listOrders', from: { startLine: 3, endLine: 5 }, to: { startLine: 8, endLine: 10 }, ownerName: 'Orders' });
     expect(repaired.stale).toMatchObject([{ ownerId: 'orders', reason: 'changed', ref: { startLine: 13, note: 'POST /orders' } }]);
@@ -147,9 +147,9 @@ describe('keeping code links anchored through MCP', () => {
     edit(current.replace('return db.orders.all();', 'return db.orders.all({ limit: 100 });'));
     const found = await call('find_by_code', { paths: [FILE] });
     expect(checks(found).filter((row) => row[3] !== 'ok')).toEqual([['orders', null, 8, 'changed', null]]);
-    expect(found.hint).toMatch(/re-send a ref in addCodeRefs/);
+    expect(found.hint).toMatch(/re-send a ref without its digest in addCodeRefs/);
     const repair = await call('check_code_links', { repair: true });
-    expect(repair).toMatchObject({ repaired: [], sealed: 0, stale: [{ reason: 'changed' }] });
+    expect(repair).toMatchObject({ repaired: [], stale: [{ reason: 'changed' }] });
     expect(repair.summary).toBeUndefined();
 
     await call('apply_changes', { summary: 'Accept edited listOrders', elements: [{ id: 'orders', addCodeRefs: [{ path: FILE, symbol: 'listOrders', startLine: 8, endLine: 10 }] }] });
@@ -161,7 +161,7 @@ describe('keeping code links anchored through MCP', () => {
     const response = await fetch(`${running.url}/api/code/repair`, { method: 'POST' });
     expect(response.status).toBe(200);
     const result = await response.json();
-    expect(result).toMatchObject({ repaired: [], sealed: 0, stale: [] });
+    expect(result).toMatchObject({ repaired: [], stale: [] });
     edit(['// zero', fs.readFileSync(path.join(repoDir, FILE), 'utf8')].join('\n'));
     const moved = await fetch(`${running.url}/api/code/repair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
     expect(moved.summary).toBe('Re-anchored 6 code links in src/routes.ts');
@@ -172,6 +172,21 @@ describe('keeping code links anchored through MCP', () => {
 
     const scoped = await fetch(`${running.url}/api/code/repair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scopeId: 'nope' }) });
     expect(scoped.status).toBe(400);
+  });
+
+  it('applies nothing when a change set was built from another revision: 409 over REST, a tool error over MCP', async () => {
+    const post = (body: unknown) => fetch(`${running.url}/api/changes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const { revision } = await fetch(`${running.url}/api/health`).then((r) => r.json());
+    const stale = await post({ expectedRevision: revision - 1, elements: [{ id: 'db', summary: 'Stale write.' }] });
+    expect(stale.status).toBe(409);
+    expect((await stale.json()).error).toMatch(/The model changed since revision \d+ \(it is at revision \d+ now\)\. Nothing was applied; read it again and retry\./);
+    await expect(call('apply_changes', { summary: 'Stale', expectedRevision: revision - 1, elements: [{ id: 'db', summary: 'Stale write.' }] })).rejects.toThrow(/The model changed since revision/);
+    expect((await call('get_element', { id: 'db' })).summary).toBeUndefined();
+    // Layout-only change sets ignore it.
+    expect((await post({ expectedRevision: revision - 1, layout: { 'structure:root': { db: { x: 1, y: 2 } } } })).status).toBe(200);
+    const fresh = await post({ expectedRevision: revision, elements: [{ id: 'db', summary: 'Holds orders.' }] });
+    expect(fresh.status).toBe(200);
+    expect((await fresh.json()).revision).toBe(revision + 1);
   });
 
   it('pretty-prints results from mcp-call.mjs only on a terminal or when asked', async () => {

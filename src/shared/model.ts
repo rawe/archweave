@@ -48,8 +48,10 @@ export const CodeRef = z.object({
   endLine: z.number().int().positive().optional(),
   note: z.string().optional(), // why this location matters
   /**
-   * Seal of the text at startLine..endLine when the ref was written: computed by the server,
-   * never by clients (a sent digest is ignored). Lets the checker tell moved code from changed code.
+   * Seal of the text at startLine..endLine, computed by the server when the ref is written. Lets the checker
+   * tell moved code from changed code. A ref written with a digest claims "this is still the same code": the
+   * server keeps it when the ref is unchanged, verifies it against the file when the location changed, and
+   * rejects the change set when the text there does not match. A ref written without one is sealed afresh.
    */
   digest: z.string().optional(),
 });
@@ -204,7 +206,7 @@ export type FieldPatch = z.infer<typeof FieldPatch>;
 const codeRefHelpers = {
   /**
    * Appends code refs. A ref already present (same path, symbol and line range) is not duplicated:
-   * it is re-sealed against the current file text and takes the sent `note`, if any.
+   * it takes the sent `note`, if any, and, when sent without a digest, is sealed afresh against the current file text.
    */
   addCodeRefs: z.array(CodeRef).optional(),
   removeCodeRefs: z.array(CodeRefSelector).optional(),
@@ -240,6 +242,11 @@ export type FlowPatch = z.infer<typeof FlowPatch>;
 export const ChangeSet = z.object({
   /** One line for the activity feed: "Split billing out of order-service". */
   summary: z.string().max(200).optional(),
+  /**
+   * The model revision the change set was built from. When the model is at another revision, nothing is applied
+   * (409 over REST, a tool error over MCP). Ignored by layout-only change sets.
+   */
+  expectedRevision: z.number().int().min(0).optional(),
   model: z.object({ name: z.string().optional(), description: z.string().optional() }).optional(),
   elements: z.array(ElementPatch).optional(),
   relations: z.array(RelationPatch).optional(),

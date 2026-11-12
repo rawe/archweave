@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { freeSpot, layoutAll, looksAutoPlaced, placeMissing, separate } from '../../src/web/lib/layout.ts';
+import { freeSpot, layoutAll, placeMissing, placementToSave, separate, shownPositions } from '../../src/web/lib/layout.ts';
 
 const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -67,22 +67,25 @@ describe('layout', () => {
     expect(await layoutAll(nodes, edges)).toEqual(await layoutAll(nodes, edges));
   });
 
-  it('recognizes layouts written by the earlier auto-layout, not hand-arranged or new ones', async () => {
-    const old = { a: { x: 0, y: 33 }, b: { x: 0, y: 156 }, c: { x: 316, y: 0 }, d: { x: 316, y: 122 }, e: { x: 632, y: 40 } };
-    expect(looksAutoPlaced(old)).toBe(true);
-    expect(looksAutoPlaced({ ...old, a: { x: 12, y: 47 } })).toBe(false);
-    expect(looksAutoPlaced({ a: { x: 102, y: 255 }, b: { x: 262, y: 527 }, c: { x: 279, y: -28 }, d: { x: 640, y: 291 } })).toBe(false);
-    expect(looksAutoPlaced(undefined)).toBe(false);
-    const fresh = await layoutAll(
-      ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, width: 188, height: 60 })),
-      [
-        { from: 'a', to: 'b' },
-        { from: 'a', to: 'c' },
-        { from: 'b', to: 'd' },
-        { from: 'c', to: 'e' },
-      ],
-    );
-    expect(looksAutoPlaced(fresh)).toBe(false);
+  it('always shows stored positions, also arrangements that start at the origin in shared columns', () => {
+    const arranged = { a: { x: 0, y: 0 }, b: { x: 0, y: 180 }, c: { x: 240, y: 30 }, d: { x: 240, y: 250 } };
+    expect(shownPositions(arranged, undefined)).toEqual(arranged);
+    expect(shownPositions(arranged, { a: { x: 500, y: 500 }, e: { x: 9, y: 9 } })).toEqual({ ...arranged, e: { x: 9, y: 9 } });
+    expect(shownPositions(undefined, undefined)).toEqual({});
+  });
+
+  it('writes placements only for nodes that still exist and that nobody positioned meanwhile', () => {
+    const placed = { a: { x: 1, y: 1 }, b: { x: 2, y: 2 }, gone: { x: 3, y: 3 } };
+    expect(placementToSave(placed, new Set(['a', 'b']), { b: { x: 7, y: 7 } })).toEqual({ a: { x: 1, y: 1 } });
+  });
+
+  it('leaves nothing to place once a job computed positions, even when saving them failed', async () => {
+    const nodes = ['a', 'b', 'c'].map((id) => ({ id, width: 188, height: 60 }));
+    const stored = { a: { x: 0, y: 0 } };
+    const placed = await placeMissing(nodes, [{ from: 'a', to: 'b' }], stored);
+    const computed = placementToSave(placed, new Set(['a', 'b', 'c']), stored);
+    // The save failed: the store still has only `a`. The computed positions are kept in the browser.
+    expect(nodes.filter((n) => !shownPositions(stored, computed)[n.id])).toEqual([]);
   });
 
   it('separate keeps stored positions and only moves nodes that grew into others', () => {

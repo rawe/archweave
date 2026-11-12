@@ -2,7 +2,6 @@
 import type {
   AgentPresence,
   ChangeResult,
-  ChangeSet,
   FocusRequest,
   JournalEntry,
   LineRange,
@@ -10,6 +9,7 @@ import type {
   StaleLink,
   UiState,
 } from '../shared/model.ts';
+import type { PlainChangeSet } from './state/apply.ts';
 
 export class ApiError extends Error {
   constructor(
@@ -66,13 +66,12 @@ export interface RepairResult {
   revision: number;
   summary?: string;
   repaired: { ownerType: StaleLink['ownerType']; ownerId: string; step?: number; path: string; symbol?: string; from: LineRange; to: LineRange }[];
-  sealed: number;
   stale: StaleLink[];
 }
 
 export const api = {
   snapshot: () => request<Snapshot>('/api/snapshot'),
-  applyChanges: (changeSet: ChangeSet) =>
+  applyChanges: (changeSet: PlainChangeSet) =>
     request<ChangeResult>('/api/changes', { method: 'POST', body: JSON.stringify(changeSet) }),
   undo: () => request<{ revision: number }>('/api/undo', { method: 'POST' }),
   journal: (since = 0) => request<JournalEntry[]>(`/api/journal?since=${since}`),
@@ -84,12 +83,9 @@ export const api = {
       Array.isArray(r) ? r : (r?.files ?? []),
     ),
   stale: () => request<StaleLink[]>('/api/code/stale'),
-  /** Re-anchors moved links. Sealing unsealed links happens only with `seal: true`, as its own deliberate step. */
-  repairLinks: (opts: { scopeId?: string; seal?: boolean } = {}) =>
-    request<RepairResult>('/api/code/repair', {
-      method: 'POST',
-      body: JSON.stringify({ ...(opts.scopeId ? { scopeId: opts.scopeId } : {}), ...(opts.seal ? { seal: true } : {}) }),
-    }),
+  /** Re-anchors moved links. */
+  repairLinks: (opts: { scopeId?: string } = {}) =>
+    request<RepairResult>('/api/code/repair', { method: 'POST', body: JSON.stringify(opts.scopeId ? { scopeId: opts.scopeId } : {}) }),
   exportUrl: (opts: { format: 'markdown' | 'json' | 'mermaid'; scope?: string; perspectives: string[]; code: boolean }) => {
     const params = new URLSearchParams({ format: opts.format, perspectives: opts.perspectives.join(','), code: String(opts.code) });
     if (opts.scope) params.set('scope', opts.scope);

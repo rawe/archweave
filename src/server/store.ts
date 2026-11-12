@@ -1,7 +1,7 @@
-import { type Actor, type ChangeResult, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
+import { type Actor, type ChangeResult, type ChangeSet, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
 import { applyChangeSet, describeChanges, diffModels, parseChangeSet } from './changes.ts';
 import { integrityProblems } from './integrity.ts';
-import type { CodeSealer } from './stale.ts';
+import type { CodeAccess } from './stale.ts';
 
 export { ChangeError } from './changes.ts';
 
@@ -19,8 +19,8 @@ export interface StoreOptions {
   layout?: unknown;
   journal?: JournalEntry[];
   now?: () => Date;
-  /** Seals code refs written by change sets against the repository. Without it refs are stored unsealed. */
-  sealer?: CodeSealer;
+  /** Normalizes code ref paths against the repository and seals refs written by change sets. Without it refs are stored unsealed. */
+  code?: CodeAccess;
 }
 
 interface UndoStep {
@@ -44,7 +44,7 @@ export class Store {
   private undoStack: UndoStep[] = [];
   private listeners = new Set<(change: StoreChange) => void>();
   private now: () => Date;
-  private sealer?: CodeSealer;
+  private code?: CodeAccess;
 
   constructor(options: StoreOptions = {}) {
     this.model = parseModel(options.model ?? {});
@@ -52,7 +52,7 @@ export class Store {
     this.entries = (options.journal ?? []).slice(-JOURNAL_CAP);
     this.revision = this.entries.reduce((max, e) => Math.max(max, e.revision), 0);
     this.now = options.now ?? (() => new Date());
-    this.sealer = options.sealer;
+    this.code = options.code;
   }
 
   snapshot(): Snapshot {
@@ -67,10 +67,11 @@ export class Store {
     return this.entries.filter((e) => (filter.since === undefined || e.revision > filter.since) && (!filter.actor || e.actor === filter.actor));
   }
 
-  /** Validates and applies a change set atomically. Throws ChangeError with an actionable message. */
+  /** Validates and applies a change set atomically. Throws ChangeError with an actionable message, RevisionConflict when it was built from another revision. */
   apply(input: unknown, actor: Actor): ChangeResult {
     const changes = parseChangeSet(input);
-    const applied = applyChangeSet({ model: this.model, layout: this.layout }, changes, actor, this.now(), this.sealer);
+    this.checkRevision(changes);
+    const applied = applyChangeSet({ model: this.model, layout: this.layout }, changes, actor, this.now(), this.code);
     const { created, updated, removed, warnings } = applied;
     if (!applied.modelChanged && !applied.layoutChanged) {
       return { revision: this.revision, created, updated, removed, warnings };
@@ -89,9 +90,16 @@ export class Store {
 
   /** Validates a change set and returns what `apply` would return, without applying it. */
   preview(input: unknown, actor: Actor): ChangeResult {
-    const applied = applyChangeSet({ model: this.model, layout: this.layout }, parseChangeSet(input), actor, this.now(), this.sealer);
+    const changes = parseChangeSet(input);
+    this.checkRevision(changes);
+    const applied = applyChangeSet({ model: this.model, layout: this.layout }, changes, actor, this.now(), this.code);
     const { created, updated, removed, warnings } = applied;
     return { revision: this.revision + (applied.modelChanged ? 1 : 0), created, updated, removed, warnings };
+  }
+
+  private checkRevision(changes: ChangeSet): void {
+    if (changes.expectedRevision === undefined || changes.expectedRevision === this.revision || isLayoutOnly(changes)) return;
+    throw new RevisionConflict(changes.expectedRevision, this.revision);
   }
 
   canUndo(): boolean {
@@ -151,6 +159,18 @@ export class Store {
     const full = { ...change, snapshot: this.snapshot() };
     for (const listener of this.listeners) listener(full);
   }
+}
+
+/** A change set built from another revision than the current one. Nothing was applied. */
+export class RevisionConflict extends Error {
+  constructor(expected: number, current: number) {
+    super(`The model changed since revision ${expected} (it is at revision ${current} now). Nothing was applied; read it again and retry.`);
+    this.name = 'RevisionConflict';
+  }
+}
+
+function isLayoutOnly(changes: ChangeSet): boolean {
+  return !changes.model && !changes.elements?.length && !changes.relations?.length && !changes.flows?.length && !changes.remove;
 }
 
 export class ModelIntegrityError extends Error {

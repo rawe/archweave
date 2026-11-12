@@ -70,6 +70,29 @@ describe('data focus layout', () => {
     expect(invoice.h).toBeGreaterThan(layout.cards.find((c) => c.id === 'invoice')!.h);
   });
 
+  it('draws both relations between structures that reference each other, as two separate threads', () => {
+    const mutual = Model.parse({
+      elements: [
+        { id: 'a', kind: 'data', name: 'A' },
+        { id: 'b', kind: 'data', name: 'B' },
+      ],
+      relations: [
+        { id: 'a-references-b', from: 'a', to: 'b', kind: 'references' },
+        { id: 'b-references-a', from: 'b', to: 'a', kind: 'references' },
+      ],
+    });
+    const focus = layoutFocus(mutual, 'a', { measure })!;
+    expect(focus.cards.map((c) => [c.id, c.role])).toEqual([['a', 'center'], ['b', 'right']]);
+    const out = focus.threads.find((t) => t.id === 'rel:a-references-b')!;
+    const back = focus.threads.find((t) => t.id === 'rel:b-references-a')!;
+    expect(out).toMatchObject({ neighbor: 'b', toward: 'right' });
+    expect(back).toMatchObject({ neighbor: 'b', toward: 'left' });
+    expect(back.from.x).toBe(focus.cards[1]!.x);
+    expect(back.to.x).toBe(CENTER_W);
+    // Not drawn on top of each other.
+    expect(back.from.y).not.toBe(out.to.y);
+  });
+
   it('gives long types more lines instead of cutting them', () => {
     const long = { name: 'parts', type: '{key, name, description, includes: {entityTypes[], relationTypes[]}, indexInclusions?, savedQueries[]}[]' };
     expect(rowHeight({ name: 'id', type: 'uuid' }, CENTER_W, measure)).toBe(ROW);

@@ -138,6 +138,59 @@ export class ModelView {
     return [...out.values()];
   }
 
+  /** The data perspective with nothing selected: every structure as a card, grouped by owner. */
+  dataCatalog(): Record<string, unknown> {
+    const data = this.model.elements.filter((e) => e.kind === 'data');
+    const groups = new Map<string, number>();
+    for (const d of data) {
+      const owner = d.parentId && this.byId.has(d.parentId) ? d.parentId : '';
+      groups.set(owner, (groups.get(owner) ?? 0) + 1);
+    }
+    return {
+      state: 'catalog',
+      shows: 'Every data structure as a compact card (name, format, field count), grouped by owner. Nothing is in focus.',
+      structures: data.length,
+      groups: [...groups].map(([owner, count]) => (owner ? { owner: { id: owner, name: this.byId.get(owner)!.name }, count } : { owner: null, count })),
+    };
+  }
+
+  /**
+   * The data perspective focused on one structure, as drawn: the structure with all its fields, the structures it
+   * references (field refs, `references` relations) and those referencing it, and the elements that use it, by verb.
+   */
+  dataFocus(id: string): Record<string, unknown> {
+    const center = this.byId.get(id)!;
+    const isData = (other: string) => other !== id && this.byId.get(other)?.kind === 'data';
+    const neighbors = () => new Map<string, string[]>();
+    const references = neighbors();
+    const referencedBy = neighbors();
+    const add = (map: Map<string, string[]>, other: string, via: string) => map.set(other, [...(map.get(other) ?? []), via]);
+    for (const f of center.fields) if (f.ref && isData(f.ref)) add(references, f.ref, `field ${f.name}`);
+    for (const e of this.model.elements) if (isData(e.id)) for (const f of e.fields) if (f.ref === id) add(referencedBy, e.id, `field ${f.name}`);
+    const users = new Map<string, Record<string, unknown>[]>();
+    const use = (verb: string, entry: Record<string, unknown>) => users.set(verb, [...(users.get(verb) ?? []), entry]);
+    for (const r of this.model.relations) {
+      if (r.from === id && isData(r.to)) add(references, r.to, `relation ${r.id}`);
+      else if (r.to === id && isData(r.from)) add(referencedBy, r.from, `relation ${r.id}`);
+      else {
+        const other = r.from === id ? r.to : r.to === id ? r.from : undefined;
+        const element = other ? this.byId.get(other) : undefined;
+        if (element && element.kind !== 'data') use(r.kind, { id: element.id, name: element.name, kind: element.kind, relationId: r.id });
+      }
+      if (r.dataIds.includes(id) && this.byId.get(r.from)?.kind !== 'data' && this.byId.get(r.to)?.kind !== 'data') {
+        use('carried', { from: this.ref(r.from), to: this.ref(r.to), relationId: r.id });
+      }
+    }
+    const listed = (map: Map<string, string[]>) => [...map].map(([other, via]) => ({ id: other, name: this.byId.get(other)!.name, via }));
+    return pruned({
+      state: 'focus',
+      structure: pruned({ ...compact(center), format: center.format, fields: center.fields }),
+      references: listed(references),
+      referencedBy: listed(referencedBy),
+      users: [...users].map(([verb, elements]) => ({ verb, elements })),
+    });
+  }
+
   fieldRefsTo(dataId: string): { id: string; name: string; field: string }[] {
     return this.model.elements.flatMap((e) => e.fields.filter((f) => f.ref === dataId).map((f) => ({ id: e.id, name: e.name, field: f.name })));
   }
@@ -278,11 +331,14 @@ export class ModelView {
       .map((h) => ({ ...compact(h.element), matchedIn: [...h.matched] }));
   }
 
-  /** Elements, relations and flow steps whose code refs touch any of these normalized repo-relative files or directories. */
-  findByCode(paths: string[]): FoundByCode {
+  /**
+   * Elements, relations and flow steps whose code refs touch any of these normalized repo-relative files or directories.
+   * `storedForm` maps a stored ref path to its repo-relative form ("" or "." for the root).
+   */
+  findByCode(paths: string[], storedForm: (path: string) => string = normalizeCodePath): FoundByCode {
     const touches = (ref: CodeRef) => {
-      const stored = normalizeCodePath(ref.path);
-      if (stored === '.') return paths;
+      const stored = storedForm(ref.path);
+      if (stored === '.' || stored === '') return paths;
       return paths.filter((p) => !p || stored === p || stored.startsWith(`${p}/`) || p.startsWith(`${stored}/`));
     };
     const matchedPaths = new Set<string>();

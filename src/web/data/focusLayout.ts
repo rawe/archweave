@@ -20,6 +20,8 @@ export const PAD = 6;
 const LINE = 16;
 const STACK = 12;
 const USERS_GAP = 44;
+/** How far below a header line a thread pointing back runs, so two opposite relations do not overlap. */
+const BACK_OFFSET = 10;
 
 const FONT = {
   centerName: `600 15px ${SANS}`,
@@ -259,6 +261,17 @@ export function layoutFocus(model: Model, focusId: string, options: FocusOptions
       threads.push({ id: `out:${i}`, neighbor: card.id, centerRow: i, from: { x: CENTER_W, y: rowMid(centerCard, i) }, to: head, toward: 'right', planned: center.status === 'planned' });
     const rel = outRelations.get(card.id);
     if (!rows.length && rel) threads.push({ id: `rel:${rel.id}`, neighbor: card.id, from: centerIn.right, to: head, toward: 'right', planned: rel.status === 'planned' });
+    // A `references` relation back from a structure on the right: header to header, just below the outgoing thread.
+    const back = inRelations.get(card.id);
+    if (!inRows.get(card.id)?.length && back)
+      threads.push({
+        id: `rel:${back.id}`,
+        neighbor: card.id,
+        from: { x: card.x, y: headY(card) + BACK_OFFSET },
+        to: { x: CENTER_W, y: centerIn.right.y + BACK_OFFSET },
+        toward: 'left',
+        planned: back.status === 'planned',
+      });
     for (const index of inRows.get(card.id) ?? [])
       threads.push({
         id: `back:${card.id}:${index}`,

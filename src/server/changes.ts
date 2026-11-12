@@ -20,7 +20,9 @@ import {
   slugify,
   uniqueId,
 } from '../shared/model.ts';
-import type { CodeSealer } from './stale.ts';
+import { integrityProblems } from './integrity.ts';
+import { PathError } from './repo.ts';
+import type { CodeAccess } from './stale.ts';
 import { didYouMean } from './suggest.ts';
 
 export class ChangeError extends Error {
@@ -57,10 +59,11 @@ export function parseChangeSet(input: unknown): ChangeSet {
 
 /**
  * Applies a change set to copies of model and layout. Throws ChangeError, leaving the inputs untouched.
- * With a `sealer`, code refs written by the change set are sealed against the repository (see `CodeRef.digest`).
+ * With `code`, code ref paths are normalized against the repository and refs written by the change set
+ * are sealed (see `CodeRef.digest`).
  */
-export function applyChangeSet(base: { model: Model; layout: Layout }, changes: ChangeSet, actor: Actor, now: Date, sealer?: CodeSealer): Applied {
-  return new Draft(base, actor, now, sealer).run(changes);
+export function applyChangeSet(base: { model: Model; layout: Layout }, changes: ChangeSet, actor: Actor, now: Date, code?: CodeAccess): Applied {
+  return new Draft(base, actor, now, code).run(changes);
 }
 
 /** An id the caller wrote into this change set that must name a data structure. */
@@ -97,7 +100,7 @@ class Draft {
     base: { model: Model; layout: Layout },
     private actor: Actor,
     private now: Date,
-    private sealer?: CodeSealer,
+    private code?: CodeAccess,
   ) {
     this.model = structuredClone(base.model);
     this.layout = structuredClone(base.layout);
@@ -125,6 +128,9 @@ class Draft {
     this.model.elements = [...this.elements.values()];
     this.model.relations = [...this.relations.values()];
     this.model.flows = [...this.flows.values()];
+    // The same check the store runs on load: no change set may persist a model that would not load again.
+    const problems = integrityProblems(this.model);
+    if (problems.length) throw new ChangeError(`Nothing was applied. The change set would leave the model inconsistent:\n${problems.slice(0, 10).map((p) => `- ${p}`).join('\n')}`, problems);
     const lists = (s: Record<Collection, Set<string>>): IdLists => ({
       elements: [...s.elements],
       relations: [...s.relations],
@@ -281,20 +287,17 @@ class Draft {
   }
 
   /**
-   * Normalizes paths, then applies `removeCodeRefs` and `addCodeRefs` (de-duplicated).
-   * Seals: a sent ref that matches a stored one in location and digest (as when a client sends back the list
-   * it read, or a ref from before sealing without a digest) is unchanged and keeps its seal, so resending a list
-   * never accepts drift by accident. Every other ref, and any ref sent in `addCodeRefs`, is sealed afresh;
-   * a sent digest is never stored.
+   * Writes a code ref list: normalizes paths, then applies `removeCodeRefs` and `addCodeRefs` (de-duplicated).
+   * Seals, per ref written:
+   * - same location and digest as a ref stored before (`previous`) → kept as is, no file read (resending a list never accepts drift);
+   * - a digest otherwise → a claim that the code at the new location is the sealed text: verified against the file, an error when it is not;
+   * - no digest → sealed afresh against the current file. A ref re-sent in `addCodeRefs` without a digest is always sealed afresh.
    */
   private applyCodeRefs(where: string, previous: CodeRef[], refs: CodeRef[], patch: Pick<ElementPatch, 'addCodeRefs' | 'removeCodeRefs'>): CodeRef[] {
-    const unchanged = new Set(previous.map((ref) => sealKey(normalizeRef(ref))));
-    let result = refs.map((ref) => {
-      const normalized = normalizeRef(ref);
-      return unchanged.has(sealKey(normalized)) ? normalized : this.sealed(where, normalized);
-    });
+    const stored = new Set(previous.flatMap((ref) => [sealKey(ref), sealKey({ ...ref, path: this.storedPath(ref.path) ?? ref.path })]));
+    let result = refs.map((ref) => this.writeRef(where, stored, ref, true));
     for (const selector of patch.removeCodeRefs ?? []) {
-      const path = normalizeCodePath(selector.path);
+      const path = this.storedPath(selector.path) ?? normalizeCodePath(selector.path);
       const matches = (r: CodeRef) =>
         r.path === path && (selector.symbol === undefined || r.symbol === selector.symbol) && (selector.startLine === undefined || r.startLine === selector.startLine);
       const kept = result.filter((r) => !matches(r));
@@ -307,21 +310,68 @@ class Draft {
       result = kept;
     }
     for (const ref of patch.addCodeRefs ?? []) {
-      const normalized = normalizeRef(ref);
-      const at = result.findIndex((r) => sameRef(r, normalized));
-      if (at < 0) result.push(this.sealed(where, normalized));
-      else result[at] = this.sealed(where, { ...result[at]!, ...(normalized.note !== undefined ? { note: normalized.note } : {}) });
+      const sent = this.normalizeRef(where, ref);
+      if (!sent) continue;
+      const at = result.findIndex((r) => sameRef(r, sent));
+      if (at < 0) {
+        result.push(this.writeRef(where, stored, sent, false));
+        continue;
+      }
+      const { digest: _old, ...current } = result[at]!;
+      const merged: CodeRef = { ...current, ...(sent.note !== undefined ? { note: sent.note } : {}), ...(sent.digest !== undefined ? { digest: sent.digest } : {}) };
+      result[at] = this.writeRef(where, stored, merged, false);
     }
     return result;
   }
 
-  /** The ref with a fresh seal (when the repository is known and the range is readable), warning when it is stale already. */
+  /** One ref as stored, per the seal rules of `applyCodeRefs`. `keepUnsealed`: a ref without digest matching an unsealed stored one stays as is. */
+  private writeRef(where: string, stored: Set<string>, ref: CodeRef, keepUnsealed: boolean): CodeRef {
+    const keepable = keepUnsealed || ref.digest !== undefined;
+    // A stored ref passing through untouched keeps its path even when it cannot be normalized any more.
+    if (keepable && stored.has(sealKey(ref))) return { ...ref, path: this.storedPath(ref.path) ?? ref.path };
+    const normalized = this.normalizeRef(where, ref);
+    if (!normalized) return ref;
+    if (keepable && stored.has(sealKey(normalized))) return normalized;
+    return this.sealed(where, normalized);
+  }
+
+  /**
+   * The ref with its seal: a sent digest must match the text at the ref's range (a verified move); without one
+   * the ref is sealed afresh. Warns when the ref is stale already.
+   */
   private sealed(where: string, ref: CodeRef): CodeRef {
-    const { digest: _ignored, ...bare } = ref;
-    if (!this.sealer) return bare;
-    const seal = this.sealer(bare);
+    const { digest: claimed, ...bare } = ref;
+    if (!this.code) return bare;
+    const seal = this.code.seal(bare);
+    if (claimed !== undefined && seal.digest !== claimed) {
+      this.errors.push(
+        `${where}: the code at ${describeRef(bare)} is not the text this link was sealed to. Send the ref without \`digest\` to seal it to the current text.`,
+      );
+      return ref;
+    }
     if (seal.reason) this.warnings.push(`${where}: code ref ${describeRef(bare)}: ${staleWarning(bare, seal.reason)}`);
     return seal.digest ? { ...bare, digest: seal.digest } : bare;
+  }
+
+  /** The stored form of a path, repository-aware when the repository is known; undefined when it is outside the repository. */
+  private storedPath(path: string): string | undefined {
+    if (!this.code) return normalizeCodePath(path);
+    try {
+      return this.code.normalizePath(path);
+    } catch (error) {
+      if (error instanceof PathError) return undefined;
+      throw error;
+    }
+  }
+
+  /** The ref with its stored path, or undefined (and an error) when the path is outside the repository. */
+  private normalizeRef(where: string, ref: CodeRef): CodeRef | undefined {
+    const path = this.storedPath(ref.path);
+    if (path === undefined) {
+      this.errors.push(`${where}: code ref path \`${ref.path}\` is outside the repository. Use a path relative to the repository root.`);
+      return undefined;
+    }
+    return { ...ref, path };
   }
 
   /** Applies `removeFields`, then `setFields` (upsert by name). */
@@ -436,12 +486,14 @@ class Draft {
       }
       const { index } = update;
       const changes = withoutKeys(definedOnly(update), STEP_HELPERS);
-      const merged = { ...slots[index]!, ...changes } as FlowStep;
-      if (changes.dataIds) supplied.add(merged);
-      if (update.addCodeRefs || update.removeCodeRefs) {
+      const before = slots[index]!;
+      const merged = { ...before, ...changes } as FlowStep;
+      // Provenance follows the step through merges: later updates to the same index keep what earlier ones supplied.
+      if (changes.dataIds || supplied.has(before)) supplied.add(merged);
+      if (changes.codeRefs || update.addCodeRefs || update.removeCodeRefs) {
         merged.codeRefs = this.applyCodeRefs(`${where} step ${index + 1}`, previousRefs, merged.codeRefs ?? [], update);
         settled.add(merged);
-      }
+      } else if (settled.has(before)) settled.add(merged);
       slots[index] = merged;
     }
     for (const index of removed) if (inRange('removeSteps', index, count - 1)) slots[index] = undefined;
@@ -635,10 +687,6 @@ function dropUndefined<T extends object>(value: T): T {
 
 function withoutKeys<T extends object>(value: T, keys: ReadonlySet<string>): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.has(key))) as Partial<T>;
-}
-
-function normalizeRef(ref: CodeRef): CodeRef {
-  return { ...ref, path: normalizeCodePath(ref.path) };
 }
 
 function sameRef(a: CodeRef, b: CodeRef): boolean {

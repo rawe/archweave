@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ArrowRight, Plus, Trash, X } from 'lucide-react';
-import { RELATION_KINDS, type Relation, type RelationKind, type RelationPatch } from '../../shared/model.ts';
+import { RELATION_KINDS, type Relation, type RelationKind } from '../../shared/model.ts';
+import type { PlainRelationPatch } from '../state/apply.ts';
 import { Picker } from '../chrome/Picker.tsx';
 import { Tip } from '../chrome/primitives.tsx';
 import { deleteSelection } from '../state/actions.ts';
@@ -42,7 +43,7 @@ function SingleRelation({ rel, index }: { rel: Relation; index: ModelIndex }) {
   const from = index.byId.get(rel.from);
   const to = index.byId.get(rel.to);
   const name = `${from?.name ?? rel.from} → ${to?.name ?? rel.to}`;
-  const patch = (p: Omit<RelationPatch, 'id'>, summary = `Edited ${name}`) => void commit({ summary, relations: [{ id: rel.id, ...p }] });
+  const patch = (p: Omit<PlainRelationPatch, 'id'>, summary = `Edited ${name}`) => void commit({ summary, relations: [{ id: rel.id, ...p }] });
   const [picking, setPicking] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
 

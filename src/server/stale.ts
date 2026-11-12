@@ -2,15 +2,15 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import type { CodeRef, LineRange, Model, StaleLink, StaleReason } from '../shared/model.ts';
-import { countLines, type FileInfo, MAX_FILE_BYTES, PathError, type Repo } from './repo.ts';
+import { countLines, type FileInfo, isBinary, MAX_FILE_BYTES, PathError, type Repo } from './repo.ts';
 
 interface FileFacts {
   mtimeMs: number;
   size?: number;
   exists: boolean;
   isFile: boolean;
-  /** Larger than MAX_FILE_BYTES: only existence is checked. */
-  tooLarge: boolean;
+  /** Larger than MAX_FILE_BYTES, or binary: only existence is checked, and refs to it are never sealed. */
+  opaque: boolean;
   lineCount: number;
   content: string;
   /** Normalized lines (see `normalizeLine`), computed on first use. */
@@ -43,7 +43,13 @@ export interface Seal {
   reason?: StaleReason;
 }
 
-export type CodeSealer = (ref: CodeRef) => Seal;
+/** What the store needs from the repository to write code refs. */
+export interface CodeAccess {
+  /** The seal of a ref about to be written, and why it is stale already, if it is. */
+  seal(ref: CodeRef): Seal;
+  /** The stored form of a code ref path: repo-relative ("." for the root). Throws PathError for paths outside the repository. */
+  normalizePath(path: string): string;
+}
 
 /** Every code ref in the model with the element, relation or flow step that holds it. */
 export function allCodeRefs(model: Model): OwnedRef[] {
@@ -96,15 +102,18 @@ export class StaleLinks {
   seal(ref: CodeRef): Seal {
     const file = this.factsSync(ref.path);
     const reason = plainReason(ref, file);
-    if (!ref.startLine || !file.isFile || file.tooLarge) return reason ? { reason } : {};
+    if (!ref.startLine || !file.isFile || file.opaque) return reason ? { reason } : {};
     const [from, to] = rangeOf(ref);
     const digest = to <= file.lineCount ? digestLines(linesOf(file), from, to) : undefined;
     return { ...(digest ? { digest } : {}), ...(reason ? { reason } : {}) };
   }
 
-  /** `seal` as a function, for the store. */
-  get sealer(): CodeSealer {
-    return (ref) => this.seal(ref);
+  /** Sealing and path normalization against this repository, for the store. */
+  get access(): CodeAccess {
+    return {
+      seal: (ref) => this.seal(ref),
+      normalizePath: (path) => this.repo.normalize(path) || '.',
+    };
   }
 
   private async facts(refPath: string): Promise<FileFacts> {
@@ -115,7 +124,7 @@ export class StaleLinks {
       if (error instanceof PathError) return missingFile();
       throw error;
     }
-    return this.known(info) ?? this.remember(info!, await fsp.readFile(info!.absolute, 'utf8'));
+    return this.known(info) ?? this.remember(info!, await fsp.readFile(info!.absolute));
   }
 
   private factsSync(refPath: string): FileFacts {
@@ -126,32 +135,38 @@ export class StaleLinks {
       if (error instanceof PathError) return missingFile();
       throw error;
     }
-    return this.known(info) ?? this.remember(info!, fs.readFileSync(info!.absolute, 'utf8'));
+    return this.known(info) ?? this.remember(info!, fs.readFileSync(info!.absolute));
   }
 
   /** Facts that need no read: missing, not a file, too large, or cached for this mtime. */
   private known(info: FileInfo | undefined): FileFacts | undefined {
     if (!info) return missingFile();
     if (!info.isFile) return { ...missingFile(), exists: true, mtimeMs: info.mtimeMs };
-    if (info.size > MAX_FILE_BYTES) return { ...missingFile(), exists: true, isFile: true, tooLarge: true, mtimeMs: info.mtimeMs };
+    if (info.size > MAX_FILE_BYTES) return { ...missingFile(), exists: true, isFile: true, opaque: true, mtimeMs: info.mtimeMs };
     const cached = this.cache.get(info.absolute);
     return cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size ? cached : undefined;
   }
 
-  private remember(info: FileInfo, content: string): FileFacts {
-    const fresh: FileFacts = { mtimeMs: info.mtimeMs, size: info.size, exists: true, isFile: true, tooLarge: false, lineCount: countLines(content), content };
+  /** Binary files are classified as the code file endpoint does: existence only. */
+  private remember(info: FileInfo, bytes: Buffer): FileFacts {
+    const fresh: FileFacts = isBinary(bytes)
+      ? { ...missingFile(), exists: true, isFile: true, opaque: true, mtimeMs: info.mtimeMs, size: info.size }
+      : (() => {
+          const content = bytes.toString('utf8');
+          return { mtimeMs: info.mtimeMs, size: info.size, exists: true, isFile: true, opaque: false, lineCount: countLines(content), content };
+        })();
     this.cache.set(info.absolute, fresh);
     return fresh;
   }
 }
 
 function missingFile(): FileFacts {
-  return { mtimeMs: 0, exists: false, isFile: false, tooLarge: false, lineCount: 0, content: '' };
+  return { mtimeMs: 0, exists: false, isFile: false, opaque: false, lineCount: 0, content: '' };
 }
 
 /** The status of one ref against one file. Sealed refs are checked by their text; the others by lines and symbol. */
 function verdict(ref: CodeRef, file: FileFacts): Verdict {
-  if (!ref.digest || !ref.startLine || !file.isFile || file.tooLarge) {
+  if (!ref.digest || !ref.startLine || !file.isFile || file.opaque) {
     const reason = plainReason(ref, file);
     return reason ? { reason } : {};
   }
@@ -177,7 +192,7 @@ function verdict(ref: CodeRef, file: FileFacts): Verdict {
 /** The checks for refs without a seal (and for sealed refs whose text still matches). */
 function plainReason(ref: CodeRef, file: FileFacts): StaleReason | undefined {
   if (!file.exists) return 'missing-file';
-  if (!file.isFile || file.tooLarge) return undefined;
+  if (!file.isFile || file.opaque) return undefined;
   if ((ref.startLine && ref.startLine > file.lineCount) || (ref.endLine && ref.endLine > file.lineCount)) return 'line-out-of-range';
   if (!ref.symbol) return undefined;
   const lines = symbolLines(file.content, ref.symbol);

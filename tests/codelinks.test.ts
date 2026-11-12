@@ -37,7 +37,7 @@ function lines(content: string, from: number, to: number): string {
 function setup(content = ROUTES) {
   const repoDir = tempRepo({ [FILE]: content });
   const stale = new StaleLinks(new Repo(repoDir));
-  const store = new Store({ sealer: stale.sealer });
+  const store = new Store({ code: stale.access });
   const write = (next: string) => {
     fs.writeFileSync(path.join(repoDir, FILE), next);
     const future = new Date(Date.now() + Math.random() * 1e6 + 1000);
@@ -85,7 +85,7 @@ function seedShop(store: Store) {
 }
 
 describe('sealing code refs', () => {
-  it('stores a short digest of the linked lines when a ref with a line range is written, ignoring a sent one', () => {
+  it('stores a short digest of the linked lines when a ref with a line range is written', () => {
     const { store, refsOf } = setup();
     const result = store.apply(
       {
@@ -95,7 +95,7 @@ describe('sealing code refs', () => {
             kind: 'component',
             name: 'Orders',
             codeRefs: [
-              { path: FILE, symbol: 'listOrders', startLine: 3, endLine: 5, digest: 'forged' },
+              { path: FILE, symbol: 'listOrders', startLine: 3, endLine: 5 },
               { path: FILE, symbol: 'listOrders' },
               { path: './src/routes.ts', startLine: 12 },
             ],
@@ -168,27 +168,59 @@ describe('sealing code refs', () => {
     ]);
   });
 
-  it('seals afresh a ref written without its stored digest, or with a forged one', () => {
+  it('seals afresh a ref written without its digest, and rejects a digest the text does not match', () => {
     const { store, write, refsOf } = setup();
     seedShop(store);
     const edited = ROUTES.replace('return db.orders.all();', 'return [];');
     write(edited);
-    const fresh = digestText(lines(edited, 3, 5));
-    store.apply({ elements: [{ id: 'orders', codeRefs: refsOf('orders').map((r, i) => (i === 0 ? { ...r, digest: 'forged' } : r)) }] }, 'agent');
-    expect(refsOf('orders')[0]!.digest).toBe(fresh);
+    const before = refsOf('orders');
+    expect(() => store.apply({ elements: [{ id: 'orders', codeRefs: before.map((r, i) => (i === 0 ? { ...r, digest: 'forged' } : r)) }] }, 'agent')).toThrow(
+      /the code at `src\/routes\.ts` \(`listOrders`\) lines 3–5 is not the text this link was sealed to\. Send the ref without `digest` to seal it to the current text/,
+    );
+    expect(refsOf('orders')).toEqual(before);
+    const { digest: _seal, ...bare } = before[0]!;
+    store.apply({ elements: [{ id: 'orders', codeRefs: before.map((r, i) => (i === 0 ? bare : r)) }] }, 'agent');
+    expect(refsOf('orders')[0]!.digest).toBe(digestText(lines(edited, 3, 5)));
     store.apply({ elements: [{ id: 'db', codeRefs: [{ path: FILE, startLine: 4 }] }] }, 'agent');
     expect(refsOf('db')[0]!.digest).toBe(digestText('return [];'));
   });
 
-  it('does not hand a ref the seal of another ref that used to sit on its new line', () => {
+  it('keeps a digest sent with a new location only when the text there is the sealed text', () => {
     const { store, write, refsOf } = setup();
     seedShop(store);
     const [, , get, post] = refsOf('orders');
     write(ROUTES.replace("app.get('/orders', listOrders);", "app.get('/orders', listOrders);\napp.get('/orders/:id', getOrder);"));
-    // GET moves onto line 13, where POST was; POST moves on to 14.
-    store.apply({ elements: [{ id: 'orders', codeRefs: refsOf('orders').map((r) => (r === get ? { ...r, startLine: 13 } : r === post ? { ...r, startLine: 14 } : r)) }] }, 'agent');
+    // POST moved on to line 14: its digest there is a verified move. GET claims line 13, where other text sits now.
+    const moved = (getAt: CodeRef) => refsOf('orders').map((r) => (r === get ? getAt : r === post ? { ...r, startLine: 14 } : r));
+    expect(() => store.apply({ elements: [{ id: 'orders', codeRefs: moved({ ...get!, startLine: 13 }) }] }, 'agent')).toThrow(/lines 13 is not the text this link was sealed to/);
+    const { digest: _seal, ...getBare } = get!;
+    const result = store.apply({ elements: [{ id: 'orders', codeRefs: moved({ ...getBare, startLine: 13 }) }] }, 'agent');
+    expect(result.warnings).toEqual([]);
     expect(refsOf('orders')[2]).toMatchObject({ startLine: 13, digest: digestText("app.get('/orders/:id', getOrder);") });
-    expect(refsOf('orders')[3]).toMatchObject({ startLine: 14, digest: post!.digest });
+    expect(refsOf('orders')[3]).toEqual({ ...post, startLine: 14 });
+  });
+
+  it('stores code ref paths repository-relative and rejects paths outside the repository', () => {
+    const { store, repoDir, refsOf } = setup();
+    store.apply({ elements: [{ id: 'x', kind: 'module', name: 'X', codeRefs: [{ path: path.join(repoDir, FILE), startLine: 12 }] }] }, 'agent');
+    expect(refsOf('x')).toEqual([{ path: FILE, startLine: 12, digest: digestText(lines(ROUTES, 12, 12)) }]);
+    for (const outside of ['/etc/hosts', '../elsewhere/x.ts', 'src/../../x.ts']) {
+      expect(() => store.apply({ elements: [{ id: 'x', addCodeRefs: [{ path: outside }] }] }, 'agent')).toThrow(/is outside the repository\. Use a path relative to the repository root/);
+    }
+  });
+
+  it('checks binary files, oversized files and directories for existence only, and never seals refs to them', async () => {
+    const { store, repoDir, stale, refsOf } = setup();
+    fs.writeFileSync(path.join(repoDir, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x0a, 0x41, 0x0a]));
+    fs.writeFileSync(path.join(repoDir, 'big.txt'), 'x\n'.repeat(600 * 1024));
+    const result = store.apply(
+      { elements: [{ id: 'x', kind: 'module', name: 'X', codeRefs: [{ path: 'logo.png', startLine: 1, endLine: 2 }, { path: 'big.txt', startLine: 1 }, { path: 'src', startLine: 1 }] }] },
+      'agent',
+    );
+    expect(result.warnings).toEqual([]);
+    expect(refsOf('x').map((r) => r.digest)).toEqual([undefined, undefined, undefined]);
+    expect(await stale.check(store.snapshot().model)).toEqual([]);
+    expect(await new Repo(repoDir).readFile('logo.png')).toEqual({ path: 'logo.png', exists: true, binary: true });
   });
 
   it('re-seals a flow step ref sent again through updateSteps', async () => {
@@ -208,7 +240,7 @@ describe('sealing code refs', () => {
   it('does not seal refs from before sealing when a list is resent', () => {
     const repoDir = tempRepo({ [FILE]: ROUTES });
     const stale = new StaleLinks(new Repo(repoDir));
-    const store = new Store({ sealer: stale.sealer, model: { elements: [{ id: 'orders', kind: 'component', name: 'Orders', codeRefs: [{ path: FILE, startLine: 3, endLine: 5 }] }] } });
+    const store = new Store({ code: stale.access, model: { elements: [{ id: 'orders', kind: 'component', name: 'Orders', codeRefs: [{ path: FILE, startLine: 3, endLine: 5 }] }] } });
     store.apply({ elements: [{ id: 'orders', codeRefs: [{ path: FILE, startLine: 3, endLine: 5, note: 'n' }] }] }, 'human');
     expect(store.snapshot().model.elements[0]!.codeRefs).toEqual([{ path: FILE, startLine: 3, endLine: 5, note: 'n' }]);
   });
@@ -325,7 +357,6 @@ describe('repairCodeLinks', () => {
     write([...INSERTED, ROUTES.replace("app.post('/orders', createOrder);", "app.post('/orders', auth, createOrder);")].join('\n'));
     const result = await repairCodeLinks(store, stale, { actor: 'agent' });
     expect(result.summary).toBe('Re-anchored 8 code links in src/routes.ts');
-    expect(result.sealed).toBe(0);
     expect(result.repaired).toContainEqual({ ownerType: 'flow', ownerId: 'place-order', step: 2, path: FILE, symbol: 'createOrder', from: { startLine: 7, endLine: 10 }, to: { startLine: 12, endLine: 15 } });
     expect(result.stale.map((l) => [l.ownerType, l.step ?? null, l.ref.startLine, l.reason])).toEqual([
       ['element', null, 13, 'changed'],
@@ -343,30 +374,49 @@ describe('repairCodeLinks', () => {
     expect((await stale.check(store.snapshot().model)).map((l) => l.reason)).toEqual(['changed', 'changed']);
 
     const again = await repairCodeLinks(store, stale, { actor: 'agent' });
-    expect(again).toMatchObject({ repaired: [], sealed: 0, revision: result.revision });
+    expect(again).toMatchObject({ repaired: [], revision: result.revision });
     expect(again.summary).toBeUndefined();
     expect(store.undo()).toBeDefined();
     expect(refsOf('orders')[0]!.startLine).toBe(3);
   });
 
-  it('seals refs from before sealing that pass every check, and only those', async () => {
-    const repoDir = tempRepo({ [FILE]: ROUTES });
-    const stale = new StaleLinks(new Repo(repoDir));
-    const refs: CodeRef[] = [
-      { path: FILE, symbol: 'listOrders', startLine: 3, endLine: 5 },
-      { path: FILE, startLine: 12 },
-      { path: FILE, symbol: 'createOrder', startLine: 1, endLine: 2 }, // symbol outside range
-      { path: FILE, startLine: 40 }, // past the end
-      { path: FILE }, // no range: nothing to seal
-    ];
-    const store = new Store({ sealer: stale.sealer, model: { elements: [{ id: 'x', kind: 'module', name: 'X', codeRefs: refs }] } });
-    expect(await repairCodeLinks(store, stale, { actor: 'agent' })).toMatchObject({ sealed: 0, repaired: [] });
-    expect(store.snapshot().model.elements[0]!.codeRefs.some((r) => r.digest)).toBe(false);
-    const result = await repairCodeLinks(store, stale, { actor: 'agent', seal: true });
-    expect(result).toMatchObject({ summary: 'Sealed 2 code links', sealed: 2, repaired: [] });
-    expect(result.stale.map((l) => l.reason)).toEqual(['symbol-outside-range', 'line-out-of-range']);
-    expect(store.snapshot().model.elements[0]!.codeRefs.map((r) => !!r.digest)).toEqual([true, true, false, false, false]);
-    expect((await repairCodeLinks(store, stale, { actor: 'agent', seal: true })).sealed).toBe(0);
+  it('verifies each new range when applying, and checks again once when the file changed after the check', async () => {
+    const { store, write, stale, refsOf } = setup();
+    seedShop(store);
+    write([...INSERTED, ROUTES].join('\n'));
+    // Between the first check and applying it, two more lines go on top: the first suggestions are stale.
+    const inspect = stale.inspect.bind(stale);
+    let checks = 0;
+    stale.inspect = (async (refs: any) => {
+      const result = await inspect(refs);
+      if (++checks === 1) write(['// x', '// y', ...INSERTED, ROUTES].join('\n'));
+      return result;
+    }) as typeof stale.inspect;
+    const result = await repairCodeLinks(store, stale, { actor: 'agent' });
+    expect(checks).toBe(2);
+    expect(refsOf('orders').map((r) => r.startLine)).toEqual([10, 14, 19, 20, 8]);
+    expect(result.repaired).toHaveLength(10);
+    expect(await stale.check(store.snapshot().model)).toEqual([]);
+  });
+
+  it('repairs nothing and reports the moved refs when the file keeps changing under it', async () => {
+    const { store, write, stale, refsOf } = setup();
+    seedShop(store);
+    const before = store.snapshot();
+    let top: string[] = [...INSERTED];
+    write([...top, ROUTES].join('\n'));
+    const inspect = stale.inspect.bind(stale);
+    stale.inspect = (async (refs: any) => {
+      const result = await inspect(refs);
+      top = ['// more', ...top];
+      write([...top, ROUTES].join('\n'));
+      return result;
+    }) as typeof stale.inspect;
+    const result = await repairCodeLinks(store, stale, { actor: 'agent' });
+    expect(result.repaired).toEqual([]);
+    expect(result.stale.filter((l) => l.reason === 'moved')).toHaveLength(10);
+    expect(store.snapshot().model).toBe(before.model);
+    expect(refsOf('orders')[0]!.startLine).toBe(3);
   });
 
   it('stays within a scope', async () => {

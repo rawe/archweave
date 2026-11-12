@@ -127,7 +127,7 @@ export class Repo {
     } finally {
       await handle.close();
     }
-    if (buffer.subarray(0, 8000).includes(0)) return { path: normalized, exists: true, binary: true };
+    if (isBinary(buffer)) return { path: normalized, exists: true, binary: true };
     const truncated = info.size > MAX_FILE_BYTES;
     let content = buffer.toString('utf8');
     if (truncated) content = content.slice(0, content.lastIndexOf('\n') + 1);
@@ -200,6 +200,11 @@ export class Repo {
     await visit('');
     return out.sort();
   }
+}
+
+/** A file is binary when its first 8000 bytes hold a NUL byte, as Git decides. */
+export function isBinary(bytes: Buffer): boolean {
+  return bytes.subarray(0, 8000).includes(0);
 }
 
 export function countLines(content: string): number {

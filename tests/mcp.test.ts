@@ -46,8 +46,8 @@ afterEach(async () => {
   await Promise.all(clients.splice(0).map((c) => c.close()));
 });
 
-async function harness(options: { stale?: StaleLinks; repoDir?: string } = {}): Promise<Harness> {
-  const store = new Store({ model: MODEL });
+async function harness(options: { stale?: StaleLinks; repoDir?: string; model?: unknown } = {}): Promise<Harness> {
+  const store = new Store({ model: options.model ?? MODEL });
   const session = new Session();
   const repo = new Repo(options.repoDir ?? tempRepo({}));
   const server = createMcpServer({ store, session, repo, stale: options.stale ?? new StaleLinks(repo), version: 'test', uiUrl: 'http://localhost:9' });
@@ -137,6 +137,55 @@ describe('get_context', () => {
     expect(context.ui.visibleRelations).toHaveLength(5);
   });
 
+  it('describes the data catalog by counts and groups when no structure is in focus', async () => {
+    const { call, session } = await harness();
+    session.setUi({ perspective: 'data', selectedElementIds: ['web'] });
+    const context = await call('get_context');
+    expect(context.ui.visible).toBeUndefined();
+    expect(context.ui.dataView).toEqual({
+      state: 'catalog',
+      shows: expect.stringMatching(/compact card.*grouped by owner.*Nothing is in focus/),
+      structures: 3,
+      groups: [
+        { owner: { id: 'api', name: 'Order API' }, count: 1 },
+        { owner: { id: 'orders', name: 'Orders' }, count: 1 },
+        { owner: { id: 'billing', name: 'Billing' }, count: 1 },
+      ],
+    });
+  });
+
+  it('describes the focused structure with its neighbors by direction and its users by verb', async () => {
+    const { call, session, store } = await harness();
+    store.apply(
+      {
+        elements: [
+          { id: 'order', fields: [{ name: 'id', type: 'uuid' }, { name: 'invoice', type: 'Invoice', ref: 'invoice' }] },
+          { id: 'invoice', fields: [{ name: 'config', type: 'API config', ref: 'api-config' }] },
+        ],
+        relations: [
+          { id: 'order-references-invoice', from: 'order', to: 'invoice', kind: 'references' },
+          { id: 'invoice-references-order', from: 'invoice', to: 'order', kind: 'references' },
+          { id: 'billing-reads-order', from: 'billing', to: 'order', kind: 'reads' },
+        ],
+      },
+      'agent',
+    );
+    session.setUi({ perspective: 'data', selectedElementIds: ['order'] });
+    const { ui, selection } = await call('get_context');
+    expect(ui.dataView).toEqual({
+      state: 'focus',
+      structure: expect.objectContaining({ id: 'order', name: 'Order', fields: [{ name: 'id', type: 'uuid' }, { name: 'invoice', type: 'Invoice', ref: 'invoice' }] }),
+      references: [{ id: 'invoice', name: 'Invoice', via: ['field invoice', 'relation order-references-invoice'] }],
+      referencedBy: [{ id: 'invoice', name: 'Invoice', via: ['relation invoice-references-order'] }],
+      users: [
+        { verb: 'carried', elements: [{ from: { id: 'web', name: 'Web app', kind: 'app' }, to: { id: 'orders', name: 'Orders', kind: 'component' }, relationId: 'web-calls-orders' }] },
+        { verb: 'produces', elements: [{ id: 'orders', name: 'Orders', kind: 'component', relationId: 'orders-produces-order' }] },
+        { verb: 'reads', elements: [{ id: 'billing', name: 'Billing', kind: 'component', relationId: 'billing-reads-order' }] },
+      ],
+    });
+    expect(selection.elements[0].id).toBe('order');
+  });
+
   it('says when the reported view is stale because no browser is connected', async () => {
     const { call, session } = await harness();
     session.setUi({ perspective: 'structure', scopeId: 'api' });
@@ -202,6 +251,17 @@ describe('find_by_code', () => {
     expect(found.elements.map((e: any) => e.id).sort()).toEqual(['billing', 'orders']);
     expect(found.unmatchedPaths).toEqual([]);
   });
+
+  it('matches refs stored with an absolute path inside the repository', async () => {
+    const repoDir = tempRepo({ 'src/orders/service.ts': 'export {};\n' });
+    const model = { elements: [{ id: 'orders', kind: 'component', name: 'Orders', codeRefs: [{ path: `${repoDir}/src/orders/service.ts` }] }] };
+    const { call } = await harness({ repoDir, model });
+    for (const query of ['src/orders/service.ts', 'src/orders', `${repoDir}/src`]) {
+      const found = await call('find_by_code', { paths: [query] });
+      expect(found.elements.map((e: any) => e.id)).toEqual(['orders']);
+      expect(found.codeLinks).toEqual({ ok: 1 });
+    }
+  });
 });
 
 describe('check_code_links', () => {
@@ -240,7 +300,7 @@ describe('guide', () => {
     expect(guide).toMatch(/A `symbol` must literally occur, as an identifier, within `startLine`\.\.`endLine`/);
     expect(guide).toMatch(/registered by a string name, such as routes .* give the line range without a `symbol`/);
     expect(guide).toMatch(/`check_code_links` with `repair: true` re-anchors/);
-    expect(guide).toMatch(/re-send it unchanged in `addCodeRefs`/);
+    expect(guide).toMatch(/re-send it without its digest in `addCodeRefs`/);
   });
 
   it('documents repair, the new reasons and the narrower selectors in the tool descriptions', async () => {
@@ -248,7 +308,7 @@ describe('guide', () => {
     const { tools } = await client.listTools();
     const describe = (name: string) => tools.find((t) => t.name === name)!;
     expect(describe('check_code_links').description).toMatch(/moved.*suggestion[\s\S]*changed[\s\S]*repair: true/);
-    expect(Object.keys((describe('check_code_links').inputSchema as any).properties)).toEqual(['scopeId', 'repair', 'seal']);
+    expect(Object.keys((describe('check_code_links').inputSchema as any).properties)).toEqual(['scopeId', 'repair']);
     expect(describe('find_by_code').description).toMatch(/`check` is "ok", "moved"/);
     expect(describe('apply_changes').description).toMatch(/\[\{path, symbol\?, startLine\?\}\]/);
     expect(describe('apply_changes').description).toMatch(/actor, external, system/);

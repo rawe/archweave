@@ -6,7 +6,7 @@ import { repairCodeLinks } from './repair.ts';
 import { PathError, type Repo } from './repo.ts';
 import type { ServerEvent, Session } from './session.ts';
 import type { StaleLinks } from './stale.ts';
-import { ChangeError, type Store } from './store.ts';
+import { ChangeError, RevisionConflict, type Store } from './store.ts';
 
 export interface ApiDeps {
   store: Store;
@@ -25,6 +25,7 @@ export function apiRoutes(deps: ApiDeps): Hono {
   const api = new Hono();
 
   api.onError((error, c) => {
+    if (error instanceof RevisionConflict) return c.json({ error: error.message }, 409);
     if (error instanceof ChangeError) return c.json({ error: error.message, details: error.details }, 400);
     if (error instanceof PathError || error instanceof ExportError || error instanceof BadRequest) return c.json({ error: error.message }, 400);
     console.error(error);
@@ -106,14 +107,13 @@ export function apiRoutes(deps: ApiDeps): Hono {
 
   api.get('/code/stale', async (c) => c.json(await stale.check(store.snapshot().model)));
 
-  /** Re-anchors moved code refs as the human; with `seal: true` also seals unsealed ones that check out. Body (optional): `{ scopeId?, seal? }`. */
+  /** Re-anchors moved code refs as the human. Body (optional): `{ scopeId? }`. */
   api.post('/code/repair', async (c) => {
     const body = hasJsonBody(c.req.raw) ? await jsonBody(c.req.raw) : {};
     const scopeId = body && typeof body === 'object' ? (body as { scopeId?: unknown }).scopeId : undefined;
     if (scopeId !== undefined && typeof scopeId !== 'string') throw new BadRequest('`scopeId` must be an element id');
     if (scopeId && !store.snapshot().model.elements.some((e) => e.id === scopeId)) throw new BadRequest(`Unknown element \`${scopeId}\``);
-    const seal = !!body && typeof body === 'object' && (body as { seal?: unknown }).seal === true;
-    return c.json(await repairCodeLinks(store, stale, { actor: 'human', scopeId: scopeId || undefined, seal }));
+    return c.json(await repairCodeLinks(store, stale, { actor: 'human', scopeId: scopeId || undefined }));
   });
 
   api.get('/export', (c) => {

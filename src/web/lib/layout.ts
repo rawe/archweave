@@ -51,11 +51,7 @@ const OPTIONS = {
   'elk.padding': '[top=0,left=0,bottom=0,right=0]',
 };
 
-/**
- * Where automatic layouts start. Deliberately not (0, 0): layouts written by the
- * earlier auto-layout were normalized to the origin, which is how
- * `looksAutoPlaced` tells them apart from layouts a human has arranged.
- */
+/** Where automatic layouts start. */
 const ORIGIN = { x: 40, y: 40 };
 const GAP = 24;
 
@@ -130,18 +126,19 @@ function tightenRims(nodes: LayoutNode[], placed: Map<string, Rect>) {
 }
 
 /**
- * True when a stored scope layout was written by the earlier auto-layout and
- * never arranged by hand: it starts exactly at the origin and nearly every node
- * shares its column with another, which hand-dragged nodes practically never do.
+ * Positions a canvas shows: stored positions always win and are never replaced automatically (only Tidy
+ * replaces a layout); positions computed in this browser fill in for nodes the store does not have.
  */
-export function looksAutoPlaced(stored: Record<string, Position> | undefined): boolean {
-  const list = Object.values(stored ?? {});
-  if (list.length < 4) return false;
-  if (Math.min(...list.map((p) => p.x)) !== 0 || Math.min(...list.map((p) => p.y)) !== 0) return false;
-  const columns = new Map<number, number>();
-  for (const p of list) columns.set(p.x, (columns.get(p.x) ?? 0) + 1);
-  const shared = list.filter((p) => columns.get(p.x)! > 1).length;
-  return shared / list.length >= 0.7;
+export function shownPositions(stored: Record<string, Position> | undefined, computed: Record<string, Position> | undefined): Record<string, Position> {
+  return { ...(computed ?? {}), ...(stored ?? {}) };
+}
+
+/**
+ * What a finished placement job writes: positions for nodes that still exist and that nobody positioned
+ * while the job ran.
+ */
+export function placementToSave(placed: Record<string, Position>, alive: ReadonlySet<string>, stored: Record<string, Position>): Record<string, Position> {
+  return Object.fromEntries(Object.entries(placed).filter(([id]) => alive.has(id) && !stored[id]));
 }
 
 /** Positions for the nodes missing from `fixed`, leaving every fixed node where it is. */

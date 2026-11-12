@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ArrowUpRight, ChevronDown, ClipboardCopy, CornerLeftUp, FolderInput, Trash } from 'lucide-react';
-import { ELEMENT_KINDS, type Element, type ElementKind, type ElementPatch, type Status } from '../../shared/model.ts';
+import { ELEMENT_KINDS, type Element, type ElementKind, type Status } from '../../shared/model.ts';
+import type { PlainElementPatch } from '../state/apply.ts';
 import { descendantsOf } from '../../shared/projection.ts';
 import { Menu, Tip } from '../chrome/primitives.tsx';
 import { Picker } from '../chrome/Picker.tsx';
@@ -22,7 +23,7 @@ export const STATUS_OPTIONS: { value: Status; label: string }[] = [
 ];
 
 export function ElementInspector({ el, index }: { el: Element; index: ModelIndex }) {
-  const patch = (p: Omit<ElementPatch, 'id'>, summary = `Edited ${el.name}`) => void commit({ summary, elements: [{ id: el.id, ...p }] });
+  const patch = (p: Omit<PlainElementPatch, 'id'>, summary = `Edited ${el.name}`) => void commit({ summary, elements: [{ id: el.id, ...p }] });
   const [kindMenu, setKindMenu] = useState(false);
   const kindRef = useRef<HTMLButtonElement>(null);
   const isData = el.kind === 'data';

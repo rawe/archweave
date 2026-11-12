@@ -23,7 +23,7 @@ One graph. See `src/shared/model.ts` for the exact shapes.
 - **Data structures are elements** of kind `data` with `fields`, `format` and an `example`. A field can `ref` another data element. A data element may have a `parentId` (the element that owns or defines it).
 - **Relation**: directed edge with a `kind`, a short `label`, and `dataIds` naming the data structures that travel over it. Relations of kind `reads`, `writes`, `produces`, `consumes` from a non-data element to a data element say who touches a structure. `references` links data to data.
 - **Flow**: a named scenario, an ordered list of steps `from → to` with a label and optional data and code references.
-- **CodeRef**: repo-relative `path`, optional `symbol`, optional line range, optional `note`.
+- **CodeRef**: repo-relative `path`, optional `symbol`, optional line range, optional `note`, and the server's `digest` seal (see Stale link detection).
 - **Note**: text pinned to an element by the human or the agent, resolvable. Human notes are the lightweight way to hand work to the agent.
 
 Ids are readable slugs generated from names and never change on rename.
@@ -66,6 +66,9 @@ Rules:
 - Referential integrity: `parentId`, relation endpoints, `dataIds`, field `ref`, flow step endpoints must exist after the change set is applied (so one change set can create an element and relate to it), and `dataIds` and field `ref`s must name elements of kind `data`. No containment cycles. A `dataIds` entry or field `ref` written in the change set that does not name a data structure is an error with a did-you-mean hint. Stored references broken by the change set (a removed element, an element that is no longer of kind `data`) are cleaned up with a warning.
 - Removing an element removes descendants, attached relations, flow steps that touch them, and their layout entries.
 - Elements created by the human default to `status: planned` unless given; elements created by the agent default to `built` when they carry at least one code ref or are of a kind that never has code (actor, external, system), otherwise `planned`.
+- `expectedRevision` (optional) names the revision the change set was built from. When the model is at another revision nothing is applied: REST answers 409, MCP returns a tool error, both saying the model changed and to read it again. Layout-only change sets ignore it.
+- After applying, the result passes the same graph integrity check the store runs on load (duplicate ids, missing references, data references to non-data elements, containment cycles); a change set that fails it is a validation error naming the problem, so no change set can persist a model that will not load.
+- Code ref paths are stored repo-relative: an absolute path inside the repository is made relative; an absolute path outside it, or one escaping it with `..`, is a validation error.
 - A change set that only contains `layout` does not create a journal entry or an undo step and does not bump the model revision visibly to the agent (it still broadcasts to browsers).
 - Undo: the store keeps the last 50 model snapshots. `undo()` restores the previous one and journals it.
 
@@ -77,7 +80,7 @@ All JSON. Errors are `{ "error": string, "details"?: unknown }` with a 4xx or 5x
 | --- | --- |
 | `GET /api/health` | `{ status: 'ok', version, revision }`. Liveness for the Docker `HEALTHCHECK`; works without the web UI built. |
 | `GET /api/snapshot` | `Snapshot` |
-| `POST /api/changes` | Body `ChangeSet`. Applied as actor `human`. Returns `ChangeResult`. |
+| `POST /api/changes` | Body `ChangeSet`. Applied as actor `human`. Returns `ChangeResult`, or 409 when `expectedRevision` is given and the model is at another revision. |
 | `POST /api/undo` | Undo the last model change. Returns `{ revision }` or 409 when nothing to undo. |
 | `GET /api/journal?since=<revision>` | `JournalEntry[]`, newest last. |
 | `GET /api/session` | `{ ui: UiState, agent: AgentPresence, repo: { name, hostPath? } }` |
@@ -86,7 +89,7 @@ All JSON. Errors are `{ "error": string, "details"?: unknown }` with a 4xx or 5x
 | `GET /api/code/file?path=` | `{ path, exists, content?, lineCount?, language?, truncated? }`. Text files up to 1 MB. |
 | `GET /api/code/files?q=&limit=` | Repo file paths matching a fuzzy query, for the code link picker. Uses `git ls-files` when the repo is a Git checkout, otherwise a walk that skips `node_modules`, `.git`, `dist`, `build` and dot-directories. |
 | `GET /api/code/stale` | `StaleLink[]` |
-| `POST /api/code/repair` | Body `{ scopeId?, seal? }`. Re-anchors every code link whose text moved within its file; with `seal: true` also seals unsealed links that pass all checks. Returns `{ revision, summary?, repaired, sealed, stale }`. |
+| `POST /api/code/repair` | Body `{ scopeId? }`. Re-anchors every code link whose text moved within its file. Returns `{ revision, summary?, repaired, stale }`. |
 | `GET /api/export?format=markdown\|json\|mermaid&scope=<id>&perspectives=structure,data,flows&code=true\|false` | Download. |
 
 Server-sent events (`event:` name, JSON `data:`):
@@ -101,15 +104,20 @@ Repository access is read-only and confined to `ARCHWEAVE_REPO_DIR`: resolve the
 
 Every code ref is checked against the repository: `missing-file` when the path does not exist, `line-out-of-range` when `endLine` or `startLine` exceeds the file's line count, `symbol-not-found` when `symbol` is given and does not occur as an identifier (whole word, not in quotes) in the file, `symbol-outside-range` when it occurs but not within `startLine..endLine`. Computed on demand with a cache keyed by file mtime and size.
 
-**Seals.** When a ref with a line range is written through the store (create or change, by anyone) and the file is readable, the server stores `digest`: SHA-256 over the linked lines, each trimmed of whitespace at both ends, joined by `\n`, first 12 base64url characters. Clients never send it; a sent digest is never stored. A ref sent back exactly as it was read (same location and digest, as the UI does when it resends a list) keeps its seal, so resending a list never accepts drift. Any other written ref is sealed afresh, and so is a ref re-sent in `addCodeRefs` (on elements, relations, and flow steps through `updateSteps`), which is how an agent accepts edited code as still right. A ref that is already stale when written comes back as a warning in the `ChangeResult`.
+**Seals.** When a ref with a line range is written through the store (create or change, by anyone) and the file is a readable text file, the server stores `digest`: SHA-256 over the linked lines, each trimmed of whitespace at both ends, joined by `\n`, first 12 base64url characters. A written ref that carries a digest is a claim that this is still the same code:
+- same location and digest as the stored ref: kept as is, without reading the file (resending a list as read never accepts drift);
+- a digest at another location, or with no stored counterpart: the server reads the file; when the text at that range has this digest, the ref is stored with it (a verified move); otherwise the change set is rejected ("the code at … is not the text this link was sealed to; send the ref without digest to seal it to the current text");
+- no digest: sealed afresh against the current file, an explicit statement by the writer that the range is right. A ref re-sent without digest in `addCodeRefs` (on elements, relations, and flow steps through `updateSteps`) is how an agent accepts edited code as still right, and how a ref without a seal gets one.
+
+A ref that is already stale when written comes back as a warning in the `ChangeResult`. Binary files (a NUL byte in the first 8000 bytes, as the code file endpoint decides), files over 1 MB and directories are checked for existence only and never sealed.
 
 **Checking a sealed ref** compares text. If the linked lines still match the seal, the checks above apply. Otherwise:
 - `moved`: a window of the same length with the same seal exists elsewhere in the file (nearest to the old start first; with a `symbol`, the window must contain it). `suggestion` is the new `{startLine, endLine}`.
 - `changed`: the text was edited. With a `symbol` that no longer occurs, the reason is `symbol-not-found`. With a symbol that still occurs in the old range there is no suggestion; elsewhere, `suggestion` keeps the old length and starts at the symbol's only declaration-like occurrence (`function x`, `class x`, `def x`, `const x`, …) or its only occurrence, else none. Without a symbol, a range past the end of the file is `line-out-of-range`.
 
-Refs without a seal (no line range, unreadable file, or written before sealing existed) keep the plain checks.
+Refs without a seal (no line range, unreadable or binary file, or not written since sealing existed) keep the plain checks.
 
-**Repair** (`check_code_links` with `repair: true` as the agent, `POST /api/code/repair` with optional body `{ scopeId, seal }` as the human) applies every `moved` suggestion across elements, relations and flow steps in one journaled change set ("Re-anchored 11 code links in src/server/routes.ts"). With `seal: true` it also seals refs that have a line range, no seal, and pass every check. Sealing is a separate, explicit step because it declares the current ranges right, and a passing check cannot prove that for a link that was never sealed; plain reads never write. It returns `{ revision, summary?, repaired, sealed, stale }`, where `stale` is what still needs attention. `changed` refs are never repaired automatically.
+**Repair** (`check_code_links` with `repair: true` as the agent, `POST /api/code/repair` with optional body `{ scopeId }` as the human) applies every `moved` suggestion across elements, relations and flow steps in one journaled change set ("Re-anchored 11 code links in src/server/routes.ts"), with `expectedRevision` set. Each moved ref keeps its digest, so the store verifies the text at every destination when it applies the change set. When the model or a file changed since the check, repair checks once more; what it still cannot apply is reported, not written. It returns `{ revision, summary?, repaired, stale }`, where `stale` is what still needs attention. `changed` refs are never repaired automatically. Plain reads never write.
 
 ### Export
 
@@ -132,13 +140,13 @@ Keep the surface small. Tool results are compact JSON text. Every tool that retu
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `get_guide` | none | The modeling guide. |
-| `get_context` | none | What the human is doing now: `ui` state with the selected elements and relations expanded in full (including code refs, notes, children, relations in and out), the breadcrumb of the current scope, open notes across the model, journal entries by the human since the agent's last `get_context` or `apply_changes`, and stale link count. This is the first call for any request that says "this", "here", "the selected". |
+| `get_context` | none | What the human is doing now: `ui` state with the selected elements and relations expanded in full (including code refs, notes, children, relations in and out), the breadcrumb of the current scope, what the canvas shows (structure: the scope's nodes and threads; data: the catalog as counts per owner, or the focused structure with its fields, the structures it references and that reference it, and its users by verb), open notes across the model, journal entries by the human since the agent's last `get_context` or `apply_changes`, and stale link count. This is the first call for any request that says "this", "here", "the selected". |
 | `get_model` | `scopeId?`, `depth?` (default 2), `kinds?`, `includeData?` | Outline of the model: nested elements as `{id, kind, name, summary, status, children}` plus relations among them, flows by name, counts. |
 | `get_element` | `id` | One element in full: fields, code refs, notes, parent chain, children, relations in and out with the other end's name, flows it takes part in, data it touches. Works for relations ids too. |
 | `search` | `query`, `kinds?`, `limit?` | Elements whose name, summary, description, tags, field names or code paths match. |
 | `find_by_code` | `paths: string[]` | Elements, relations and flow steps whose code refs touch those files or directories, each ref with its current `check` (`ok`, `moved` with `suggestion`, `changed`, or another stale reason) and a count per check. Call this after changing code to find what to update and what needs re-anchoring. |
-| `apply_changes` | `ChangeSet` (as in `model.ts`) | `ChangeResult`. Applied as actor `agent`. `summary` is required here. |
-| `check_code_links` | `scopeId?`, `repair?`, `seal?` | Stale links (flow refs with their `step`), plus built elements of kinds that should have code (app, service, component, module, data) without any code ref. With `repair: true`: re-anchors moved links in one change set and returns what it changed and what still needs attention. With `seal: true`: seals unsealed links that pass, after the agent verified them (see Stale link detection). |
+| `apply_changes` | `ChangeSet` (as in `model.ts`) | `ChangeResult`. Applied as actor `agent`. `summary` is required here. A stale `expectedRevision` is a tool error. |
+| `check_code_links` | `scopeId?`, `repair?` | Stale links (flow refs with their `step`), plus built elements of kinds that should have code (app, service, component, module, data) without any code ref. With `repair: true`: re-anchors moved links in one change set and returns what it changed and what still needs attention. |
 | `get_changes` | `since?` (revision), `actor?` | Journal entries. |
 | `focus_ui` | `elementIds`, `perspective?`, `scopeId?`, `flowId?`, `message?` | Asks the browser to show and highlight these elements. Returns whether a browser is connected. |
 | `export` | `format`, `scope?` | The export text. |

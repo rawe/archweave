@@ -36,11 +36,10 @@ These are the server's MCP instructions, the same text as \`get_guide\` returns.
 
 ## Keep code links working
 
-- When you write a ref with a line range, the server seals it: it stores a \`digest\` of the linked lines. You never send or edit the digest.
+- When you write a ref with a line range, the server seals it: it stores a \`digest\` of the linked lines. Do not invent or edit digests; send a ref without one, or leave it exactly as you read it.
 - Checks of a sealed ref compare text, not just line numbers: \`moved\` means the same lines now sit elsewhere in the file (\`suggestion\` has the new range); \`changed\` means the linked code itself was edited.
 - After editing code: \`find_by_code\` for the touched files, then \`check_code_links\` with \`repair: true\`. It re-anchors every moved ref on elements, relations and flow steps in one journaled change. Do not recompute line numbers by hand.
-- Refs from before sealing have no seal, and a passing check does not prove their range is right. Verify them against the code once, fix the wrong ones, then call \`check_code_links\` with \`seal: true\`.
-- Changed refs are never repaired for you. Read the code: if the ref is wrong, send the corrected ref (\`removeCodeRefs\` plus \`addCodeRefs\`; a new range is sealed afresh). If it is still right as it is, re-send it unchanged in \`addCodeRefs\` (for a flow step: \`updateSteps\` with \`addCodeRefs\`); that re-seals it.
+- Changed refs are never repaired for you. Read the code: if the ref is wrong, send the corrected ref (\`removeCodeRefs\` plus \`addCodeRefs\`; a new range is sealed afresh). If it is still right as it is, re-send it without its digest in \`addCodeRefs\` (for a flow step: \`updateSteps\` with \`addCodeRefs\`); that seals it to the current code, and so seals a ref that has no seal yet.
 - To remove one of several refs to the same file, narrow \`removeCodeRefs\` with \`symbol\` and/or \`startLine\`.
 
 ## Data structures

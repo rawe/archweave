@@ -1,7 +1,7 @@
-import { type Actor, type ChangeSet, type CodeRef, type ElementPatch, type FlowPatch, type LineRange, type Model, type RelationPatch, type StaleLink } from '../shared/model.ts';
+import type { Actor, ChangeSet, CodeRef, ElementPatch, FlowPatch, LineRange, Model, RelationPatch, StaleLink } from '../shared/model.ts';
 import { descendantsOf } from '../shared/projection.ts';
 import { allCodeRefs, type OwnedRef, type RefStatus, type StaleLinks, staleLink } from './stale.ts';
-import type { Store } from './store.ts';
+import { ChangeError, RevisionConflict, type Store } from './store.ts';
 
 /** Code refs held by an element in the subtree of `scopeId`, by a relation touching it, or by a flow step touching it. */
 export function ownedRefs(model: Model, scopeId?: string): OwnedRef[] {
@@ -37,37 +37,39 @@ export interface RepairResult {
   summary?: string;
   /** Moved refs that were re-anchored. */
   repaired: RepairedLink[];
-  /** Unsealed refs with a line range that passed every check and got a seal. */
-  sealed: number;
   /** What still needs attention after the repair. */
   stale: StaleLink[];
 }
 
-const ATTEMPTS = 3;
+/** Checks before giving up: once more after the model or a file changed between checking and applying. */
+const ATTEMPTS = 2;
 
 /**
- * Re-anchors every `moved` code ref to its suggested range and, with `seal`, seals unsealed refs that pass
- * all checks, in one journaled change set. `changed` and other stale refs are left alone and reported.
+ * Re-anchors every `moved` code ref to its suggested range in one journaled change set. `changed` and other
+ * stale refs are left alone and reported. Each re-anchored ref keeps its digest, so the store verifies the text
+ * at the new range when it applies the change set; when the model or a file changed since the check, the refs are
+ * checked again once, and what still cannot be repaired is reported in `stale`.
  */
-export async function repairCodeLinks(store: Store, stale: StaleLinks, options: { actor: Actor; scopeId?: string; seal?: boolean }): Promise<RepairResult> {
+export async function repairCodeLinks(store: Store, stale: StaleLinks, options: { actor: Actor; scopeId?: string }): Promise<RepairResult> {
   for (let attempt = 1; ; attempt++) {
     const snapshot = store.snapshot();
     const statuses = await stale.inspect(ownedRefs(snapshot.model, options.scopeId));
-    // The check is asynchronous; apply only what was checked against the model as it is now.
-    if (store.currentRevision !== snapshot.revision) {
-      if (attempt < ATTEMPTS) continue;
-      throw new Error('The model changed while the code links were being checked. Try again.');
-    }
     const moved = statuses.filter((s) => s.reason === 'moved' && s.suggestion);
-    // Sealing declares the current ranges right, and a passing check cannot prove that, so it is opt-in.
-    const unsealed = options.seal ? statuses.filter((s) => !s.reason && s.ref.startLine && !s.ref.digest) : [];
     const remaining = statuses.filter((s) => s.reason && s.reason !== 'moved').map(staleLink);
-    if (!moved.length && !unsealed.length) return { revision: snapshot.revision, repaired: [], sealed: 0, stale: remaining };
+    if (!moved.length) return { revision: snapshot.revision, repaired: [], stale: remaining };
 
-    const summary = repairSummary(moved, unsealed.length);
-    const result = store.apply(repairChangeSet(snapshot.model, moved, unsealed, summary), options.actor);
+    const summary = repairSummary(moved);
+    let revision: number;
+    try {
+      revision = store.apply({ ...repairChangeSet(snapshot.model, moved, summary), expectedRevision: snapshot.revision }, options.actor).revision;
+    } catch (error) {
+      if (!(error instanceof RevisionConflict || error instanceof ChangeError)) throw error;
+      if (attempt < ATTEMPTS) continue;
+      if (error instanceof RevisionConflict) throw new Error('The model changed while the code links were being checked. Try again.');
+      return { revision: store.currentRevision, repaired: [], stale: [...moved.map(staleLink), ...remaining] };
+    }
     return {
-      revision: result.revision,
+      revision,
       summary,
       repaired: moved.map((s) => ({
         ownerType: s.ownerType,
@@ -78,40 +80,31 @@ export async function repairCodeLinks(store: Store, stale: StaleLinks, options: 
         from: { startLine: s.ref.startLine!, endLine: s.ref.endLine ?? s.ref.startLine! },
         to: s.suggestion!,
       })),
-      sealed: unsealed.length,
       stale: remaining,
     };
   }
 }
 
-/**
- * One patch per owner: the full code ref list with moved refs relocated (relocated refs are sealed afresh,
- * the others keep their seals), plus `addCodeRefs` for the refs to seal (re-sending a ref re-seals it).
- */
-function repairChangeSet(model: Model, moved: RefStatus[], unsealed: RefStatus[], summary: string): ChangeSet {
-  const owners = new Map<string, { owned: OwnedRef; refs: CodeRef[]; seal: CodeRef[] }>();
-  const entry = (s: RefStatus) => {
-    const key = `${s.ownerType}:${s.ownerId}:${s.step ?? ''}`;
-    let found = owners.get(key);
-    if (!found) owners.set(key, (found = { owned: s, refs: [...refsOf(model, s)], seal: [] }));
-    return found;
-  };
+/** One patch per owner: the full code ref list with moved refs relocated, keeping their digests; the other refs as read. */
+function repairChangeSet(model: Model, moved: RefStatus[], summary: string): ChangeSet {
+  const owners = new Map<string, { owned: OwnedRef; refs: CodeRef[] }>();
   for (const s of moved) {
-    const owner = entry(s);
-    const { digest: _old, ...ref } = owner.refs[s.index]!;
+    const key = `${s.ownerType}:${s.ownerId}:${s.step ?? ''}`;
+    let owner = owners.get(key);
+    if (!owner) owners.set(key, (owner = { owned: s, refs: [...refsOf(model, s)] }));
+    const ref = owner.refs[s.index]!;
     const single = ref.endLine === undefined && s.suggestion!.startLine === s.suggestion!.endLine;
-    owner.refs[s.index] = { ...ref, startLine: s.suggestion!.startLine, ...(single ? {} : { endLine: s.suggestion!.endLine }) };
+    const { endLine: _end, ...rest } = ref;
+    owner.refs[s.index] = { ...rest, startLine: s.suggestion!.startLine, ...(single ? {} : { endLine: s.suggestion!.endLine }) };
   }
-  for (const s of unsealed) entry(s).seal.push(s.ref);
 
   const elements: ElementPatch[] = [];
   const relations: RelationPatch[] = [];
   const flows = new Map<string, NonNullable<FlowPatch['updateSteps']>>();
-  for (const { owned, refs, seal } of owners.values()) {
-    const patch = { codeRefs: refs, ...(seal.length ? { addCodeRefs: seal } : {}) };
-    if (owned.ownerType === 'element') elements.push({ id: owned.ownerId, ...patch });
-    else if (owned.ownerType === 'relation') relations.push({ id: owned.ownerId, ...patch });
-    else flows.set(owned.ownerId, [...(flows.get(owned.ownerId) ?? []), { index: owned.step! - 1, ...patch }]);
+  for (const { owned, refs } of owners.values()) {
+    if (owned.ownerType === 'element') elements.push({ id: owned.ownerId, codeRefs: refs });
+    else if (owned.ownerType === 'relation') relations.push({ id: owned.ownerId, codeRefs: refs });
+    else flows.set(owned.ownerId, [...(flows.get(owned.ownerId) ?? []), { index: owned.step! - 1, codeRefs: refs }]);
   }
   return {
     summary,
@@ -127,19 +120,9 @@ function refsOf(model: Model, owned: OwnedRef): CodeRef[] {
   return model.flows.find((f) => f.id === owned.ownerId)!.steps[owned.step! - 1]!.codeRefs;
 }
 
-/** "Re-anchored 11 code links in src/server/routes.ts; sealed 4 code links". */
-export function repairSummary(moved: { ref: CodeRef }[], sealed: number): string {
-  const parts: string[] = [];
-  if (moved.length) {
-    const files = [...new Set(moved.map((m) => m.ref.path))];
-    parts.push(`re-anchored ${links(moved.length)} in ${files.length === 1 ? files[0] : `${files.length} files`}`);
-  }
-  if (sealed) parts.push(`sealed ${links(sealed)}`);
-  let text = parts.join('; ');
-  if (text.length > 200) text = text.replace(/ in .*?(;|$)/, ' in 1 file$1').slice(0, 200);
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function links(n: number): string {
-  return `${n} code link${n === 1 ? '' : 's'}`;
+/** "Re-anchored 11 code links in src/server/routes.ts". */
+export function repairSummary(moved: { ref: CodeRef }[]): string {
+  const files = [...new Set(moved.map((m) => m.ref.path))];
+  const text = `Re-anchored ${moved.length} code link${moved.length === 1 ? '' : 's'} in ${files.length === 1 ? files[0] : `${files.length} files`}`;
+  return text.length > 200 ? `Re-anchored ${moved.length} code links in 1 file` : text;
 }

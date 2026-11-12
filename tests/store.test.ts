@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ChangeError, Store, type StoreChange } from '../src/server/store.ts';
+import { ChangeError, RevisionConflict, Store, type StoreChange } from '../src/server/store.ts';
 
 const fixedNow = () => new Date('2026-01-02T03:04:05Z');
 
@@ -487,5 +487,37 @@ describe('Store integrity', () => {
     expect(() => store.replace(broken, {})).toThrow(/unknown parent `ghost`/);
     expect(store.snapshot().model).toBe(before.model);
     expect(store.snapshot().layout).toBe(before.layout);
+  });
+  it('validates data ids that step helpers carry through merges of the same step', () => {
+    const store = shop();
+    const steps = (dataIds: string[]) => [{ from: 'web', to: 'checkout', label: 'submit', dataIds }];
+    expect(() => store.apply({ flows: [{ id: 'place-order', steps: steps(['missing']), updateSteps: [{ index: 0, label: 'x' }] }] }, 'agent')).toThrow(
+      /flow `place-order` step 1: data id `missing`: no such data structure/,
+    );
+    expect(() => store.apply({ flows: [{ id: 'place-order', updateSteps: [{ index: 0, dataIds: ['missing'] }, { index: 0, label: 'x' }] }] }, 'agent')).toThrow(
+      /flow `place-order` step 1: data id `missing`: no such data structure/,
+    );
+    expect(() => store.apply({ flows: [{ id: 'place-order', insertSteps: [{ index: 0, step: steps(['missing'])[0]! }] }] }, 'agent')).toThrow(/data id `missing`/);
+    expect(new Store({ model: store.snapshot().model }).snapshot().model).toEqual(store.snapshot().model);
+  });
+
+  it('never applies a change set that would leave a model the store cannot load', () => {
+    const store = shop();
+    const before = store.snapshot();
+    const note = { id: 'n1', text: 'Twice', author: 'human', createdAt: '2026-01-01T00:00:00Z' };
+    expect(() => store.apply({ elements: [{ id: 'web', notes: [note, note] }] }, 'human')).toThrow(
+      /Nothing was applied\. The change set would leave the model inconsistent:\n- element `web`: duplicate note id `n1`/,
+    );
+    expect(store.snapshot().model).toBe(before.model);
+  });
+
+  it('applies nothing when built from another revision, except layout', () => {
+    const store = shop();
+    const revision = store.currentRevision;
+    expect(() => store.apply({ expectedRevision: revision - 1, elements: [{ id: 'web', summary: 'x' }] }, 'human')).toThrow(RevisionConflict);
+    expect(() => store.preview({ expectedRevision: revision - 1, elements: [{ id: 'web', summary: 'x' }] }, 'human')).toThrow(RevisionConflict);
+    store.apply({ expectedRevision: revision - 1, layout: { 'structure:root': { web: { x: 5, y: 5 } } } }, 'human');
+    expect(store.snapshot().layout['structure:root']).toEqual({ web: { x: 5, y: 5 } });
+    expect(store.apply({ expectedRevision: revision, elements: [{ id: 'web', summary: 'x' }] }, 'human').revision).toBe(revision + 1);
   });
 });
