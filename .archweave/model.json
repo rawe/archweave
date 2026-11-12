@@ -1,0 +1,3911 @@
+{
+  "version": 1,
+  "name": "ArchWeave",
+  "description": "A self-hosted architecture workspace that a developer (in the browser) and a coding agent (over MCP) edit together. One Node process serves the web UI, a REST + SSE API and a stateless MCP endpoint over one shared in-memory model, which is persisted as Git-friendly JSON in the modeled repository's `.archweave/` directory.",
+  "elements": [
+    {
+      "id": "agent-presence",
+      "kind": "data",
+      "name": "AgentPresence",
+      "summary": "Whether an agent has called MCP recently, and its client name.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "AgentPresence",
+          "startLine": 280,
+          "endLine": 284
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "connected",
+          "type": "boolean",
+          "description": "True for 60 s after the last MCP request"
+        },
+        {
+          "name": "clientName",
+          "type": "string",
+          "optional": true,
+          "description": "clientInfo.name from MCP initialize"
+        },
+        {
+          "name": "lastSeenAt",
+          "type": "ISO timestamp",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "api-error",
+      "kind": "data",
+      "name": "API error",
+      "summary": "Error body of REST failures: a readable message and, for invalid change sets, the validation details.",
+      "description": "400 for ChangeError/PathError/ExportError/bad requests, 403 from the host guard, 409 for nothing to undo, 415 for a non-JSON body. The browser turns `error` into an error toast.",
+      "parentId": "rest-api",
+      "codeRefs": [
+        {
+          "path": "src/web/api.ts",
+          "symbol": "request",
+          "startLine": 23,
+          "endLine": 38
+        },
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "onError",
+          "startLine": 24,
+          "endLine": 29,
+          "note": "Maps errors to status codes"
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "name": "details",
+          "type": "unknown",
+          "optional": true,
+          "description": "Zod issues or ChangeError details"
+        }
+      ],
+      "example": "{ \"error\": \"Invalid change set:\\nelements[0] (`billing`): kind is required\" }"
+    },
+    {
+      "id": "app-chrome",
+      "kind": "component",
+      "name": "App chrome",
+      "summary": "Top bar, command palette, export dialog, agent presence and activity feed, toasts, empty state and shortcuts.",
+      "description": "The empty state suggests the first agent prompt and shows the MCP connection snippet. The export dialog downloads Markdown/Mermaid/JSON from the server or captures the active canvas as PNG/SVG in the browser (html-to-image).",
+      "parentId": "web-ui",
+      "technology": "React 19, lucide-react, html-to-image",
+      "codeRefs": [
+        {
+          "path": "src/web/chrome/TopBar.tsx",
+          "symbol": "TopBar",
+          "startLine": 28,
+          "endLine": 55
+        },
+        {
+          "path": "src/web/chrome/ExportDialog.tsx",
+          "symbol": "ExportDialog",
+          "startLine": 23,
+          "endLine": 140
+        },
+        {
+          "path": "src/web/chrome/Activity.tsx",
+          "symbol": "ActivityPopover",
+          "startLine": 68,
+          "endLine": 115
+        },
+        {
+          "path": "src/web/chrome/Palette.tsx",
+          "symbol": "Palette",
+          "startLine": 27,
+          "endLine": 167
+        }
+      ]
+    },
+    {
+      "id": "apply-changes-input",
+      "kind": "data",
+      "name": "apply_changes input",
+      "summary": "A ChangeSet with a required summary and an optional dryRun flag.",
+      "description": "Result: ChangeResult (with `dryRun: true` when validating only), plus `humanChangesSinceYouLastLooked` when the human changed the model since the agent last looked.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "registerTool",
+          "startLine": 213,
+          "endLine": 246,
+          "note": "apply_changes registration and handler"
+        }
+      ],
+      "format": "json (MCP tool arguments)",
+      "fields": [
+        {
+          "name": "summary",
+          "type": "string (1–200)",
+          "description": "Required"
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "model / elements / relations / flows / remove",
+          "type": "ChangeSet parts",
+          "ref": "change-set"
+        },
+        {
+          "name": "layout",
+          "type": "—",
+          "description": "Accepted by the schema but agents are told not to send it"
+        }
+      ]
+    },
+    {
+      "id": "archweave-server",
+      "kind": "service",
+      "name": "ArchWeave server",
+      "summary": "One Node process that owns the model and serves the UI, REST/SSE API and MCP endpoint on one port.",
+      "description": "Started by `src/server/main.ts` (dev: `tsx watch`; prod: esbuild bundle `dist/server/main.js`). Ships as a Docker image (`ghcr.io/rawe/archweave`) run next to the modeled repository with Docker Compose, which mounts the repo at `/repo`. Listens on `127.0.0.1:4317` by default.\n\nAll mutations — from the browser and from the agent — go through one `Store.apply(changeSet, actor)`.",
+      "technology": "Node 22, Hono 4, MCP TypeScript SDK, Zod 4",
+      "codeRefs": [
+        {
+          "path": "src/server/main.ts",
+          "note": "Process entry point"
+        },
+        {
+          "path": "src/server/app.ts",
+          "symbol": "createArchWeave",
+          "startLine": 42,
+          "endLine": 96,
+          "note": "Wires store, persistence, session, routes and MCP"
+        },
+        {
+          "path": "Dockerfile"
+        },
+        {
+          "path": "docker-compose.yml",
+          "note": "How a repository runs ArchWeave next to its code"
+        }
+      ]
+    },
+    {
+      "id": "canonical-json",
+      "kind": "module",
+      "name": "Canonical JSON",
+      "summary": "Writes the model in a stable on-disk form so Git diffs stay small and semantic.",
+      "description": "Arrays sorted by id, keys in schema order, default-valued fields omitted, layout coordinates rounded to 0.1. `explicitModel` is the opposite (all defaults filled in) and is used by the JSON export.",
+      "parentId": "persistence",
+      "codeRefs": [
+        {
+          "path": "src/server/canonical.ts",
+          "symbol": "canonicalModel",
+          "startLine": 8,
+          "endLine": 17
+        },
+        {
+          "path": "src/server/canonical.ts",
+          "symbol": "canonicalLayout",
+          "startLine": 29,
+          "endLine": 38
+        }
+      ]
+    },
+    {
+      "id": "change-engine",
+      "kind": "module",
+      "name": "Change engine",
+      "summary": "Applies a change set to a draft copy of the model with upsert semantics, list helpers and referential checks.",
+      "description": "`Draft.run`: meta → removals (cascade to descendants, relations, flow steps, layout) → element/relation/flow upserts → integrity checks → clean-up of data references lost by the change set (with warnings). Errors are collected and thrown together as one `ChangeError` naming each entry, with did-you-mean suggestions.",
+      "parentId": "model-store",
+      "codeRefs": [
+        {
+          "path": "src/server/changes.ts",
+          "symbol": "applyChangeSet",
+          "startLine": 57,
+          "endLine": 59
+        },
+        {
+          "path": "src/server/changes.ts",
+          "symbol": "Draft",
+          "startLine": 72,
+          "endLine": 538
+        },
+        {
+          "path": "src/server/changes.ts",
+          "symbol": "parseChangeSet",
+          "startLine": 49,
+          "endLine": 54
+        }
+      ]
+    },
+    {
+      "id": "change-result",
+      "kind": "data",
+      "name": "ChangeResult",
+      "summary": "What applying a change set did: new revision, ids created/updated/removed and warnings.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "ChangeResult",
+          "startLine": 244,
+          "endLine": 250
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "revision",
+          "type": "integer"
+        },
+        {
+          "name": "created",
+          "type": "{elements, relations, flows: string[]}"
+        },
+        {
+          "name": "updated",
+          "type": "{elements, relations, flows: string[]}"
+        },
+        {
+          "name": "removed",
+          "type": "{elements, relations, flows: string[]}"
+        },
+        {
+          "name": "warnings",
+          "type": "string[]",
+          "description": "e.g. references cleaned up after a removal"
+        }
+      ],
+      "example": "{ \"revision\": 4, \"created\": { \"elements\": [\"billing\"], \"relations\": [\"checkout-calls-billing\"], \"flows\": [] }, \"updated\": {…}, \"removed\": {…}, \"warnings\": [] }"
+    },
+    {
+      "id": "change-set",
+      "kind": "data",
+      "name": "ChangeSet",
+      "summary": "The one mutation shape: the browser posts it over REST, the agent sends it through apply_changes.",
+      "description": "Applied atomically by the store: all entries validate or nothing changes. `remove` cascades to descendants, attached relations and flow steps. A change set with only `layout` is not journaled.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "ChangeSet",
+          "startLine": 224,
+          "endLine": 242
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "summary",
+          "type": "string (≤200)",
+          "optional": true,
+          "description": "Activity-feed line; required over MCP"
+        },
+        {
+          "name": "model",
+          "type": "{name?, description?}",
+          "optional": true
+        },
+        {
+          "name": "elements",
+          "type": "ElementPatch[]",
+          "optional": true,
+          "ref": "element-patch"
+        },
+        {
+          "name": "relations",
+          "type": "RelationPatch[]",
+          "optional": true,
+          "ref": "relation"
+        },
+        {
+          "name": "flows",
+          "type": "FlowPatch[]",
+          "optional": true,
+          "ref": "flow-patch"
+        },
+        {
+          "name": "remove",
+          "type": "{elements?, relations?, flows?: Id[]}",
+          "optional": true
+        },
+        {
+          "name": "layout",
+          "type": "Record<canvasKey, Record<id, Position | null>>",
+          "optional": true,
+          "description": "Partial layout update; null clears",
+          "ref": "layout"
+        }
+      ],
+      "example": "{\n  \"summary\": \"Added Billing\",\n  \"elements\": [{ \"id\": \"billing\", \"kind\": \"service\", \"name\": \"Billing\", \"status\": \"planned\" }],\n  \"relations\": [{ \"from\": \"checkout\", \"to\": \"billing\", \"kind\": \"calls\", \"label\": \"charges card\" }]\n}"
+    },
+    {
+      "id": "check-code-links-result",
+      "kind": "data",
+      "name": "check_code_links result",
+      "summary": "Stale code refs with their owner's name, and built elements that have no code ref at all.",
+      "description": "Actors, externals and systems are exempt from `builtWithoutCode`.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "registerTool",
+          "startLine": 248,
+          "endLine": 282,
+          "note": "check_code_links registration and handler"
+        }
+      ],
+      "format": "json (MCP tool result)",
+      "fields": [
+        {
+          "name": "stale",
+          "type": "(StaleLink & {ownerName})[]",
+          "ref": "stale-link"
+        },
+        {
+          "name": "builtWithoutCode",
+          "type": "CompactElement[]"
+        }
+      ]
+    },
+    {
+      "id": "client-state",
+      "kind": "component",
+      "name": "Client state",
+      "summary": "The browser's copy of the model plus view state, with optimistic edits reconciled against server snapshots.",
+      "description": "The displayed model is always *server snapshot + pending change sets applied locally*. `commit` applies a change set immediately, posts it, and marks it acknowledged with the returned revision; `receiveSnapshot` drops pending entries the server has caught up with. Agent journal entries mark touched ids as fresh/unseen and raise a toast with a *Show* action. Also holds perspective, scope, flow, selection, overlays and toasts.",
+      "parentId": "web-ui",
+      "technology": "Zustand 5",
+      "codeRefs": [
+        {
+          "path": "src/web/state/store.ts",
+          "symbol": "useStore",
+          "startLine": 118,
+          "endLine": 145
+        },
+        {
+          "path": "src/web/state/store.ts",
+          "symbol": "commit",
+          "startLine": 195,
+          "endLine": 211
+        },
+        {
+          "path": "src/web/state/store.ts",
+          "symbol": "receiveSnapshot",
+          "startLine": 180,
+          "endLine": 192
+        }
+      ]
+    },
+    {
+      "id": "code-drawer",
+      "kind": "component",
+      "name": "Code drawer",
+      "summary": "Shows a linked file with the referenced lines highlighted, plus an open-in-editor link.",
+      "parentId": "web-ui",
+      "technology": "highlight.js",
+      "codeRefs": [
+        {
+          "path": "src/web/code/CodeDrawer.tsx",
+          "symbol": "CodeDrawer",
+          "startLine": 24,
+          "endLine": 35
+        },
+        {
+          "path": "src/web/code/highlight.ts",
+          "symbol": "highlightLines",
+          "startLine": 66,
+          "endLine": 88
+        }
+      ]
+    },
+    {
+      "id": "code-file",
+      "kind": "data",
+      "name": "Code file",
+      "summary": "GET /api/code/file response: one repository file's content and facts for the code drawer.",
+      "parentId": "repo-access",
+      "codeRefs": [
+        {
+          "path": "src/server/repo.ts",
+          "symbol": "FileContent",
+          "startLine": 16,
+          "endLine": 24
+        },
+        {
+          "path": "src/web/api.ts",
+          "symbol": "CodeFile",
+          "startLine": 54,
+          "endLine": 61
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "path",
+          "type": "string",
+          "description": "Normalized repo-relative path"
+        },
+        {
+          "name": "exists",
+          "type": "boolean"
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "lineCount",
+          "type": "integer",
+          "optional": true
+        },
+        {
+          "name": "language",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "truncated",
+          "type": "boolean",
+          "optional": true,
+          "description": "File larger than 1 MiB"
+        },
+        {
+          "name": "binary",
+          "type": "boolean",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "code-link-checker",
+      "kind": "component",
+      "name": "Code link checker",
+      "summary": "Finds code refs that no longer match the repository: missing files, lines out of range, symbols not found or outside their range.",
+      "description": "File facts are cached by mtime. A symbol matches as a whole identifier outside quotes; for qualified names (`Store.apply`) the last segment is enough. Used by `GET /api/code/stale`, `get_context` (count) and `check_code_links`.",
+      "parentId": "archweave-server",
+      "codeRefs": [
+        {
+          "path": "src/server/stale.ts",
+          "symbol": "StaleLinks",
+          "startLine": 31,
+          "endLine": 70
+        },
+        {
+          "path": "src/server/stale.ts",
+          "symbol": "staleReason",
+          "startLine": 72,
+          "endLine": 85
+        },
+        {
+          "path": "src/server/stale.ts",
+          "symbol": "symbolLines",
+          "startLine": 91,
+          "endLine": 108
+        }
+      ]
+    },
+    {
+      "id": "code-ref",
+      "kind": "data",
+      "name": "CodeRef",
+      "summary": "A link from the model into the repository: path, optional symbol and line range.",
+      "description": "Paths are stored normalized: repo-relative, forward slashes, no `./`. A ref may point at a directory.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "CodeRef",
+          "startLine": 39,
+          "endLine": 46
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "path",
+          "type": "string",
+          "description": "Repo-relative file or directory"
+        },
+        {
+          "name": "symbol",
+          "type": "string",
+          "optional": true,
+          "description": "Function, class, type or export name; checked as an identifier"
+        },
+        {
+          "name": "startLine",
+          "type": "integer > 0",
+          "optional": true
+        },
+        {
+          "name": "endLine",
+          "type": "integer > 0",
+          "optional": true
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "optional": true,
+          "description": "Why this location matters"
+        }
+      ],
+      "example": "{ \"path\": \"src/server/store.ts\", \"symbol\": \"Store\", \"startLine\": 36, \"endLine\": 149 }"
+    },
+    {
+      "id": "coding-agent",
+      "kind": "agent",
+      "name": "Coding agent",
+      "summary": "Reads the repository and keeps the model in sync with the code through MCP tools.",
+      "description": "Any MCP client (Claude Code, etc.) connected to `/mcp` over Streamable HTTP. It receives the modeling guide as the server's MCP instructions, analyzes code, applies change sets, reads the human's selection and repairs stale code links.",
+      "technology": "MCP client",
+      "codeRefs": [
+        {
+          "path": "src/server/guide.ts",
+          "symbol": "GUIDE",
+          "startLine": 2,
+          "note": "Modeling guide every agent receives as MCP instructions"
+        }
+      ]
+    },
+    {
+      "id": "data-dir",
+      "kind": "store",
+      "name": "Model data directory",
+      "summary": "Holds the model, layout and activity journal as JSON files inside the modeled repository.",
+      "description": "Default `<repo>/.archweave` (`ARCHWEAVE_DATA_DIR`). `model.json` and `layout.json` are meant to be committed; `state/` (journal) is git-ignored by a `.gitignore` the server writes on first start. The server watches the directory and reloads files changed by someone else (git checkout, manual edit).",
+      "technology": "JSON files on disk",
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "Persistence",
+          "startLine": 46,
+          "endLine": 248
+        }
+      ]
+    },
+    {
+      "id": "data-perspective",
+      "kind": "component",
+      "name": "Data perspective",
+      "summary": "Catalog of all data structures grouped by owner, and a focus view of one structure with what it references and who uses it.",
+      "parentId": "web-ui",
+      "technology": "React Flow 12",
+      "codeRefs": [
+        {
+          "path": "src/web/data/DataView.tsx",
+          "symbol": "DataView",
+          "startLine": 15,
+          "endLine": 44
+        },
+        {
+          "path": "src/web/data/DataCatalog.tsx",
+          "symbol": "DataCatalog",
+          "startLine": 15,
+          "endLine": 114
+        },
+        {
+          "path": "src/web/data/DataFocus.tsx",
+          "symbol": "DataFocus",
+          "startLine": 22,
+          "endLine": 197
+        },
+        {
+          "path": "src/web/data/focusLayout.ts",
+          "note": "Deterministic focus layout: referenced right, referencing left, users around"
+        }
+      ]
+    },
+    {
+      "id": "developer",
+      "kind": "actor",
+      "name": "Developer",
+      "summary": "Explores and edits the architecture in the browser and directs the coding agent.",
+      "description": "Selects elements, pins notes, edits names/fields/relations, arranges the layout and exports documentation. Their selection and open notes are what the agent reads through `get_context`."
+    },
+    {
+      "id": "element",
+      "kind": "data",
+      "name": "Element",
+      "summary": "A node of the architecture graph: system, actor, app, service, component, module, store, queue, agent or data structure.",
+      "description": "Containment is `parentId`. The data-only fields (`format`, `fields`, `example`) are meaningful for kind `data`. Ids are readable slugs, stable across renames.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Element",
+          "startLine": 68,
+          "endLine": 88
+        },
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "ELEMENT_KINDS",
+          "startLine": 15,
+          "endLine": 27
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Id",
+          "description": "/^[a-z0-9][a-z0-9._-]*$/, max 80"
+        },
+        {
+          "name": "kind",
+          "type": "'system' | 'actor' | 'external' | 'app' | 'service' | 'component' | 'module' | 'store' | 'queue' | 'agent' | 'data'"
+        },
+        {
+          "name": "name",
+          "type": "string (1–120)"
+        },
+        {
+          "name": "summary",
+          "type": "string (≤280)",
+          "description": "One sentence, shown on the diagram"
+        },
+        {
+          "name": "description",
+          "type": "markdown"
+        },
+        {
+          "name": "parentId",
+          "type": "Id",
+          "optional": true,
+          "description": "Containing element; absent at the top level"
+        },
+        {
+          "name": "technology",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "status",
+          "type": "'planned' | 'built' | 'deprecated'",
+          "description": "Default built"
+        },
+        {
+          "name": "tags",
+          "type": "string[]"
+        },
+        {
+          "name": "codeRefs",
+          "type": "CodeRef[]",
+          "ref": "code-ref"
+        },
+        {
+          "name": "notes",
+          "type": "Note[]",
+          "ref": "note"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "optional": true,
+          "description": "Data only: json, sql, protobuf…"
+        },
+        {
+          "name": "fields",
+          "type": "Field[]",
+          "description": "Data only",
+          "ref": "field"
+        },
+        {
+          "name": "example",
+          "type": "string",
+          "optional": true,
+          "description": "Data only: sample payload"
+        }
+      ]
+    },
+    {
+      "id": "element-patch",
+      "kind": "data",
+      "name": "ElementPatch",
+      "summary": "An element upsert: every Element field optional, plus additive list helpers.",
+      "description": "With an existing id only the given fields change; with a new id (or none) `kind` and `name` are required. Within one patch the full list is applied first, then removals, then additions. Defaults are unwrapped (`patchShape`) so a patch never overwrites unspecified fields with defaults. RelationPatch is the same idea for relations (with `addCodeRefs`/`removeCodeRefs`).",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "ElementPatch",
+          "startLine": 197,
+          "endLine": 207
+        },
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "patchShape",
+          "startLine": 162,
+          "endLine": 166
+        },
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "RelationPatch",
+          "startLine": 209,
+          "endLine": 210
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "…Element fields",
+          "type": "optional",
+          "description": "Any field of Element",
+          "ref": "element"
+        },
+        {
+          "name": "parentId",
+          "type": "Id | null",
+          "optional": true,
+          "description": "null moves to the top level"
+        },
+        {
+          "name": "addNotes",
+          "type": "string[]",
+          "optional": true
+        },
+        {
+          "name": "resolveNotes",
+          "type": "Id[]",
+          "optional": true
+        },
+        {
+          "name": "addCodeRefs",
+          "type": "CodeRef[]",
+          "optional": true,
+          "ref": "code-ref"
+        },
+        {
+          "name": "removeCodeRefs",
+          "type": "{path, symbol?}[]",
+          "optional": true
+        },
+        {
+          "name": "setFields",
+          "type": "FieldPatch[]",
+          "optional": true,
+          "description": "Upsert by name; ref: null clears",
+          "ref": "field"
+        },
+        {
+          "name": "removeFields",
+          "type": "string[]",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "export-request",
+      "kind": "data",
+      "name": "Export request",
+      "summary": "What to export: format, optional scope, perspectives and whether to include code refs.",
+      "description": "REST: `GET /api/export?format=markdown|mermaid|json&scope=&perspectives=structure,data,flows&code=true|false` returns a download with a filename. MCP `export` takes only `format` and `scope` and returns the text.",
+      "parentId": "exporter",
+      "codeRefs": [
+        {
+          "path": "src/server/export.ts",
+          "symbol": "ExportOptions",
+          "startLine": 8,
+          "endLine": 13
+        },
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 103,
+          "endLine": 123,
+          "note": "GET /api/export"
+        }
+      ],
+      "format": "query string / MCP arguments",
+      "fields": [
+        {
+          "name": "format",
+          "type": "'markdown' | 'mermaid' | 'json'"
+        },
+        {
+          "name": "scopeId",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "perspectives",
+          "type": "Perspective[]",
+          "optional": true,
+          "description": "REST only; default all"
+        },
+        {
+          "name": "code",
+          "type": "boolean",
+          "optional": true,
+          "description": "REST only; default true"
+        }
+      ]
+    },
+    {
+      "id": "exporter",
+      "kind": "component",
+      "name": "Exporter",
+      "summary": "Renders the model as a Markdown architecture document, Mermaid diagrams only, or explicit JSON.",
+      "description": "Markdown: overview, one Mermaid flowchart per scope (using the same structure projection as the canvas) with element entries, data structures with field tables and an ER-style diagram, flows as sequence diagrams. Can be limited to a scope subtree and to some perspectives, with or without code refs.",
+      "parentId": "archweave-server",
+      "technology": "Markdown, Mermaid",
+      "codeRefs": [
+        {
+          "path": "src/server/export.ts",
+          "symbol": "exportModel",
+          "startLine": 23,
+          "endLine": 40
+        },
+        {
+          "path": "src/server/export.ts",
+          "symbol": "DocumentWriter",
+          "startLine": 48,
+          "endLine": 216
+        }
+      ]
+    },
+    {
+      "id": "field",
+      "kind": "data",
+      "name": "Field",
+      "summary": "One field of a data structure; may reference another data structure.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Field",
+          "startLine": 49,
+          "endLine": 56
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Dotted for nesting (\"customer.address.city\")"
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "description": "Free text, default \"\"; enum values go here"
+        },
+        {
+          "name": "optional",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "ref",
+          "type": "Id",
+          "optional": true,
+          "description": "Must name an element of kind data"
+        }
+      ]
+    },
+    {
+      "id": "find-by-code-result",
+      "kind": "data",
+      "name": "find_by_code result",
+      "summary": "Elements, relations and flow steps whose code refs touch given paths, and the paths nothing links to.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/views.ts",
+          "symbol": "findByCode",
+          "startLine": 280,
+          "endLine": 310
+        },
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "registerTool",
+          "startLine": 191,
+          "endLine": 211,
+          "note": "find_by_code registration"
+        }
+      ],
+      "format": "json (MCP tool result)",
+      "fields": [
+        {
+          "name": "elements",
+          "type": "(CompactElement & {codeRefs})[]"
+        },
+        {
+          "name": "relations",
+          "type": "(compact Relation & {codeRefs})[]"
+        },
+        {
+          "name": "flowSteps",
+          "type": "{flowId, flowName, step, from, to, label, codeRefs}[]"
+        },
+        {
+          "name": "unmatchedPaths",
+          "type": "string[]"
+        }
+      ]
+    },
+    {
+      "id": "flow",
+      "kind": "data",
+      "name": "Flow",
+      "summary": "A named scenario: an ordered walk through the architecture.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Flow",
+          "startLine": 130,
+          "endLine": 136
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Id"
+        },
+        {
+          "name": "name",
+          "type": "string (1–120)"
+        },
+        {
+          "name": "summary",
+          "type": "string (≤280)"
+        },
+        {
+          "name": "steps",
+          "type": "FlowStep[]",
+          "ref": "flow-step"
+        }
+      ]
+    },
+    {
+      "id": "flow-patch",
+      "kind": "data",
+      "name": "FlowPatch",
+      "summary": "A flow upsert with index-based step helpers.",
+      "description": "Indices are 0-based and refer to the step list before this patch (after `steps`, if sent).",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "FlowPatch",
+          "startLine": 215,
+          "endLine": 222
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "steps",
+          "type": "FlowStep[]",
+          "optional": true,
+          "ref": "flow-step"
+        },
+        {
+          "name": "updateSteps",
+          "type": "({index} & Partial<FlowStep>)[]",
+          "optional": true
+        },
+        {
+          "name": "insertSteps",
+          "type": "{index, step: FlowStep}[]",
+          "optional": true
+        },
+        {
+          "name": "removeSteps",
+          "type": "integer[]",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "flow-step",
+      "kind": "data",
+      "name": "FlowStep",
+      "summary": "One ordered step of a flow: who talks to whom, with what data.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "FlowStep",
+          "startLine": 120,
+          "endLine": 128
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "from",
+          "type": "Id"
+        },
+        {
+          "name": "to",
+          "type": "Id"
+        },
+        {
+          "name": "label",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "dataIds",
+          "type": "Id[]"
+        },
+        {
+          "name": "codeRefs",
+          "type": "CodeRef[]",
+          "ref": "code-ref"
+        }
+      ]
+    },
+    {
+      "id": "flows-perspective",
+      "kind": "component",
+      "name": "Flows perspective",
+      "summary": "Lists flows and draws the selected one as a sequence diagram whose steps can be stepped through and edited.",
+      "parentId": "web-ui",
+      "codeRefs": [
+        {
+          "path": "src/web/flows/FlowsView.tsx",
+          "symbol": "FlowsView",
+          "startLine": 14,
+          "endLine": 41
+        },
+        {
+          "path": "src/web/flows/SequenceDiagram.tsx",
+          "symbol": "SequenceDiagram",
+          "startLine": 69,
+          "endLine": 252
+        }
+      ]
+    },
+    {
+      "id": "focus-request",
+      "kind": "data",
+      "name": "FocusRequest",
+      "summary": "Sent by the agent to steer the human's view to some elements with a message.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "FocusRequest",
+          "startLine": 287,
+          "endLine": 293
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "perspective",
+          "type": "'structure' | 'data' | 'flows'",
+          "optional": true
+        },
+        {
+          "name": "scopeId",
+          "type": "Id | null",
+          "optional": true,
+          "description": "null = top level"
+        },
+        {
+          "name": "flowId",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "elementIds",
+          "type": "Id[]"
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "focus-ui-input",
+      "kind": "data",
+      "name": "focus_ui input",
+      "summary": "Elements to highlight and where to navigate; validated, then published to browsers as a FocusRequest.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "registerTool",
+          "startLine": 301,
+          "endLine": 339,
+          "note": "focus_ui registration and handler"
+        }
+      ],
+      "format": "json (MCP tool arguments)",
+      "fields": [
+        {
+          "name": "elementIds",
+          "type": "Id[]"
+        },
+        {
+          "name": "perspective",
+          "type": "'structure' | 'data' | 'flows'",
+          "optional": true
+        },
+        {
+          "name": "scopeId",
+          "type": "Id | null",
+          "optional": true
+        },
+        {
+          "name": "flowId",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "message",
+          "type": "string (≤280)",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "get-context-result",
+      "kind": "data",
+      "name": "get_context result",
+      "summary": "What the human sees and has selected, expanded in full, plus open notes, their recent changes and the stale-link count.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "visibleIn",
+          "startLine": 364,
+          "endLine": 381
+        },
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "registerTool",
+          "startLine": 88,
+          "endLine": 134,
+          "note": "get_context registration and handler"
+        }
+      ],
+      "format": "json (MCP tool result)",
+      "fields": [
+        {
+          "name": "revision",
+          "type": "integer"
+        },
+        {
+          "name": "browserConnected",
+          "type": "boolean"
+        },
+        {
+          "name": "ui.perspective",
+          "type": "'structure' | 'data' | 'flows'"
+        },
+        {
+          "name": "ui.reportedAt",
+          "type": "ISO timestamp",
+          "optional": true
+        },
+        {
+          "name": "ui.scope",
+          "type": "CompactElement | 'top level'"
+        },
+        {
+          "name": "ui.breadcrumb",
+          "type": "{id, name}[]"
+        },
+        {
+          "name": "ui.flow",
+          "type": "{id, name, summary, steps}",
+          "optional": true
+        },
+        {
+          "name": "ui.visible",
+          "type": "CompactElement[] (neighbor?: true)",
+          "optional": true
+        },
+        {
+          "name": "ui.visibleRelations",
+          "type": "{from, to, count, relationIds}[]",
+          "optional": true
+        },
+        {
+          "name": "uiHint",
+          "type": "string",
+          "optional": true,
+          "description": "When no browser is connected"
+        },
+        {
+          "name": "selection.elements",
+          "type": "expanded Element[]",
+          "ref": "element"
+        },
+        {
+          "name": "selection.relations",
+          "type": "expanded Relation[]",
+          "ref": "relation"
+        },
+        {
+          "name": "openNotes",
+          "type": "{elementId, noteId, author, text, createdAt}[]",
+          "ref": "note"
+        },
+        {
+          "name": "humanChanges",
+          "type": "JournalEntry[]",
+          "description": "Human entries since the agent's cursor",
+          "ref": "journal-entry"
+        },
+        {
+          "name": "staleLinks",
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "id": "get-model-input",
+      "kind": "data",
+      "name": "get_model input",
+      "summary": "Which part of the outline to return: scope, depth, kinds and whether to include data structures.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "registerTool",
+          "startLine": 136,
+          "endLine": 155,
+          "note": "get_model registration"
+        }
+      ],
+      "format": "json (MCP tool arguments)",
+      "fields": [
+        {
+          "name": "scopeId",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "depth",
+          "type": "1–10",
+          "optional": true,
+          "description": "Default 2"
+        },
+        {
+          "name": "kinds",
+          "type": "ElementKind[]",
+          "optional": true
+        },
+        {
+          "name": "includeData",
+          "type": "boolean",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "inspector",
+      "kind": "component",
+      "name": "Inspector",
+      "summary": "Side panel to read and edit the selected element, relation thread or flow step: fields, notes, code refs, relations, data.",
+      "parentId": "web-ui",
+      "codeRefs": [
+        {
+          "path": "src/web/inspector/Inspector.tsx",
+          "symbol": "Inspector",
+          "startLine": 15,
+          "endLine": 73
+        },
+        {
+          "path": "src/web/inspector/ElementInspector.tsx",
+          "symbol": "ElementInspector",
+          "startLine": 24,
+          "endLine": 120
+        },
+        {
+          "path": "src/web/inspector/CodeRefs.tsx",
+          "symbol": "CodeRefs",
+          "startLine": 30,
+          "endLine": 104
+        },
+        {
+          "path": "src/web/inspector/sections.tsx",
+          "symbol": "Notes",
+          "startLine": 16,
+          "endLine": 94
+        }
+      ]
+    },
+    {
+      "id": "integrity-check",
+      "kind": "module",
+      "name": "Integrity check",
+      "summary": "Finds graph problems a schema cannot: duplicate ids, unknown references, non-data data refs, containment cycles.",
+      "description": "Used whenever a model enters from outside the store (startup load, disk reload). A model with problems is refused: startup exits with the list, a reload is ignored and logged.",
+      "parentId": "model-store",
+      "codeRefs": [
+        {
+          "path": "src/server/integrity.ts",
+          "symbol": "integrityProblems",
+          "startLine": 8,
+          "endLine": 71
+        },
+        {
+          "path": "src/server/store.ts",
+          "symbol": "parseModel",
+          "startLine": 161,
+          "endLine": 166
+        }
+      ]
+    },
+    {
+      "id": "journal-entry",
+      "kind": "data",
+      "name": "JournalEntry",
+      "summary": "One line of the shared activity journal: who changed what, at which revision.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "JournalEntry",
+          "startLine": 253,
+          "endLine": 261
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "revision",
+          "type": "integer"
+        },
+        {
+          "name": "at",
+          "type": "ISO timestamp"
+        },
+        {
+          "name": "actor",
+          "type": "'human' | 'agent'"
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "description": "Given, or generated (\"Added 3 elements, 2 relations\")"
+        },
+        {
+          "name": "created",
+          "type": "{elements, relations, flows: string[]}"
+        },
+        {
+          "name": "updated",
+          "type": "{elements, relations, flows: string[]}"
+        },
+        {
+          "name": "removed",
+          "type": "{elements, relations, flows: string[]}"
+        }
+      ]
+    },
+    {
+      "id": "journal-jsonl",
+      "kind": "data",
+      "name": "state/journal.jsonl",
+      "summary": "The activity journal, one JournalEntry per line, last 500 kept. Git-ignored.",
+      "description": "Read at startup to restore the journal and the revision counter; malformed lines are skipped with a log message.",
+      "parentId": "data-dir",
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "JournalLine",
+          "startLine": 19,
+          "endLine": 27
+        },
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "readJournal",
+          "startLine": 229,
+          "endLine": 247
+        }
+      ],
+      "format": "json lines",
+      "fields": [
+        {
+          "name": "(line)",
+          "type": "JournalEntry",
+          "ref": "journal-entry"
+        }
+      ],
+      "example": "{\"revision\":1,\"at\":\"2026-11-12T22:10:03.120Z\",\"actor\":\"agent\",\"summary\":\"Model ArchWeave's top level\",\"created\":{\"elements\":[\"developer\"],\"relations\":[],\"flows\":[]},\"updated\":{…},\"removed\":{…}}"
+    },
+    {
+      "id": "layout",
+      "kind": "data",
+      "name": "Layout",
+      "summary": "Diagram positions per canvas, kept out of the model.",
+      "description": "Canvas keys are `structure:<scopeId>` (or `structure:root`) and `data`; each maps element id → `{x, y}`. Written by the browser (auto-placement and dragging); agents must not send it.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Layout",
+          "startLine": 152,
+          "endLine": 155
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "<canvasKey>",
+          "type": "Record<elementId, Position>"
+        },
+        {
+          "name": "<canvasKey>.<elementId>.x",
+          "type": "number"
+        },
+        {
+          "name": "<canvasKey>.<elementId>.y",
+          "type": "number"
+        }
+      ],
+      "example": "{ \"structure:root\": { \"archweave-server\": { \"x\": 240, \"y\": 80 } } }"
+    },
+    {
+      "id": "layout-json",
+      "kind": "data",
+      "name": "layout.json",
+      "summary": "Persisted diagram positions, canvases and ids sorted, coordinates rounded. Committed to Git.",
+      "parentId": "data-dir",
+      "codeRefs": [
+        {
+          "path": "src/server/canonical.ts",
+          "symbol": "canonicalLayout",
+          "startLine": 29,
+          "endLine": 38
+        },
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "LAYOUT_FILE",
+          "startLine": 10
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "<canvasKey>.<elementId>",
+          "type": "{x, y}",
+          "ref": "layout"
+        }
+      ]
+    },
+    {
+      "id": "mcp-endpoint",
+      "kind": "component",
+      "name": "MCP endpoint",
+      "summary": "Exposes the model to coding agents as MCP tools at /mcp and ships the modeling guide as server instructions.",
+      "description": "Stateless Streamable HTTP: each POST creates a fresh `McpServer` + transport (JSON responses, no session id); GET is refused with 405. Any request marks the agent present (`Session.touchAgent`) with the `clientInfo.name` from `initialize`.\n\nTools: `get_guide`, `get_context`, `get_model`, `get_element`, `search`, `find_by_code`, `apply_changes` (actor `agent`, `dryRun` supported), `check_code_links`, `get_changes`, `focus_ui`, `export`.\n\n`get_context` and `apply_changes` return the human's changes since the agent's cursor and then advance it, so the agent sees each human edit once.",
+      "parentId": "archweave-server",
+      "technology": "@modelcontextprotocol/sdk (Streamable HTTP, stateless)",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "handleMcpRequest",
+          "startLine": 29,
+          "endLine": 54
+        },
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "createMcpServer",
+          "startLine": 73,
+          "endLine": 361
+        }
+      ]
+    },
+    {
+      "id": "mcp-shell-client",
+      "kind": "app",
+      "name": "MCP shell client",
+      "summary": "Command-line MCP client for agents and scripts without a native MCP connection.",
+      "description": "`node scripts/mcp-call.mjs instructions | tools | <tool> [json | @file.json]`. Speaks real MCP (Streamable HTTP) via the official SDK; `ARCHWEAVE_URL` selects the server and `ARCHWEAVE_CLIENT` the client name shown as agent presence.",
+      "technology": "Node script, MCP SDK client",
+      "codeRefs": [
+        {
+          "path": "scripts/mcp-call.mjs"
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "kind": "data",
+      "name": "Model",
+      "summary": "The whole architecture: one graph of elements and relations plus flows; perspectives are lenses onto it.",
+      "description": "Independent of diagram rendering — positions live in Layout so model diffs stay semantic.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Model",
+          "startLine": 138,
+          "endLine": 146
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "version",
+          "type": "1"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Default: repository folder name"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "elements",
+          "type": "Element[]",
+          "ref": "element"
+        },
+        {
+          "name": "relations",
+          "type": "Relation[]",
+          "ref": "relation"
+        },
+        {
+          "name": "flows",
+          "type": "Flow[]",
+          "ref": "flow"
+        }
+      ]
+    },
+    {
+      "id": "model-edits",
+      "kind": "module",
+      "name": "Model edits",
+      "summary": "Edit commands shared by canvas, keyboard, inspector and palette: create, connect, reparent, delete, rename.",
+      "parentId": "client-state",
+      "codeRefs": [
+        {
+          "path": "src/web/state/actions.ts",
+          "symbol": "createElement",
+          "startLine": 16,
+          "endLine": 32
+        },
+        {
+          "path": "src/web/state/actions.ts",
+          "symbol": "connect",
+          "startLine": 34,
+          "endLine": 44
+        },
+        {
+          "path": "src/web/state/actions.ts",
+          "symbol": "deleteSelection",
+          "startLine": 63,
+          "endLine": 86
+        }
+      ]
+    },
+    {
+      "id": "model-json",
+      "kind": "data",
+      "name": "model.json",
+      "summary": "The persisted model in canonical form: sorted by id, defaults omitted. Committed to Git.",
+      "description": "Written atomically (temp file + rename) 150 ms after a change. Edits on disk (git checkout/pull, manual) are reloaded; a model with integrity problems is refused.",
+      "parentId": "data-dir",
+      "codeRefs": [
+        {
+          "path": "src/server/canonical.ts",
+          "symbol": "canonicalModel",
+          "startLine": 8,
+          "endLine": 17
+        },
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "MODEL_FILE",
+          "startLine": 9
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "version",
+          "type": "1"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "elements",
+          "type": "Element[] (sorted by id)",
+          "ref": "element"
+        },
+        {
+          "name": "relations",
+          "type": "Relation[] (sorted by id)",
+          "ref": "relation"
+        },
+        {
+          "name": "flows",
+          "type": "Flow[] (sorted by id)",
+          "ref": "flow"
+        }
+      ],
+      "example": "{\n  \"version\": 1,\n  \"name\": \"ArchWeave\",\n  \"elements\": [\n    { \"id\": \"archweave-server\", \"kind\": \"service\", \"name\": \"ArchWeave server\", \"codeRefs\": [{ \"path\": \"src/server/main.ts\" }] }\n  ]\n}"
+    },
+    {
+      "id": "model-schema",
+      "kind": "module",
+      "name": "Model schema",
+      "summary": "Zod schemas and types for the model, change sets, journal, session state, plus id and path helpers.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Model",
+          "startLine": 138,
+          "endLine": 146
+        },
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "ChangeSet",
+          "startLine": 224,
+          "endLine": 242
+        },
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "slugify",
+          "startLine": 326,
+          "endLine": 336
+        }
+      ]
+    },
+    {
+      "id": "model-store",
+      "kind": "component",
+      "name": "Model store",
+      "summary": "Single in-memory owner of model, layout, revision, journal and undo; every mutation goes through it.",
+      "description": "`apply(changeSet, actor)` validates and applies atomically, bumps the revision, records a journal entry (last 500) and an undo step (last 50), then notifies subscribers. Layout-only change sets are neither journaled nor undoable and do not bump the revision. `replace` takes over a model/layout reloaded from disk (clears undo); `undo` restores the previous model but keeps the human's current arrangement.",
+      "parentId": "archweave-server",
+      "technology": "TypeScript",
+      "codeRefs": [
+        {
+          "path": "src/server/store.ts",
+          "symbol": "Store",
+          "startLine": 36,
+          "endLine": 149
+        },
+        {
+          "path": "src/server/store.ts",
+          "symbol": "apply",
+          "startLine": 66,
+          "endLine": 83
+        },
+        {
+          "path": "src/server/store.ts",
+          "symbol": "replace",
+          "startLine": 115,
+          "endLine": 126
+        }
+      ]
+    },
+    {
+      "id": "model-views",
+      "kind": "module",
+      "name": "Model views",
+      "summary": "Read-side projections the MCP tools return: outline, expanded element, search and find-by-code.",
+      "description": "`ModelView` indexes one model snapshot and builds the agent-facing shapes: compact elements, outlines with lifted relation threads, fully expanded elements/relations, data users and field refs, ranked search results and code-path lookups.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/views.ts",
+          "symbol": "ModelView",
+          "startLine": 42,
+          "endLine": 311
+        },
+        {
+          "path": "src/server/suggest.ts",
+          "symbol": "didYouMean",
+          "startLine": 26,
+          "endLine": 29,
+          "note": "Did-you-mean hints in errors"
+        }
+      ]
+    },
+    {
+      "id": "modeled-repo",
+      "kind": "store",
+      "name": "Modeled repository",
+      "summary": "The codebase being modeled; read-only source of files for code links, the code drawer and stale-link checks.",
+      "description": "`ARCHWEAVE_REPO_DIR` (default: current directory; `/repo` in Docker). The server only reads it — confined to its real path and never inside `.git` — and lists files with `git ls-files` when available.",
+      "technology": "Git working tree",
+      "codeRefs": [
+        {
+          "path": "src/server/repo.ts",
+          "symbol": "Repo",
+          "startLine": 34,
+          "endLine": 178
+        }
+      ]
+    },
+    {
+      "id": "modeling-guide",
+      "kind": "module",
+      "name": "Modeling guide",
+      "summary": "The text that tells agents how to structure, name, link and change the model.",
+      "description": "Sent as the MCP server `instructions` on initialize and returned by the `get_guide` tool.",
+      "parentId": "mcp-endpoint",
+      "codeRefs": [
+        {
+          "path": "src/server/guide.ts",
+          "symbol": "GUIDE",
+          "startLine": 2
+        }
+      ]
+    },
+    {
+      "id": "note",
+      "kind": "data",
+      "name": "Note",
+      "summary": "A message pinned to an element: human intent for the agent, or an agent's question for the human.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Note",
+          "startLine": 59,
+          "endLine": 66
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Id"
+        },
+        {
+          "name": "text",
+          "type": "string"
+        },
+        {
+          "name": "author",
+          "type": "'human' | 'agent'"
+        },
+        {
+          "name": "createdAt",
+          "type": "ISO timestamp"
+        },
+        {
+          "name": "resolved",
+          "type": "boolean",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "optimistic-apply",
+      "kind": "module",
+      "name": "Optimistic apply",
+      "summary": "Applies a change set locally, mirroring the server's upsert semantics closely enough for instant feedback.",
+      "description": "The server snapshot that follows is always the truth.",
+      "parentId": "client-state",
+      "codeRefs": [
+        {
+          "path": "src/web/state/apply.ts",
+          "symbol": "applyLocal",
+          "startLine": 25,
+          "endLine": 149
+        }
+      ]
+    },
+    {
+      "id": "persistence",
+      "kind": "component",
+      "name": "Persistence",
+      "summary": "Keeps the data directory in sync with the store: debounced atomic writes and reloads of outside edits.",
+      "description": "Subscribes to the store and writes pending documents 150 ms after a change (temp file + rename). Watches the directory with `fs.watch`; on a change to `model.json`/`layout.json` it re-reads, compares with the text it last read or wrote (`known`) to tell its own writes from outside edits, and hands real changes to `Store.replace`. An unsaved local edit wins over a concurrent disk change.",
+      "parentId": "archweave-server",
+      "technology": "node:fs",
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "Persistence",
+          "startLine": 46,
+          "endLine": 248
+        },
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "writePending",
+          "startLine": 126,
+          "endLine": 148
+        },
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "reloadIfChanged",
+          "startLine": 178,
+          "endLine": 203
+        }
+      ]
+    },
+    {
+      "id": "relation",
+      "kind": "data",
+      "name": "Relation",
+      "summary": "A directed edge: `from` acts on `to`, optionally carrying data structures.",
+      "description": "Generated ids are `<from>-<kind>-<to>` with `-2`, `-3` appended when taken.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Relation",
+          "startLine": 104,
+          "endLine": 117
+        },
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "RELATION_KINDS",
+          "startLine": 90,
+          "endLine": 100
+        }
+      ],
+      "format": "typescript (zod)",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Id"
+        },
+        {
+          "name": "from",
+          "type": "Id",
+          "description": "Element id"
+        },
+        {
+          "name": "to",
+          "type": "Id",
+          "description": "Element id"
+        },
+        {
+          "name": "kind",
+          "type": "'uses' | 'calls' | 'reads' | 'writes' | 'publishes' | 'subscribes' | 'produces' | 'consumes' | 'references'",
+          "description": "Default uses"
+        },
+        {
+          "name": "label",
+          "type": "string (≤80)",
+          "description": "Verb phrase shown on the diagram"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "technology",
+          "type": "string",
+          "optional": true,
+          "description": "Protocol, e.g. HTTPS/JSON"
+        },
+        {
+          "name": "dataIds",
+          "type": "Id[]",
+          "description": "Data structures carried; must be kind data"
+        },
+        {
+          "name": "status",
+          "type": "'planned' | 'built' | 'deprecated'"
+        },
+        {
+          "name": "codeRefs",
+          "type": "CodeRef[]",
+          "ref": "code-ref"
+        }
+      ]
+    },
+    {
+      "id": "repo-access",
+      "kind": "component",
+      "name": "Repository access",
+      "summary": "Read-only, path-confined access to the modeled repository: normalize paths, read files, list and fuzzy-search files.",
+      "description": "Rejects paths outside the repository (after resolving symlinks) and anything inside `.git`. Files over 1 MiB are truncated; binary files are reported, not returned. File listing uses `git ls-files --cached --others --exclude-standard`, falling back to a directory walk, cached for 5 s.",
+      "parentId": "archweave-server",
+      "codeRefs": [
+        {
+          "path": "src/server/repo.ts",
+          "symbol": "Repo",
+          "startLine": 34,
+          "endLine": 178
+        },
+        {
+          "path": "src/server/repo.ts",
+          "symbol": "normalize",
+          "startLine": 53,
+          "endLine": 67
+        },
+        {
+          "path": "src/server/repo.ts",
+          "symbol": "readFile",
+          "startLine": 92,
+          "endLine": 117
+        }
+      ]
+    },
+    {
+      "id": "rest-api",
+      "kind": "component",
+      "name": "REST & event API",
+      "summary": "Serves the browser: snapshot, change sets, undo, journal, UI state, code files, stale links, export and the live event stream.",
+      "description": "Routes under `/api`:\n- `GET /snapshot`, `POST /changes` (actor `human`), `POST /undo`, `GET /journal?since=`\n- `GET /session`, `PUT /session/ui` (what the human sees)\n- `GET /events` — SSE: `snapshot`, `agent`, `focus` events, with a keep-alive comment every 25 s; events are queued per connection so they arrive in order\n- `GET /code/file?path=`, `GET /code/files?q=&limit=`, `GET /code/stale`\n- `GET /export?format=&scope=&perspectives=&code=`\n\n`broadcastStoreChanges` turns every store change into a `snapshot` event carrying the full snapshot (and the journal entry when there is one). `ChangeError`/`PathError` map to 400 with `{error, details}`.",
+      "parentId": "archweave-server",
+      "technology": "Hono, Server-Sent Events",
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "apiRoutes",
+          "startLine": 20,
+          "endLine": 128
+        },
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "broadcastStoreChanges",
+          "startLine": 131,
+          "endLine": 133
+        },
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 62,
+          "endLine": 88,
+          "note": "GET /api/events SSE stream"
+        }
+      ]
+    },
+    {
+      "id": "server-config",
+      "kind": "data",
+      "name": "Server configuration",
+      "summary": "Where the repository and data live, the listen address and which extra host names are accepted.",
+      "parentId": "server-host",
+      "codeRefs": [
+        {
+          "path": "src/server/config.ts",
+          "symbol": "Config",
+          "startLine": 3,
+          "endLine": 13
+        },
+        {
+          "path": "src/server/config.ts",
+          "symbol": "configFromEnv",
+          "startLine": 15,
+          "endLine": 29
+        }
+      ],
+      "format": "environment variables",
+      "fields": [
+        {
+          "name": "repoDir",
+          "type": "path",
+          "description": "ARCHWEAVE_REPO_DIR, default cwd"
+        },
+        {
+          "name": "dataDir",
+          "type": "path",
+          "description": "ARCHWEAVE_DATA_DIR, default <repo>/.archweave; relative to repo"
+        },
+        {
+          "name": "hostRepoPath",
+          "type": "path",
+          "optional": true,
+          "description": "ARCHWEAVE_HOST_REPO_PATH, for open-in-editor links from Docker"
+        },
+        {
+          "name": "port",
+          "type": "number",
+          "description": "PORT, default 4317"
+        },
+        {
+          "name": "host",
+          "type": "string",
+          "description": "HOST, default 127.0.0.1 (0.0.0.0 in Docker)"
+        },
+        {
+          "name": "allowedHosts",
+          "type": "string[]",
+          "description": "ARCHWEAVE_ALLOWED_HOSTS, comma-separated"
+        },
+        {
+          "name": "webDir",
+          "type": "path",
+          "optional": true,
+          "description": "ARCHWEAVE_WEB_DIR, default dist/web"
+        }
+      ]
+    },
+    {
+      "id": "server-event",
+      "kind": "data",
+      "name": "Server event (SSE)",
+      "summary": "An event pushed to every connected browser over GET /api/events: snapshot, agent presence or focus request.",
+      "description": "On connect a browser first receives a `snapshot` and an `agent` event. Every store change (apply, undo, disk reload) is broadcast as a `snapshot` with the full snapshot; `entry` is present when the change was journaled (not for reloads or layout-only changes).",
+      "parentId": "session",
+      "codeRefs": [
+        {
+          "path": "src/server/session.ts",
+          "symbol": "ServerEvent",
+          "startLine": 3,
+          "endLine": 6
+        },
+        {
+          "path": "src/web/api.ts",
+          "symbol": "EventHandlers",
+          "startLine": 84,
+          "endLine": 89,
+          "note": "Browser side handlers"
+        }
+      ],
+      "format": "text/event-stream, JSON data",
+      "fields": [
+        {
+          "name": "event",
+          "type": "'snapshot' | 'agent' | 'focus'"
+        },
+        {
+          "name": "data.snapshot",
+          "type": "Snapshot",
+          "optional": true,
+          "description": "event = snapshot",
+          "ref": "snapshot"
+        },
+        {
+          "name": "data.entry",
+          "type": "JournalEntry",
+          "optional": true,
+          "description": "event = snapshot, when journaled",
+          "ref": "journal-entry"
+        },
+        {
+          "name": "data (agent)",
+          "type": "AgentPresence",
+          "optional": true,
+          "description": "event = agent",
+          "ref": "agent-presence"
+        },
+        {
+          "name": "data (focus)",
+          "type": "FocusRequest",
+          "optional": true,
+          "description": "event = focus",
+          "ref": "focus-request"
+        }
+      ],
+      "example": "event: snapshot\ndata: {\"snapshot\":{\"revision\":7,\"model\":{…},\"layout\":{…}},\"entry\":{\"revision\":7,\"actor\":\"agent\",\"summary\":\"Model checkout\",…}}\n\nevent: focus\ndata: {\"elementIds\":[\"model-store\"],\"message\":\"This is where changes are applied\"}"
+    },
+    {
+      "id": "server-host",
+      "kind": "component",
+      "name": "Server host",
+      "summary": "Reads configuration, wires the parts together, guards every request and serves the built UI.",
+      "description": "`createArchWeave` builds Repo → Persistence (loads files) → Store → Session → routes and the `/mcp` handler on one Hono app.\n\nGuards, applied to every route:\n- **hostGuard** refuses requests whose `Host` or `Origin` names a host other than localhost, `HOST` or `ARCHWEAVE_ALLOWED_HOSTS` (DNS-rebinding and cross-site protection).\n- **jsonBodyGuard** requires `Content-Type: application/json` on mutating requests with a body, so a plain form post cannot reach the API without a CORS preflight.\n\n`serveWeb` looks for `dist/web/index.html` on every request (a UI built after startup is picked up) and falls back to `index.html` for client-side routes.",
+      "parentId": "archweave-server",
+      "technology": "Hono, @hono/node-server",
+      "codeRefs": [
+        {
+          "path": "src/server/app.ts",
+          "symbol": "createArchWeave",
+          "startLine": 42,
+          "endLine": 96
+        },
+        {
+          "path": "src/server/app.ts",
+          "symbol": "hostGuard",
+          "startLine": 101,
+          "endLine": 122
+        },
+        {
+          "path": "src/server/app.ts",
+          "symbol": "jsonBodyGuard",
+          "startLine": 137,
+          "endLine": 143
+        },
+        {
+          "path": "src/server/app.ts",
+          "symbol": "serveWeb",
+          "startLine": 159,
+          "endLine": 175
+        },
+        {
+          "path": "src/server/config.ts",
+          "symbol": "configFromEnv",
+          "startLine": 15,
+          "endLine": 29
+        }
+      ]
+    },
+    {
+      "id": "server-sync",
+      "kind": "component",
+      "name": "Server sync",
+      "summary": "Everything the browser asks of the server: REST calls, the SSE subscription and reporting what the human sees.",
+      "description": "`api.ts` is the only module that talks HTTP. `bootstrap()` (called once from `main.tsx`) loads snapshot, session and journal, subscribes to `/api/events`, re-fetches stale links after changes (debounced 600 ms), PUTs the UI state 150 ms after it changes, and mirrors perspective/scope/flow in the URL hash so Back drills out.",
+      "parentId": "web-ui",
+      "technology": "fetch, EventSource",
+      "codeRefs": [
+        {
+          "path": "src/web/api.ts",
+          "symbol": "api",
+          "startLine": 63,
+          "endLine": 82
+        },
+        {
+          "path": "src/web/api.ts",
+          "symbol": "subscribe",
+          "startLine": 92,
+          "endLine": 105
+        },
+        {
+          "path": "src/web/state/bootstrap.ts",
+          "symbol": "bootstrap",
+          "startLine": 6,
+          "endLine": 94
+        }
+      ]
+    },
+    {
+      "id": "session",
+      "kind": "component",
+      "name": "Session",
+      "summary": "Live, unpersisted state shared by browser and agent: the human's view, agent presence and the browser event bus.",
+      "description": "Holds the last `UiState` reported by a browser (and when), the agent's presence (connected for 60 s after its last MCP request), the agent's journal cursor and the set of SSE listeners. `publish` fans an event out to every connected browser. Nothing here survives a restart.",
+      "parentId": "archweave-server",
+      "codeRefs": [
+        {
+          "path": "src/server/session.ts",
+          "symbol": "Session",
+          "startLine": 14,
+          "endLine": 86
+        }
+      ]
+    },
+    {
+      "id": "session-info",
+      "kind": "data",
+      "name": "Session info",
+      "summary": "GET /api/session response: the last reported UI state, agent presence and repository name.",
+      "parentId": "rest-api",
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 45,
+          "endLine": 51,
+          "note": "GET /api/session"
+        },
+        {
+          "path": "src/web/api.ts",
+          "symbol": "SessionInfo",
+          "startLine": 48,
+          "endLine": 52
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "ui",
+          "type": "UiState",
+          "ref": "ui-state"
+        },
+        {
+          "name": "agent",
+          "type": "AgentPresence",
+          "ref": "agent-presence"
+        },
+        {
+          "name": "repo.name",
+          "type": "string"
+        },
+        {
+          "name": "repo.hostPath",
+          "type": "string",
+          "optional": true,
+          "description": "ARCHWEAVE_HOST_REPO_PATH, for open-in-editor links"
+        }
+      ]
+    },
+    {
+      "id": "shared-contract",
+      "kind": "module",
+      "name": "Shared contract",
+      "summary": "The data contract and structure projection used by server, web UI and MCP tools alike.",
+      "description": "`src/shared/model.ts` is the single schema (Zod) for the model, change sets, journal entries and session state; `src/shared/projection.ts` computes what a structure canvas shows. Both sides import the same code, so validation and lifting of relations behave identically in browser and server.",
+      "technology": "TypeScript, Zod 4",
+      "codeRefs": [
+        {
+          "path": "src/shared"
+        }
+      ]
+    },
+    {
+      "id": "snapshot",
+      "kind": "data",
+      "name": "Snapshot",
+      "summary": "The full current state at a revision: model plus layout.",
+      "description": "Returned by `GET /api/snapshot` and carried by every SSE `snapshot` event; the browser always renders the latest one plus its pending edits.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "Snapshot",
+          "startLine": 304,
+          "endLine": 308
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "revision",
+          "type": "integer",
+          "description": "Bumped by model changes and disk reloads, not by layout-only changes"
+        },
+        {
+          "name": "model",
+          "type": "Model",
+          "ref": "model"
+        },
+        {
+          "name": "layout",
+          "type": "Layout",
+          "ref": "layout"
+        }
+      ]
+    },
+    {
+      "id": "stale-link",
+      "kind": "data",
+      "name": "StaleLink",
+      "summary": "A code ref whose target no longer matches the repository, with its owner and the reason.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "StaleLink",
+          "startLine": 296,
+          "endLine": 302
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "ownerType",
+          "type": "'element' | 'relation' | 'flow'"
+        },
+        {
+          "name": "ownerId",
+          "type": "Id"
+        },
+        {
+          "name": "ref",
+          "type": "CodeRef",
+          "ref": "code-ref"
+        },
+        {
+          "name": "reason",
+          "type": "'missing-file' | 'line-out-of-range' | 'symbol-not-found' | 'symbol-outside-range'"
+        }
+      ]
+    },
+    {
+      "id": "structure-canvas",
+      "kind": "component",
+      "name": "Structure canvas",
+      "summary": "Draws one scope's children and outside neighbors as nodes with relation threads; drill in, select, connect, drag.",
+      "description": "Uses the shared structure projection, so relations between descendants are lifted to the visible nodes and merged into threads. Nodes without a stored position are placed with ELK's layered algorithm and the positions are committed as a layout-only change set; positions the human set meanwhile win.",
+      "parentId": "web-ui",
+      "technology": "React Flow 12, elkjs",
+      "codeRefs": [
+        {
+          "path": "src/web/canvas/StructureCanvas.tsx",
+          "symbol": "StructureCanvas",
+          "startLine": 57,
+          "endLine": 669
+        },
+        {
+          "path": "src/web/canvas/useAutoPlace.ts",
+          "symbol": "useAutoPlace",
+          "startLine": 15,
+          "endLine": 80
+        },
+        {
+          "path": "src/web/lib/layout.ts",
+          "symbol": "layoutAll",
+          "startLine": 63,
+          "endLine": 104
+        }
+      ]
+    },
+    {
+      "id": "structure-projection",
+      "kind": "module",
+      "name": "Structure projection",
+      "summary": "Computes what a structure canvas shows for a scope: children, outside neighbors and relations lifted to them.",
+      "description": "Shared so the canvas, `get_model`/`get_context` and the Mermaid export agree on what is visible and how relations merge into threads.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/projection.ts",
+          "symbol": "projectStructure",
+          "startLine": 71,
+          "endLine": 121
+        },
+        {
+          "path": "src/shared/projection.ts",
+          "symbol": "descendantsOf",
+          "startLine": 50,
+          "endLine": 69
+        }
+      ]
+    },
+    {
+      "id": "ui-state",
+      "kind": "data",
+      "name": "UiState",
+      "summary": "What the human is looking at right now: perspective, scope, flow and selection.",
+      "description": "Pushed by the browser (`PUT /api/session/ui`, debounced 150 ms), held in memory by the Session and read by the agent through `get_context`.",
+      "parentId": "shared-contract",
+      "codeRefs": [
+        {
+          "path": "src/shared/model.ts",
+          "symbol": "UiState",
+          "startLine": 270,
+          "endLine": 278
+        }
+      ],
+      "format": "json",
+      "fields": [
+        {
+          "name": "perspective",
+          "type": "'structure' | 'data' | 'flows'"
+        },
+        {
+          "name": "scopeId",
+          "type": "Id",
+          "optional": true,
+          "description": "Structure perspective: element whose inside is shown"
+        },
+        {
+          "name": "flowId",
+          "type": "Id",
+          "optional": true
+        },
+        {
+          "name": "selectedElementIds",
+          "type": "Id[]"
+        },
+        {
+          "name": "selectedRelationIds",
+          "type": "Id[]"
+        }
+      ],
+      "example": "{ \"perspective\": \"structure\", \"scopeId\": \"archweave-server\", \"selectedElementIds\": [\"model-store\"], \"selectedRelationIds\": [] }"
+    },
+    {
+      "id": "web-ui",
+      "kind": "app",
+      "name": "Web UI",
+      "summary": "Single-page app where the developer views and edits the model in three perspectives: structure, data and flows.",
+      "description": "Built by Vite into `dist/web` and served by the server. Holds a local copy of the model (server snapshot + optimistic pending changes) in a Zustand store, kept live through the `/api/events` SSE stream. Reports the human's view and selection back to the server so the agent can read it.",
+      "technology": "React 19, Zustand 5, React Flow 12, ELK, Vite",
+      "codeRefs": [
+        {
+          "path": "src/web/main.tsx",
+          "note": "Entry: bootstrap() then render <App/>"
+        },
+        {
+          "path": "src/web/App.tsx",
+          "symbol": "App",
+          "startLine": 19,
+          "endLine": 53
+        },
+        {
+          "path": "index.html"
+        },
+        {
+          "path": "vite.config.ts"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "app-chrome-calls-rest-api",
+      "from": "app-chrome",
+      "to": "rest-api",
+      "kind": "calls",
+      "label": "downloads Markdown, Mermaid or JSON export",
+      "technology": "HTTP GET /api/export",
+      "dataIds": [
+        "export-request"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/web/chrome/ExportDialog.tsx",
+          "symbol": "exportUrl",
+          "startLine": 69
+        }
+      ]
+    },
+    {
+      "id": "app-chrome-uses-client-state",
+      "from": "app-chrome",
+      "to": "client-state",
+      "label": "reads activity, toasts and presence; runs commands"
+    },
+    {
+      "id": "change-engine-consumes-change-set",
+      "from": "change-engine",
+      "to": "change-set",
+      "kind": "consumes",
+      "label": "validates and applies"
+    },
+    {
+      "id": "change-engine-produces-change-result",
+      "from": "change-engine",
+      "to": "change-result",
+      "kind": "produces",
+      "label": "reports ids and warnings"
+    },
+    {
+      "id": "change-engine-uses-model-schema",
+      "from": "change-engine",
+      "to": "model-schema",
+      "label": "parses change sets"
+    },
+    {
+      "id": "client-state-calls-server-sync",
+      "from": "client-state",
+      "to": "server-sync",
+      "kind": "calls",
+      "label": "sends change sets and undo",
+      "dataIds": [
+        "change-set",
+        "change-result"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/web/state/store.ts",
+          "symbol": "applyChanges",
+          "startLine": 199
+        }
+      ]
+    },
+    {
+      "id": "client-state-produces-change-set",
+      "from": "client-state",
+      "to": "change-set",
+      "kind": "produces",
+      "label": "builds from UI edits"
+    },
+    {
+      "id": "code-drawer-calls-server-sync",
+      "from": "code-drawer",
+      "to": "server-sync",
+      "kind": "calls",
+      "label": "loads a linked file",
+      "dataIds": [
+        "code-file"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/web/code/CodeDrawer.tsx",
+          "symbol": "codeFile",
+          "startLine": 55
+        }
+      ]
+    },
+    {
+      "id": "code-link-checker-produces-stale-link",
+      "from": "code-link-checker",
+      "to": "stale-link",
+      "kind": "produces",
+      "label": "one per broken ref"
+    },
+    {
+      "id": "code-link-checker-uses-repo-access",
+      "from": "code-link-checker",
+      "to": "repo-access",
+      "label": "stats and reads referenced files"
+    },
+    {
+      "id": "coding-agent-calls-mcp-endpoint",
+      "from": "coding-agent",
+      "to": "mcp-endpoint",
+      "kind": "calls",
+      "label": "reads and changes the model",
+      "technology": "MCP Streamable HTTP",
+      "dataIds": [
+        "apply-changes-input",
+        "get-context-result",
+        "get-model-input",
+        "focus-ui-input",
+        "find-by-code-result",
+        "check-code-links-result",
+        "change-result"
+      ]
+    },
+    {
+      "id": "coding-agent-uses-mcp-shell-client",
+      "from": "coding-agent",
+      "to": "mcp-shell-client",
+      "label": "runs tool calls from the shell",
+      "technology": "Shell"
+    },
+    {
+      "id": "coding-agent-uses-modeled-repo",
+      "from": "coding-agent",
+      "to": "modeled-repo",
+      "label": "reads and changes code"
+    },
+    {
+      "id": "data-perspective-uses-client-state",
+      "from": "data-perspective",
+      "to": "client-state",
+      "label": "reads data structures, selects focus"
+    },
+    {
+      "id": "developer-uses-coding-agent",
+      "from": "developer",
+      "to": "coding-agent",
+      "label": "asks to model, explain or change code",
+      "technology": "Chat"
+    },
+    {
+      "id": "developer-uses-web-ui",
+      "from": "developer",
+      "to": "web-ui",
+      "label": "explores and edits the model",
+      "technology": "Browser"
+    },
+    {
+      "id": "developer-writes-data-dir",
+      "from": "developer",
+      "to": "data-dir",
+      "kind": "writes",
+      "label": "commits, checks out or edits model files",
+      "technology": "Git / editor"
+    },
+    {
+      "id": "exporter-consumes-export-request",
+      "from": "exporter",
+      "to": "export-request",
+      "kind": "consumes",
+      "label": "renders what was asked"
+    },
+    {
+      "id": "exporter-uses-structure-projection",
+      "from": "exporter",
+      "to": "structure-projection",
+      "label": "draws one flowchart per scope",
+      "codeRefs": [
+        {
+          "path": "src/server/export.ts",
+          "symbol": "flowchart",
+          "startLine": 218,
+          "endLine": 237
+        }
+      ]
+    },
+    {
+      "id": "flows-perspective-uses-client-state",
+      "from": "flows-perspective",
+      "to": "client-state",
+      "label": "reads flows, edits steps"
+    },
+    {
+      "id": "focus-ui-input-references-focus-request",
+      "from": "focus-ui-input",
+      "to": "focus-request",
+      "kind": "references",
+      "label": "published as"
+    },
+    {
+      "id": "get-context-result-references-ui-state",
+      "from": "get-context-result",
+      "to": "ui-state",
+      "kind": "references",
+      "label": "built from"
+    },
+    {
+      "id": "inspector-calls-server-sync",
+      "from": "inspector",
+      "to": "server-sync",
+      "kind": "calls",
+      "label": "searches repository files for code refs",
+      "codeRefs": [
+        {
+          "path": "src/web/inspector/CodeRefs.tsx",
+          "symbol": "codeFiles",
+          "startLine": 36
+        }
+      ]
+    },
+    {
+      "id": "inspector-uses-client-state",
+      "from": "inspector",
+      "to": "client-state",
+      "label": "edits the selection"
+    },
+    {
+      "id": "layout-json-references-layout",
+      "from": "layout-json",
+      "to": "layout",
+      "kind": "references",
+      "label": "canonical form of"
+    },
+    {
+      "id": "mcp-endpoint-calls-code-link-checker",
+      "from": "mcp-endpoint",
+      "to": "code-link-checker",
+      "kind": "calls",
+      "label": "checks code links",
+      "dataIds": [
+        "stale-link"
+      ]
+    },
+    {
+      "id": "mcp-endpoint-calls-exporter",
+      "from": "mcp-endpoint",
+      "to": "exporter",
+      "kind": "calls",
+      "label": "renders export text"
+    },
+    {
+      "id": "mcp-endpoint-calls-model-store",
+      "from": "mcp-endpoint",
+      "to": "model-store",
+      "kind": "calls",
+      "label": "applies agent change sets, reads snapshot and journal",
+      "dataIds": [
+        "change-set",
+        "change-result",
+        "journal-entry"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "apply",
+          "startLine": 239,
+          "endLine": 245
+        }
+      ]
+    },
+    {
+      "id": "mcp-endpoint-calls-repo-access",
+      "from": "mcp-endpoint",
+      "to": "repo-access",
+      "kind": "calls",
+      "label": "normalizes code paths"
+    },
+    {
+      "id": "mcp-endpoint-consumes-apply-changes-input",
+      "from": "mcp-endpoint",
+      "to": "apply-changes-input",
+      "kind": "consumes",
+      "label": "handles apply_changes"
+    },
+    {
+      "id": "mcp-endpoint-produces-get-context-result",
+      "from": "mcp-endpoint",
+      "to": "get-context-result",
+      "kind": "produces",
+      "label": "answers get_context"
+    },
+    {
+      "id": "mcp-endpoint-uses-session",
+      "from": "mcp-endpoint",
+      "to": "session",
+      "label": "reads the human's view, marks agent present, publishes focus",
+      "dataIds": [
+        "ui-state",
+        "focus-request",
+        "agent-presence"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "touchAgent",
+          "startLine": 45
+        },
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "publish",
+          "startLine": 331
+        }
+      ]
+    },
+    {
+      "id": "mcp-endpoint-uses-structure-projection",
+      "from": "mcp-endpoint",
+      "to": "structure-projection",
+      "label": "computes what the human's scope shows",
+      "codeRefs": [
+        {
+          "path": "src/server/mcp.ts",
+          "symbol": "visibleIn",
+          "startLine": 364,
+          "endLine": 381
+        }
+      ]
+    },
+    {
+      "id": "mcp-shell-client-calls-mcp-endpoint",
+      "from": "mcp-shell-client",
+      "to": "mcp-endpoint",
+      "kind": "calls",
+      "label": "forwards tool calls",
+      "technology": "MCP Streamable HTTP",
+      "codeRefs": [
+        {
+          "path": "scripts/mcp-call.mjs"
+        }
+      ]
+    },
+    {
+      "id": "model-json-references-model",
+      "from": "model-json",
+      "to": "model",
+      "kind": "references",
+      "label": "canonical form of"
+    },
+    {
+      "id": "model-store-calls-change-engine",
+      "from": "model-store",
+      "to": "change-engine",
+      "kind": "calls",
+      "label": "applies a change set to a draft",
+      "dataIds": [
+        "change-set",
+        "change-result"
+      ]
+    },
+    {
+      "id": "model-store-calls-integrity-check",
+      "from": "model-store",
+      "to": "integrity-check",
+      "kind": "calls",
+      "label": "validates models loaded from disk"
+    },
+    {
+      "id": "model-store-produces-journal-entry",
+      "from": "model-store",
+      "to": "journal-entry",
+      "kind": "produces",
+      "label": "records each model change",
+      "codeRefs": [
+        {
+          "path": "src/server/store.ts",
+          "symbol": "record",
+          "startLine": 138,
+          "endLine": 143
+        }
+      ]
+    },
+    {
+      "id": "model-store-produces-snapshot",
+      "from": "model-store",
+      "to": "snapshot",
+      "kind": "produces",
+      "label": "exposes current state",
+      "codeRefs": [
+        {
+          "path": "src/server/store.ts",
+          "symbol": "snapshot",
+          "startLine": 53,
+          "endLine": 55
+        }
+      ]
+    },
+    {
+      "id": "model-store-writes-model",
+      "from": "model-store",
+      "to": "model",
+      "kind": "writes",
+      "label": "owns the in-memory model"
+    },
+    {
+      "id": "optimistic-apply-uses-model-schema",
+      "from": "optimistic-apply",
+      "to": "model-schema",
+      "label": "mirrors upsert semantics"
+    },
+    {
+      "id": "persistence-calls-model-store",
+      "from": "persistence",
+      "to": "model-store",
+      "kind": "calls",
+      "label": "hands over edits made on disk",
+      "dataIds": [
+        "model",
+        "layout"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "replace",
+          "startLine": 196,
+          "endLine": 200
+        }
+      ]
+    },
+    {
+      "id": "persistence-reads-data-dir",
+      "from": "persistence",
+      "to": "data-dir",
+      "kind": "reads",
+      "label": "loads at startup, watches and reloads",
+      "technology": "fs.watch",
+      "dataIds": [
+        "model-json",
+        "layout-json",
+        "journal-jsonl"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "load",
+          "startLine": 67,
+          "endLine": 78
+        }
+      ]
+    },
+    {
+      "id": "persistence-subscribes-model-store",
+      "from": "persistence",
+      "to": "model-store",
+      "kind": "subscribes",
+      "label": "saves after every change",
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "attach",
+          "startLine": 81,
+          "endLine": 99
+        }
+      ]
+    },
+    {
+      "id": "persistence-uses-canonical-json",
+      "from": "persistence",
+      "to": "canonical-json",
+      "label": "formats the files"
+    },
+    {
+      "id": "persistence-writes-data-dir",
+      "from": "persistence",
+      "to": "data-dir",
+      "kind": "writes",
+      "label": "writes model, layout and journal atomically",
+      "technology": "fs rename",
+      "dataIds": [
+        "model-json",
+        "layout-json",
+        "journal-jsonl"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/persistence.ts",
+          "symbol": "writeFile",
+          "startLine": 150,
+          "endLine": 162
+        }
+      ]
+    },
+    {
+      "id": "repo-access-reads-modeled-repo",
+      "from": "repo-access",
+      "to": "modeled-repo",
+      "kind": "reads",
+      "label": "reads files, lists them with git ls-files",
+      "technology": "fs, git",
+      "codeRefs": [
+        {
+          "path": "src/server/repo.ts",
+          "symbol": "gitFiles",
+          "startLine": 140,
+          "endLine": 152
+        }
+      ]
+    },
+    {
+      "id": "rest-api-calls-code-link-checker",
+      "from": "rest-api",
+      "to": "code-link-checker",
+      "kind": "calls",
+      "label": "lists stale links",
+      "dataIds": [
+        "stale-link"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "check",
+          "startLine": 101
+        }
+      ]
+    },
+    {
+      "id": "rest-api-calls-exporter",
+      "from": "rest-api",
+      "to": "exporter",
+      "kind": "calls",
+      "label": "renders an export download",
+      "dataIds": [
+        "export-request"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "exportModel",
+          "startLine": 103,
+          "endLine": 123
+        }
+      ]
+    },
+    {
+      "id": "rest-api-calls-model-store",
+      "from": "rest-api",
+      "to": "model-store",
+      "kind": "calls",
+      "label": "applies human change sets, undo, snapshot, journal",
+      "dataIds": [
+        "change-set",
+        "change-result",
+        "snapshot",
+        "journal-entry"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "apply",
+          "startLine": 33
+        }
+      ]
+    },
+    {
+      "id": "rest-api-calls-repo-access",
+      "from": "rest-api",
+      "to": "repo-access",
+      "kind": "calls",
+      "label": "reads files, searches file names",
+      "dataIds": [
+        "code-file"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "readFile",
+          "startLine": 90,
+          "endLine": 99
+        }
+      ]
+    },
+    {
+      "id": "rest-api-subscribes-model-store",
+      "from": "rest-api",
+      "to": "model-store",
+      "kind": "subscribes",
+      "label": "turns every store change into a snapshot event",
+      "dataIds": [
+        "snapshot",
+        "journal-entry"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "broadcastStoreChanges",
+          "startLine": 131,
+          "endLine": 133
+        }
+      ]
+    },
+    {
+      "id": "rest-api-uses-session",
+      "from": "rest-api",
+      "to": "session",
+      "label": "stores UI state, streams its events to browsers",
+      "dataIds": [
+        "ui-state",
+        "server-event"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "setUi",
+          "startLine": 53,
+          "endLine": 60
+        },
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "subscribe",
+          "startLine": 62,
+          "endLine": 88
+        }
+      ]
+    },
+    {
+      "id": "server-host-calls-persistence",
+      "from": "server-host",
+      "to": "persistence",
+      "kind": "calls",
+      "label": "loads the model at startup",
+      "codeRefs": [
+        {
+          "path": "src/server/app.ts",
+          "symbol": "load",
+          "startLine": 44,
+          "endLine": 52,
+          "note": "Persistence.load, then new Store(loaded)"
+        }
+      ]
+    },
+    {
+      "id": "server-host-reads-server-config",
+      "from": "server-host",
+      "to": "server-config",
+      "kind": "reads",
+      "label": "reads the environment at startup"
+    },
+    {
+      "id": "server-host-uses-mcp-endpoint",
+      "from": "server-host",
+      "to": "mcp-endpoint",
+      "label": "mounts at /mcp behind the guards",
+      "codeRefs": [
+        {
+          "path": "src/server/app.ts",
+          "symbol": "handleMcpRequest",
+          "startLine": 62
+        }
+      ]
+    },
+    {
+      "id": "server-host-uses-rest-api",
+      "from": "server-host",
+      "to": "rest-api",
+      "label": "mounts at /api behind the guards",
+      "codeRefs": [
+        {
+          "path": "src/server/app.ts",
+          "symbol": "apiRoutes",
+          "startLine": 59,
+          "endLine": 61
+        }
+      ]
+    },
+    {
+      "id": "server-host-uses-web-ui",
+      "from": "server-host",
+      "to": "web-ui",
+      "label": "serves the built UI",
+      "technology": "HTTP static (dist/web)",
+      "codeRefs": [
+        {
+          "path": "src/server/app.ts",
+          "symbol": "serveWeb",
+          "startLine": 159,
+          "endLine": 175
+        }
+      ]
+    },
+    {
+      "id": "server-sync-calls-rest-api",
+      "from": "server-sync",
+      "to": "rest-api",
+      "kind": "calls",
+      "label": "fetches state, posts changes, reports the view",
+      "technology": "HTTP/JSON",
+      "dataIds": [
+        "snapshot",
+        "change-set",
+        "change-result",
+        "ui-state",
+        "session-info",
+        "journal-entry",
+        "code-file",
+        "stale-link",
+        "api-error"
+      ]
+    },
+    {
+      "id": "server-sync-consumes-server-event",
+      "from": "server-sync",
+      "to": "server-event",
+      "kind": "consumes",
+      "label": "dispatches to the client store"
+    },
+    {
+      "id": "server-sync-produces-ui-state",
+      "from": "server-sync",
+      "to": "ui-state",
+      "kind": "produces",
+      "label": "reports perspective, scope and selection",
+      "codeRefs": [
+        {
+          "path": "src/web/state/bootstrap.ts",
+          "symbol": "uiStateOf",
+          "startLine": 96,
+          "endLine": 104
+        }
+      ]
+    },
+    {
+      "id": "server-sync-subscribes-rest-api",
+      "from": "server-sync",
+      "to": "rest-api",
+      "kind": "subscribes",
+      "label": "receives live snapshots, presence and focus",
+      "technology": "SSE (EventSource)",
+      "dataIds": [
+        "server-event"
+      ],
+      "codeRefs": [
+        {
+          "path": "src/web/api.ts",
+          "symbol": "subscribe",
+          "startLine": 92,
+          "endLine": 105
+        }
+      ]
+    },
+    {
+      "id": "session-produces-server-event",
+      "from": "session",
+      "to": "server-event",
+      "kind": "produces",
+      "label": "fans out to SSE listeners"
+    },
+    {
+      "id": "session-reads-ui-state",
+      "from": "session",
+      "to": "ui-state",
+      "kind": "reads",
+      "label": "keeps the last reported view"
+    },
+    {
+      "id": "structure-canvas-uses-client-state",
+      "from": "structure-canvas",
+      "to": "client-state",
+      "label": "reads the model, commits edits and positions"
+    },
+    {
+      "id": "structure-canvas-uses-structure-projection",
+      "from": "structure-canvas",
+      "to": "structure-projection",
+      "label": "projects the open scope",
+      "codeRefs": [
+        {
+          "path": "src/web/canvas/StructureCanvas.tsx",
+          "symbol": "projectStructure",
+          "startLine": 75
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "agent-change-reaches-browser",
+      "name": "Agent applies a change; the browser updates",
+      "summary": "An apply_changes call is validated atomically, journaled, broadcast to every browser as a snapshot and saved to disk.",
+      "steps": [
+        {
+          "from": "coding-agent",
+          "to": "mcp-endpoint",
+          "label": "apply_changes(summary, elements, relations, flows)",
+          "dataIds": [
+            "apply-changes-input"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/mcp.ts",
+              "startLine": 239,
+              "endLine": 245,
+              "note": "apply_changes handler"
+            }
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "model-store",
+          "label": "Store.apply(changes, 'agent')",
+          "dataIds": [
+            "change-set"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/store.ts",
+              "symbol": "apply",
+              "startLine": 66,
+              "endLine": 83
+            }
+          ]
+        },
+        {
+          "from": "model-store",
+          "to": "change-engine",
+          "label": "apply to a draft copy, all or nothing",
+          "description": "Removals, upserts, list helpers, referential checks. Any error throws one ChangeError naming every bad entry; nothing is applied.",
+          "codeRefs": [
+            {
+              "path": "src/server/changes.ts",
+              "symbol": "run",
+              "startLine": 103,
+              "endLine": 131
+            }
+          ]
+        },
+        {
+          "from": "change-engine",
+          "to": "model-store",
+          "label": "new model and ids, or ChangeError",
+          "description": "The store bumps the revision, records a journal entry and an undo step, then emits the change synchronously.",
+          "dataIds": [
+            "change-result"
+          ]
+        },
+        {
+          "from": "model-store",
+          "to": "rest-api",
+          "label": "notify subscriber",
+          "dataIds": [
+            "snapshot",
+            "journal-entry"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/routes.ts",
+              "symbol": "broadcastStoreChanges",
+              "startLine": 131,
+              "endLine": 133
+            }
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "session",
+          "label": "publish snapshot event",
+          "dataIds": [
+            "server-event"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/session.ts",
+              "symbol": "publish",
+              "startLine": 79,
+              "endLine": 81
+            }
+          ]
+        },
+        {
+          "from": "session",
+          "to": "server-sync",
+          "label": "SSE `snapshot` with entry (actor agent)",
+          "dataIds": [
+            "server-event"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/routes.ts",
+              "symbol": "writeSSE",
+              "startLine": 62,
+              "endLine": 88
+            }
+          ]
+        },
+        {
+          "from": "model-store",
+          "to": "persistence",
+          "label": "notify subscriber; schedule a save",
+          "description": "Debounced 150 ms; several quick changes become one write.",
+          "codeRefs": [
+            {
+              "path": "src/server/persistence.ts",
+              "symbol": "attach",
+              "startLine": 81,
+              "endLine": 99
+            }
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "coding-agent",
+          "label": "ChangeResult (+ human changes since you last looked)",
+          "dataIds": [
+            "change-result"
+          ]
+        },
+        {
+          "from": "server-sync",
+          "to": "client-state",
+          "label": "receiveSnapshot; mark touched ids fresh, toast with Show",
+          "description": "Pending local edits the server has caught up with are dropped; the rest are re-applied on top of the new snapshot.",
+          "codeRefs": [
+            {
+              "path": "src/web/state/store.ts",
+              "symbol": "receiveSnapshot",
+              "startLine": 180,
+              "endLine": 192
+            },
+            {
+              "path": "src/web/state/store.ts",
+              "symbol": "onAgentEntry",
+              "startLine": 235,
+              "endLine": 265
+            }
+          ]
+        },
+        {
+          "from": "client-state",
+          "to": "structure-canvas",
+          "label": "re-render; place new nodes with ELK and commit positions",
+          "description": "New elements have no position; useAutoPlace lays them out and saves them as a layout-only change set (not journaled).",
+          "codeRefs": [
+            {
+              "path": "src/web/canvas/useAutoPlace.ts",
+              "symbol": "useAutoPlace",
+              "startLine": 15,
+              "endLine": 80
+            }
+          ]
+        },
+        {
+          "from": "persistence",
+          "to": "data-dir",
+          "label": "write model.json and journal atomically",
+          "dataIds": [
+            "model-json",
+            "journal-jsonl"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/persistence.ts",
+              "symbol": "writePending",
+              "startLine": 126,
+              "endLine": 148
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agent-focuses-ui",
+      "name": "Agent points at something",
+      "summary": "focus_ui sends a focus event to every browser, which navigates to and highlights the elements with the agent's message.",
+      "steps": [
+        {
+          "from": "coding-agent",
+          "to": "mcp-endpoint",
+          "label": "focus_ui(elementIds, scope, message)",
+          "dataIds": [
+            "focus-ui-input"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/mcp.ts",
+              "startLine": 316,
+              "endLine": 338,
+              "note": "focus_ui handler: validates ids, publishes"
+            }
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "session",
+          "label": "publish focus event",
+          "dataIds": [
+            "focus-request"
+          ]
+        },
+        {
+          "from": "session",
+          "to": "server-sync",
+          "label": "SSE `focus`",
+          "dataIds": [
+            "server-event"
+          ]
+        },
+        {
+          "from": "server-sync",
+          "to": "client-state",
+          "label": "handleFocusRequest: navigate, select, highlight, toast",
+          "codeRefs": [
+            {
+              "path": "src/web/state/store.ts",
+              "symbol": "handleFocusRequest",
+              "startLine": 417,
+              "endLine": 437
+            }
+          ]
+        },
+        {
+          "from": "client-state",
+          "to": "structure-canvas",
+          "label": "reveal the elements"
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "coding-agent",
+          "label": "delivered: browsers > 0, or a hint to open the UI"
+        }
+      ]
+    },
+    {
+      "id": "disk-reload",
+      "name": "Model files change on disk",
+      "summary": "After a git checkout or manual edit, the server reloads model.json/layout.json, validates them and pushes the new snapshot to browsers.",
+      "steps": [
+        {
+          "from": "developer",
+          "to": "data-dir",
+          "label": "git checkout / pull rewrites model.json",
+          "dataIds": [
+            "model-json"
+          ]
+        },
+        {
+          "from": "data-dir",
+          "to": "persistence",
+          "label": "fs.watch event; reload scheduled after 100 ms",
+          "codeRefs": [
+            {
+              "path": "src/server/persistence.ts",
+              "symbol": "scheduleReload",
+              "startLine": 164,
+              "endLine": 172
+            }
+          ]
+        },
+        {
+          "from": "persistence",
+          "to": "data-dir",
+          "label": "re-read; skip own writes and documents with unsaved edits",
+          "description": "Compares the file text with what this process last read or wrote. A pending local edit wins and later overwrites the file.",
+          "dataIds": [
+            "model-json",
+            "layout-json"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/persistence.ts",
+              "symbol": "reloadIfChanged",
+              "startLine": 178,
+              "endLine": 203
+            }
+          ]
+        },
+        {
+          "from": "persistence",
+          "to": "model-store",
+          "label": "Store.replace(model, layout)",
+          "dataIds": [
+            "model",
+            "layout"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/store.ts",
+              "symbol": "replace",
+              "startLine": 115,
+              "endLine": 126
+            }
+          ]
+        },
+        {
+          "from": "model-store",
+          "to": "integrity-check",
+          "label": "schema + integrity; invalid → ignored and logged",
+          "description": "Nothing changes when the document is invalid; the server keeps the model it has.",
+          "codeRefs": [
+            {
+              "path": "src/server/store.ts",
+              "symbol": "parseModel",
+              "startLine": 161,
+              "endLine": 166
+            }
+          ]
+        },
+        {
+          "from": "model-store",
+          "to": "rest-api",
+          "label": "emit cause 'reload': revision bumped, undo cleared, no journal entry",
+          "description": "Persistence ignores reload changes, so the file is not written back.",
+          "dataIds": [
+            "snapshot"
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "session",
+          "label": "publish snapshot event",
+          "dataIds": [
+            "server-event"
+          ]
+        },
+        {
+          "from": "session",
+          "to": "server-sync",
+          "label": "SSE `snapshot` without entry",
+          "dataIds": [
+            "server-event"
+          ]
+        },
+        {
+          "from": "server-sync",
+          "to": "client-state",
+          "label": "receiveSnapshot; drop view references that vanished"
+        },
+        {
+          "from": "server-sync",
+          "to": "rest-api",
+          "label": "GET /api/code/stale (links may have changed)",
+          "dataIds": [
+            "stale-link"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/web/state/bootstrap.ts",
+              "symbol": "refreshStale",
+              "startLine": 49,
+              "endLine": 54
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "export-documentation",
+      "name": "Export documentation",
+      "summary": "The developer downloads a Markdown architecture document (or Mermaid/JSON) rendered by the server from the current snapshot.",
+      "steps": [
+        {
+          "from": "developer",
+          "to": "app-chrome",
+          "label": "opens Export; picks format, scope, perspectives, code refs",
+          "description": "PNG/SVG image export is handled in the browser instead: the active canvas is captured with html-to-image.",
+          "codeRefs": [
+            {
+              "path": "src/web/chrome/ExportDialog.tsx",
+              "symbol": "ExportDialog",
+              "startLine": 23,
+              "endLine": 140
+            }
+          ]
+        },
+        {
+          "from": "app-chrome",
+          "to": "rest-api",
+          "label": "GET /api/export?format&scope&perspectives&code",
+          "dataIds": [
+            "export-request"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/web/api.ts",
+              "symbol": "exportUrl",
+              "startLine": 77,
+              "endLine": 81
+            }
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "model-store",
+          "label": "current snapshot",
+          "dataIds": [
+            "snapshot"
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "exporter",
+          "label": "exportModel(model, layout, options)",
+          "dataIds": [
+            "export-request"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/export.ts",
+              "symbol": "exportModel",
+              "startLine": 23,
+              "endLine": 40
+            }
+          ]
+        },
+        {
+          "from": "exporter",
+          "to": "structure-projection",
+          "label": "project each scope for its Mermaid flowchart",
+          "codeRefs": [
+            {
+              "path": "src/server/export.ts",
+              "symbol": "flowchart",
+              "startLine": 218,
+              "endLine": 237
+            }
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "app-chrome",
+          "label": "file download (content-disposition attachment)",
+          "codeRefs": [
+            {
+              "path": "src/server/routes.ts",
+              "symbol": "exportModel",
+              "startLine": 103,
+              "endLine": 123
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "human-edit-optimistic",
+      "name": "Human edits in the browser",
+      "summary": "An inspector edit shows at once as a pending change, is applied by the server as the human, and is reconciled when the snapshot arrives.",
+      "steps": [
+        {
+          "from": "developer",
+          "to": "inspector",
+          "label": "renames an element"
+        },
+        {
+          "from": "inspector",
+          "to": "client-state",
+          "label": "commit(change set)",
+          "dataIds": [
+            "change-set"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/web/inspector/ElementInspector.tsx",
+              "symbol": "commit",
+              "startLine": 25
+            }
+          ]
+        },
+        {
+          "from": "client-state",
+          "to": "optimistic-apply",
+          "label": "apply locally as pending; shown immediately",
+          "codeRefs": [
+            {
+              "path": "src/web/state/apply.ts",
+              "symbol": "applyLocal",
+              "startLine": 25,
+              "endLine": 149
+            }
+          ]
+        },
+        {
+          "from": "client-state",
+          "to": "server-sync",
+          "label": "api.applyChanges",
+          "codeRefs": [
+            {
+              "path": "src/web/state/store.ts",
+              "symbol": "commit",
+              "startLine": 195,
+              "endLine": 211
+            }
+          ]
+        },
+        {
+          "from": "server-sync",
+          "to": "rest-api",
+          "label": "POST /api/changes",
+          "dataIds": [
+            "change-set"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/routes.ts",
+              "symbol": "apply",
+              "startLine": 33
+            }
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "model-store",
+          "label": "Store.apply(changes, 'human')",
+          "description": "Same path as an agent change: journaled, broadcast, saved."
+        },
+        {
+          "from": "rest-api",
+          "to": "server-sync",
+          "label": "ChangeResult, or error body",
+          "description": "On success the pending entry is marked acknowledged at that revision; on error it is dropped and an error toast shows.",
+          "dataIds": [
+            "change-result",
+            "api-error"
+          ]
+        },
+        {
+          "from": "session",
+          "to": "server-sync",
+          "label": "SSE `snapshot` (actor human)",
+          "dataIds": [
+            "server-event"
+          ]
+        },
+        {
+          "from": "server-sync",
+          "to": "client-state",
+          "label": "receiveSnapshot prunes acknowledged pending changes",
+          "codeRefs": [
+            {
+              "path": "src/web/state/store.ts",
+              "symbol": "prune",
+              "startLine": 171,
+              "endLine": 178
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "human-selection-to-agent",
+      "name": "Human selects something; the agent reads it",
+      "summary": "The browser reports the view and selection; get_context returns them expanded, with open notes and the human's recent edits.",
+      "steps": [
+        {
+          "from": "developer",
+          "to": "structure-canvas",
+          "label": "clicks an element",
+          "codeRefs": [
+            {
+              "path": "src/web/canvas/StructureCanvas.tsx",
+              "symbol": "onSelectNodes",
+              "startLine": 232,
+              "endLine": 243
+            }
+          ]
+        },
+        {
+          "from": "structure-canvas",
+          "to": "client-state",
+          "label": "selection updated"
+        },
+        {
+          "from": "client-state",
+          "to": "server-sync",
+          "label": "store subscription sees the view changed",
+          "codeRefs": [
+            {
+              "path": "src/web/state/bootstrap.ts",
+              "symbol": "uiStateOf",
+              "startLine": 61,
+              "endLine": 71
+            }
+          ]
+        },
+        {
+          "from": "server-sync",
+          "to": "rest-api",
+          "label": "PUT /api/session/ui (debounced 150 ms)",
+          "dataIds": [
+            "ui-state"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/web/api.ts",
+              "symbol": "putUi",
+              "startLine": 70
+            }
+          ]
+        },
+        {
+          "from": "rest-api",
+          "to": "session",
+          "label": "setUi: validate and store with timestamp",
+          "dataIds": [
+            "ui-state"
+          ],
+          "codeRefs": [
+            {
+              "path": "src/server/session.ts",
+              "symbol": "setUi",
+              "startLine": 33,
+              "endLine": 37
+            }
+          ]
+        },
+        {
+          "from": "developer",
+          "to": "coding-agent",
+          "label": "\"explain this\""
+        },
+        {
+          "from": "coding-agent",
+          "to": "mcp-endpoint",
+          "label": "get_context",
+          "codeRefs": [
+            {
+              "path": "src/server/mcp.ts",
+              "startLine": 96,
+              "endLine": 133,
+              "note": "get_context handler"
+            }
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "session",
+          "label": "read UI state, report time, agent cursor, browser count"
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "model-store",
+          "label": "snapshot and human journal entries since the cursor",
+          "description": "The cursor then advances, so each human change is reported once.",
+          "dataIds": [
+            "journal-entry"
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "code-link-checker",
+          "label": "count stale links",
+          "dataIds": [
+            "stale-link"
+          ]
+        },
+        {
+          "from": "mcp-endpoint",
+          "to": "coding-agent",
+          "label": "selection in full, scope, visible elements, open notes, human changes",
+          "dataIds": [
+            "get-context-result"
+          ]
+        }
+      ]
+    }
+  ]
+}
