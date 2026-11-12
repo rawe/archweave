@@ -226,18 +226,28 @@ Shows the children of the current scope (top-level elements at the root). Elemen
 - **Connect:** drag from a node's edge handle (visible on hover) to another node. The thread is created as `uses`; kind and label are edited in the inspector, with the label field focused.
 - **Move into:** drag a node onto another to re-parent, with a clear drop highlight. Also available as "Move to…" in the inspector.
 - **Delete:** `Backspace` or `Delete` on a selection. Deleting an element with children asks once.
+- **Density:** automatic layout is compact. A scope with about ten elements and as many neighbors is readable at 80% zoom or more on a 1280 px wide window. Neighbors are name-only chips on the rim: callers on the left, callees on the right. Threads leave and enter nodes on the sides facing each other, spread along the side so they do not stack, and curve once; no loops, no detours.
+- **Selection stays visible:** when the inspector opens over the selected element or its neighbors, the canvas pans just enough to bring the focused set into the free area.
 - **Arrange:** positions persist per scope. New elements without positions are placed by ELK relative to the existing ones without moving them. "Tidy" in the canvas context menu re-runs layout for the whole scope.
 - Multi-select with shift-click and drag-box.
 
 ### 5.5 Data perspective
 
-The place to discuss data structures. Every `data` element as a card: name, format tag, field rows (`name`, mono `type`, a small link glyph when the field refs another structure). `references` relations and field refs draw threads between cards, attached at the field row.
+The place to find and discuss data structures. A real codebase has dozens of them, so this perspective never draws them all as one graph. It has two states on one canvas, both laid out deterministically (no stored positions).
 
-- A slim list rail on the left (the only persistent side element, 220 px, collapsible) lists all structures grouped by owner, with a filter field. Selecting one centers its card. This is what makes any structure reachable in one step.
-- Selecting a card focuses it, its referenced and referencing structures, and shows in the inspector who produces, consumes, reads and writes it, with one click to jump to that element in the Structure perspective.
-- A toggle "show users" adds the producing and consuming elements as quiet context nodes around the cards.
+**Catalog** (nothing selected). Every `data` element as a compact card: name, format tag, field count. No field rows, no threads. Cards are grouped by owner; each group has a quiet title (the owner's name, which jumps to that element in the Structure perspective) and groups flow into columns that fit the canvas width, so the whole catalog reads top to bottom like a well-set index. Structures without an owner form the first group.
+
+**Focus** (one structure selected). The selected card sits in the center with all its field rows (`name`, mono `type`, optional marker, a link glyph when the field refs another structure).
+- Right column: the structures it references, through field `ref`s and `references` relations. Threads run from the referencing field row to the target card.
+- Left column: the structures that reference it, with the thread starting at their referencing field row.
+- Neighbor cards show their name, the rows involved in the link, and a quiet "n more fields" line; they are one hop only.
+- Below the center card: the elements that produce, consume, read or write it, as small quiet nodes grouped by verb. Clicking one jumps to it in the Structure perspective.
+- Clicking a neighbor card moves the focus to it with a short transition. Browser Back returns to the previous focus. `Esc` returns to the catalog.
+
+Shared by both states:
+- A slim list rail on the left (the only persistent side element, 220 px, collapsible) lists all structures grouped by owner, with a filter field. The filter also narrows the catalog. Selecting an entry focuses that structure. This is what makes any structure reachable in one step.
 - Fields are edited in the inspector: add, rename, retype, reorder, link to another structure, mark optional. The example payload is an editable code block.
-- From anywhere, `⌘K` then a structure name jumps here. From the Structure perspective, the inspector of an element lists the data it touches; clicking one jumps here with it selected.
+- From anywhere, `⌘K` then a structure name jumps here in focus. From the Structure perspective, the inspector of an element lists the data it touches; clicking one jumps here with it focused.
 
 ### 5.6 Flows perspective
 
