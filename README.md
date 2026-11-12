@@ -57,7 +57,7 @@ Tools: `get_guide`, `get_context` (what you are looking at and have selected), `
 | `ARCHWEAVE_ALLOWED_HOSTS` | unset | Comma-separated extra hostnames accepted in the `Host` and `Origin` headers. Localhost names and `HOST` are always accepted. |
 | `ARCHWEAVE_WEB_DIR` | `dist/web` | Directory of the built web UI. |
 
-Requests whose `Host` or `Origin` header names another host are refused, which protects the API and MCP endpoint against DNS rebinding. If you reach ArchWeave under another name (a LAN address, a container name), add it to `ARCHWEAVE_ALLOWED_HOSTS`.
+Requests whose `Host` or `Origin` header names another host (or an opaque `null` origin) are refused, which protects the API and MCP endpoint against DNS rebinding and cross-site requests. Requests that change data and carry a body must send `Content-Type: application/json`. If you reach ArchWeave under another name (a LAN address, a container name), add it to `ARCHWEAVE_ALLOWED_HOSTS`.
 
 ## Data directory
 
@@ -70,7 +70,7 @@ Requests whose `Host` or `Origin` header names another host are refused, which p
     journal.jsonl activity journal (last 500 entries)
 ```
 
-Commit `model.json` and `layout.json`. ArchWeave watches both files and reloads them when they change on disk, for example after `git checkout` or `git pull`.
+Commit `model.json` and `layout.json`. ArchWeave watches both files and reloads the one that changed on disk, for example after `git checkout` or `git pull`. A model with broken references (unknown ids, containment cycles, data references to non-data elements) is refused: at startup the server exits with a list of the problems, and a reload that would bring one in is ignored and logged.
 
 ## Development
 

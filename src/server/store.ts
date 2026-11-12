@@ -1,5 +1,6 @@
 import { type Actor, type ChangeResult, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
 import { applyChangeSet, describeChanges, diffModels, parseChangeSet } from './changes.ts';
+import { integrityProblems } from './integrity.ts';
 
 export { ChangeError } from './changes.ts';
 
@@ -42,7 +43,7 @@ export class Store {
   private now: () => Date;
 
   constructor(options: StoreOptions = {}) {
-    this.model = Model.parse(options.model ?? {});
+    this.model = parseModel(options.model ?? {});
     this.layout = Layout.parse(options.layout ?? {});
     this.entries = (options.journal ?? []).slice(-JOURNAL_CAP);
     this.revision = this.entries.reduce((max, e) => Math.max(max, e.revision), 0);
@@ -81,6 +82,13 @@ export class Store {
     return { revision: this.revision, created, updated, removed, warnings };
   }
 
+  /** Validates a change set and returns what `apply` would return, without applying it. */
+  preview(input: unknown, actor: Actor): ChangeResult {
+    const applied = applyChangeSet({ model: this.model, layout: this.layout }, parseChangeSet(input), actor, this.now());
+    const { created, updated, removed, warnings } = applied;
+    return { revision: this.revision + (applied.modelChanged ? 1 : 0), created, updated, removed, warnings };
+  }
+
   canUndo(): boolean {
     return this.undoStack.length > 0;
   }
@@ -99,13 +107,22 @@ export class Store {
     return this.revision;
   }
 
-  /** Takes over a model and layout changed on disk by someone else (git checkout, manual edit). */
+  /**
+   * Takes over a model and/or layout changed on disk by someone else (git checkout, manual edit).
+   * `undefined` keeps the current document. Both are validated before either is replaced;
+   * an invalid document throws and changes nothing.
+   */
   replace(model: unknown, layout: unknown): void {
-    this.model = Model.parse(model ?? {});
-    this.layout = Layout.parse(layout ?? {});
-    this.undoStack = [];
-    this.revision += 1;
-    this.emit({ modelChanged: true, layoutChanged: true, cause: 'reload' });
+    const nextModel = model === undefined ? undefined : parseModel(model);
+    const nextLayout = layout === undefined ? undefined : Layout.parse(layout);
+    if (!nextModel && !nextLayout) return;
+    if (nextModel) {
+      this.model = nextModel;
+      this.undoStack = [];
+      this.revision += 1;
+    }
+    if (nextLayout) this.layout = nextLayout;
+    this.emit({ modelChanged: !!nextModel, layoutChanged: !!nextLayout, cause: 'reload' });
   }
 
   subscribe(listener: (change: StoreChange) => void): () => void {
@@ -129,6 +146,23 @@ export class Store {
     const full = { ...change, snapshot: this.snapshot() };
     for (const listener of this.listeners) listener(full);
   }
+}
+
+export class ModelIntegrityError extends Error {
+  constructor(readonly problems: string[]) {
+    const shown = problems.slice(0, 20).map((p) => `- ${p}`);
+    if (problems.length > shown.length) shown.push(`- …and ${problems.length - shown.length} more`);
+    super(`${problems.length} problem${problems.length === 1 ? '' : 's'} in the model:\n${shown.join('\n')}`);
+    this.name = 'ModelIntegrityError';
+  }
+}
+
+/** Schema and graph validation for a model read from outside the store. */
+function parseModel(input: unknown): Model {
+  const model = Model.parse(input);
+  const problems = integrityProblems(model);
+  if (problems.length) throw new ModelIntegrityError(problems);
+  return model;
 }
 
 /** Keeps the human's current arrangement, restoring positions only for elements that come back. */

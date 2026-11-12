@@ -3,6 +3,8 @@ export const GUIDE = `# Working with ArchWeave
 
 ArchWeave holds the architecture of the repository you are working in. A developer sees and edits the same model in a browser while you work on it through these tools. Keep the model truthful to the code and readable by a person: it is a map the human uses to think and to direct you, not a dump of the code.
 
+These are the server's MCP instructions, the same text as \`get_guide\` returns.
+
 ## When to call what
 
 - The human says "this", "here", "the selected", or refers to something they are looking at: call \`get_context\` first. It returns the selection fully expanded, the scope they are in, open notes and what they changed since you last looked.
@@ -13,7 +15,7 @@ ArchWeave holds the architecture of the repository you are working in. A develop
 
 ## Model in levels
 
-- Top level (no parentId): the system's apps, services, stores, queues, external systems, actors and agents. At most about a dozen nodes. Use a \`system\` element only if the repository holds several products.
+- Top level (no parentId): the system's apps, services, stores, queues, external systems, actors and agents. At most about a dozen nodes. Use a \`system\` element only if the repository holds several products. When optional integrations or externals would push the top level to more than about a dozen, group them under one element (an \`external\` "Integrations" with the providers inside).
 - Inside each: its components. Inside those, modules only where it helps a reader. Prefer 5 to 9 children per element; group with an intermediate component rather than listing 20 siblings.
 - Containment is \`parentId\`. Relations can connect elements at any depth; the diagram lifts them to the visible level, so connect the elements that really talk to each other (component to component), not their containers.
 - Kinds: actor (person or role), external (third-party system), app (deployable: web app, CLI, worker), service (backend API), component (cohesive part inside an app or service), module (code-level unit), store (database, cache, bucket), queue (topic, stream, bus), agent (LLM-driven actor), data (a data structure), system (whole product).
@@ -33,15 +35,17 @@ ArchWeave holds the architecture of the repository you are working in. A develop
 ## Data structures
 
 - Model data that crosses boundaries or that people discuss: entities, API payloads, events, messages, config. Skip internal helper types.
-- A data structure is an element of kind \`data\` with \`fields\` ({name, type, optional?, description?, ref?}), a \`format\` ("json", "sql", "typescript", "protobuf", "xml") and, for wire formats, an \`example\` payload.
-- Give it a \`parentId\` when one element owns or defines it (the service whose schema it is). Shared contracts can stay top level.
-- Link a field to another structure with \`ref\` (an Order's \`items\` field refs \`order-item\`).
+- A data structure is an element of kind \`data\` with \`fields\` ({name, type, optional?, description?, ref?}), a \`format\` and, for wire formats, an \`example\` payload. \`format\` and field \`type\` are free text: "json", "sql", "protobuf"; "string", "Order[]", "uuid".
+- Nested fields use dotted names ("customer.address.city"). Enum values go in the type string ("'draft' | 'paid'").
+- Give it a \`parentId\` when one element owns or defines it (the service whose schema it is). Persisted records (tables, documents, rows) are owned by the store that keeps them. Shared contracts can stay top level.
+- Link a field to another structure with \`ref\` (an Order's \`items\` field refs \`order-item\`). Link a wire structure to the record it is built from with a \`references\` relation (data to data), or with a field \`ref\` when one field carries it.
 - Connect producers and consumers with relations from the element to the data: \`produces\`, \`consumes\`, \`reads\`, \`writes\`. Data that travels over a call goes in that relation's \`dataIds\`.
 
 ## Relations and flows
 
-- A relation is directed: \`from\` acts on \`to\`. \`kind\` is one of uses, calls, reads, writes, publishes, subscribes, produces, consumes, references. \`label\` is the verb phrase a reader sees ("places order"), \`technology\` the protocol ("HTTPS/JSON", "gRPC", "SQL").
-- Add flows only for the handful of scenarios that explain the system: a request end to end, a background job, an agent loop. Each step is \`{from, to, label, description?, dataIds?, codeRefs?}\` in order. Steps replace the whole list when you send \`steps\`.
+- A relation is directed: \`from\` acts on \`to\`. \`kind\` is one of uses, calls, reads, writes, publishes, subscribes, produces, consumes, references (default uses). \`label\` is the verb phrase a reader sees ("places order"), \`technology\` the protocol ("HTTPS/JSON", "gRPC", "SQL").
+- Relations have no name. Their generated id is "<from>-<kind>-<to>" ("checkout-calls-billing", with "-2" appended when taken); supplying your own readable id is fine.
+- Add flows only for the handful of scenarios that explain the system: a request end to end, a background job, an agent loop. Each step is \`{from, to, label, description?, dataIds?, codeRefs?}\` in order.
 
 ## Changing the model
 
@@ -49,7 +53,8 @@ ArchWeave holds the architecture of the repository you are working in. A develop
 - Entries are upserts. With an existing \`id\` only the fields you send change; without an id (or with a new one) the entry is created. Choose readable ids yourself (slugs like "order-service") when later entries in the same change set refer to them; otherwise ids are generated from names. Ids never change on rename.
 - A change set is all or nothing. Errors name the entry and suggest the id you probably meant; fix and resend.
 - Removing an element removes its descendants, its relations and the flow steps that touch it. Prefer marking things \`deprecated\` when the code still exists.
-- Lists you send (codeRefs, fields, tags, notes, steps, dataIds) replace the stored list, so send the full list. Use \`addNotes\` and \`resolveNotes\` for notes.
+- Lists you send (codeRefs, fields, tags, notes, steps, dataIds) replace the stored list. For small corrections use the helpers: \`addCodeRefs\`/\`removeCodeRefs\` (elements, relations), \`setFields\`/\`removeFields\` and \`addNotes\`/\`resolveNotes\` (elements), \`updateSteps\`/\`insertSteps\`/\`removeSteps\` with 0-based indices (flows). The \`apply_changes\` description has the details.
+- \`dataIds\` and field \`ref\`s must name existing data structures, or the change set is rejected. \`dryRun: true\` checks a large change set without applying it.
 - Do not send \`layout\`. The browser arranges new elements.
 
 ## Working with the human

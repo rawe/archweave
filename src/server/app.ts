@@ -47,7 +47,7 @@ export async function createArchWeave(config: Config, tuning: Tuning = {}): Prom
   try {
     store = new Store(loaded);
   } catch (error) {
-    throw new Error(`The model in ${config.dataDir} does not match the ArchWeave format: ${(error as Error).message}`);
+    throw new Error(`Cannot load the model in ${config.dataDir}: ${(error as Error).message}\nFix model.json or layout.json and start again.`);
   }
   persistence.attach(store);
   const session = new Session(tuning.presenceTimeoutMs);
@@ -57,9 +57,10 @@ export async function createArchWeave(config: Config, tuning: Tuning = {}): Prom
 
   const app = new Hono();
   app.use('*', hostGuard(config));
+  app.use('*', jsonBodyGuard);
   app.route('/api', apiRoutes({ store, session, repo, stale, hostRepoPath: config.hostRepoPath, keepAliveMs: tuning.keepAliveMs }));
   app.all('/mcp', (c) => handleMcpRequest(c.req.raw, { store, session, repo, stale, version: VERSION, uiUrl }));
-  serveWeb(app, findWebDir(config.webDir));
+  serveWeb(app, webDirCandidates(config.webDir));
 
   const close = async () => {
     stopBroadcast();
@@ -107,7 +108,7 @@ function hostGuard(config: Config): MiddlewareHandler {
       return c.json({ error: `Host "${c.req.header('host') ?? ''}" is not allowed. Add it to ARCHWEAVE_ALLOWED_HOSTS to accept it.` }, 403);
     }
     const origin = c.req.header('origin');
-    if (origin && origin !== 'null') {
+    if (origin !== undefined) {
       let originHost: string | undefined;
       try {
         originHost = new URL(origin).hostname.replace(/^\[|\]$/g, '').toLowerCase();
@@ -127,23 +128,48 @@ function hostnameOf(header: string | undefined): string | undefined {
   return h.split(':')[0];
 }
 
-function findWebDir(configured?: string): string | undefined {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = configured ? [configured] : [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')];
-  return candidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Mutating requests that carry a body must declare it as JSON. Browsers cannot send
+ * that cross-origin without a preflight, so a form or `text/plain` post cannot reach the API.
+ */
+const jsonBodyGuard: MiddlewareHandler = async (c, next) => {
+  if (MUTATING.has(c.req.method) && hasBody(c.req.raw)) {
+    const type = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+    if (type !== 'application/json') return c.json({ error: 'Content-Type must be application/json' }, 415);
+  }
+  await next();
+};
+
+function hasBody(request: Request): boolean {
+  const length = request.headers.get('content-length');
+  return request.headers.has('transfer-encoding') || (length !== null && length !== '0');
 }
 
-function serveWeb(app: Hono, webDir: string | undefined): void {
-  if (!webDir) {
-    app.get('/', (c) =>
-      c.html('<!doctype html><title>ArchWeave</title><p>The ArchWeave server is running, but the web UI is not built. Run <code>npm run build:web</code>, or use <code>npm run dev</code>.</p>'),
-    );
-    return;
-  }
-  const indexFile = path.join(webDir, 'index.html');
-  app.use('*', serveStatic({ root: webDir }));
+function webDirCandidates(configured?: string): string[] {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return configured ? [configured] : [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')];
+}
+
+const NOT_BUILT =
+  '<!doctype html><title>ArchWeave</title><p>The ArchWeave server is running, but the web UI is not built. Run <code>npm run build:web</code>, or use <code>npm run dev</code>.</p>';
+
+/** Serves the built UI. Looks for it on every request, so a UI built after startup is picked up. */
+function serveWeb(app: Hono, candidates: string[]): void {
+  const statics = new Map<string, MiddlewareHandler>();
+  const webDir = () => candidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+  app.use('*', async (c, next) => {
+    const dir = webDir();
+    if (!dir) return next();
+    let handler = statics.get(dir);
+    if (!handler) statics.set(dir, (handler = serveStatic({ root: dir })));
+    return handler(c, next);
+  });
   app.get('*', (c) => {
+    const dir = webDir();
+    if (!dir) return c.req.path === '/' ? c.html(NOT_BUILT) : c.notFound();
     if (path.posix.extname(c.req.path)) return c.notFound();
-    return c.html(fs.readFileSync(indexFile, 'utf8'));
+    return c.html(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'));
   });
 }

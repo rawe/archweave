@@ -171,18 +171,54 @@ function patchShape<S extends z.ZodRawShape>(shape: S) {
  * for elements, `from` + `to` for relations, `name` for flows.
  * `parentId: null` moves an element to the top level.
  */
+// Additive list helpers. Order within one patch: the full list (if sent) replaces
+// the stored one, then removals apply, then additions and updates.
+
+/** Removes code refs with this path, or only the one with this path and symbol. */
+export const CodeRefSelector = z.object({ path: z.string().min(1), symbol: z.string().optional() });
+export type CodeRefSelector = z.infer<typeof CodeRefSelector>;
+
+/** Upserts a field by name: given properties change, the rest stay. `ref: null` clears the ref. */
+export const FieldPatch = z.object({
+  name: z.string().min(1),
+  type: z.string().optional(),
+  optional: z.boolean().optional(),
+  description: z.string().optional(),
+  ref: Id.nullable().optional(),
+});
+export type FieldPatch = z.infer<typeof FieldPatch>;
+
+const codeRefHelpers = {
+  /** Appends code refs, skipping ones already present (same path, symbol and line range). */
+  addCodeRefs: z.array(CodeRef).optional(),
+  removeCodeRefs: z.array(CodeRefSelector).optional(),
+};
+
 export const ElementPatch = z.object(patchShape(Element.shape)).extend({
   parentId: Id.nullable().optional(),
   /** Convenience: append notes without resending the list. */
   addNotes: z.array(z.string().min(1)).optional(),
   resolveNotes: z.array(Id).optional(),
+  ...codeRefHelpers,
+  setFields: z.array(FieldPatch).optional(),
+  /** Field names to remove. */
+  removeFields: z.array(z.string().min(1)).optional(),
 });
 export type ElementPatch = z.infer<typeof ElementPatch>;
 
-export const RelationPatch = z.object(patchShape(Relation.shape));
+export const RelationPatch = z.object(patchShape(Relation.shape)).extend(codeRefHelpers);
 export type RelationPatch = z.infer<typeof RelationPatch>;
 
-export const FlowPatch = z.object(patchShape(Flow.shape));
+/** Indices are 0-based and refer to the step list before this patch (after `steps`, if sent). */
+export const StepIndex = z.number().int().min(0);
+
+export const FlowPatch = z.object(patchShape(Flow.shape)).extend({
+  /** Changes the given properties of existing steps. */
+  updateSteps: z.array(z.object(patchShape(FlowStep.shape)).extend({ index: StepIndex })).optional(),
+  /** Inserts steps before the step at `index`; `index` equal to the step count appends. */
+  insertSteps: z.array(z.object({ index: StepIndex, step: FlowStep })).optional(),
+  removeSteps: z.array(StepIndex).optional(),
+});
 export type FlowPatch = z.infer<typeof FlowPatch>;
 
 export const ChangeSet = z.object({
@@ -261,13 +297,30 @@ export interface StaleLink {
   ownerType: 'element' | 'relation' | 'flow';
   ownerId: string;
   ref: CodeRef;
-  reason: 'missing-file' | 'line-out-of-range' | 'symbol-not-found';
+  /** symbol-outside-range: the symbol exists in the file but not within startLine..endLine. */
+  reason: 'missing-file' | 'line-out-of-range' | 'symbol-not-found' | 'symbol-outside-range';
 }
 
 export interface Snapshot {
   revision: number;
   model: Model;
   layout: Layout;
+}
+
+/**
+ * The stored form of a code ref path: forward slashes, no "./" segments, no trailing slash.
+ * "." stands for the repository root.
+ */
+export function normalizeCodePath(input: string): string {
+  const parts: string[] = [];
+  const absolute = /^\s*[\\/]/.test(input);
+  for (const part of input.trim().replace(/\\/g, '/').split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..' && parts.length && parts.at(-1) !== '..') parts.pop();
+    else if (part !== '..' || !absolute) parts.push(part);
+  }
+  const joined = parts.join('/');
+  return absolute ? `/${joined}` : joined || '.';
 }
 
 export function slugify(name: string): string {

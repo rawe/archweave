@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ChangeSet, ElementKind, type FocusRequest, Id, type Model, Perspective } from '../shared/model.ts';
-import { ancestorsOf, descendantsOf } from '../shared/projection.ts';
+import { ancestorsOf, descendantsOf, projectStructure } from '../shared/projection.ts';
 import { EXPORT_FORMATS, exportModel } from './export.ts';
 import { GUIDE } from './guide.ts';
 import { PathError, type Repo } from './repo.ts';
@@ -11,7 +11,7 @@ import type { Session } from './session.ts';
 import { allCodeRefs, type StaleLinks } from './stale.ts';
 import type { Store } from './store.ts';
 import { didYouMean } from './suggest.ts';
-import { compact, ModelView } from './views.ts';
+import { compact, ModelView, THREAD_ID_CAP } from './views.ts';
 
 export interface McpDeps {
   store: Store;
@@ -90,37 +90,40 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'What the human is looking at',
       description:
-        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb and the elements visible there), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes, and how many code links are stale. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
+        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes, and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
       annotations: { ...readOnly, idempotentHint: false },
     },
     async () => {
       const snapshot = store.snapshot();
       const v = new ModelView(snapshot.model);
       const ui = session.uiState;
+      const reportedAt = session.uiReportedAt;
       const scope = ui.scopeId ? v.byId.get(ui.scopeId) : undefined;
       const flow = ui.flowId ? v.flowsById.get(ui.flowId) : undefined;
       const selectedElements = ui.selectedElementIds.map((id) => v.expandElement(id) ?? { id, missing: true });
       const selectedRelations = ui.selectedRelationIds.map((id) => v.expandRelation(id) ?? { id, missing: true });
-      const visible =
-        ui.perspective === 'data'
-          ? snapshot.model.elements.filter((e) => e.kind === 'data').map(compact)
-          : ui.perspective === 'structure'
-            ? v.children(scope?.id).filter((e) => e.kind !== 'data').map(compact)
-            : undefined;
       const humanChanges = store.journal({ since: session.agentCursor, actor: 'human' });
       const staleCount = (await stale.check(snapshot.model)).length;
-      session.agentCursor = snapshot.revision;
+      session.advanceAgentCursor(snapshot.revision);
       const nothingSelected = !selectedElements.length && !selectedRelations.length;
+      const browserConnected = session.browserCount > 0;
+      const uiHint = browserConnected
+        ? undefined
+        : reportedAt
+          ? `No browser is connected; this is what the human last looked at ${timeAgo(reportedAt)} ago (${reportedAt}). It may be out of date.`
+          : `No browser has reported a view yet. Ask the human to open ${deps.uiUrl}.`;
       return ok({
         revision: snapshot.revision,
-        browserConnected: session.browserCount > 0,
+        browserConnected,
         ui: {
           perspective: ui.perspective,
+          ...(reportedAt ? { reportedAt } : {}),
           scope: scope ? compact(scope) : ui.scopeId ? { id: ui.scopeId, missing: true } : 'top level',
           breadcrumb: scope ? [...ancestorsOf(scope.id, v.byId), scope].map((e) => ({ id: e.id, name: e.name })) : [],
           ...(flow ? { flow: { id: flow.id, name: flow.name, summary: flow.summary || undefined, steps: flow.steps.map((s, i) => ({ step: i + 1, from: s.from, to: s.to, label: s.label, dataIds: s.dataIds.length ? s.dataIds : undefined })) } } : {}),
-          ...(visible ? { visible } : {}),
+          ...visibleIn(snapshot.model, ui.perspective, scope?.id),
         },
+        ...(uiHint ? { uiHint } : {}),
         selection: { elements: selectedElements, relations: selectedRelations },
         ...(nothingSelected ? { hint: 'Nothing is selected. If the request refers to something specific, ask the human to select it in ArchWeave, or work from the scope and visible elements.' } : {}),
         openNotes: openNotes(snapshot.model),
@@ -135,7 +138,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'Model outline',
       description:
-        'Returns an outline of the architecture: nested elements as {id, kind, name, summary, status, children} starting at the top level or at `scopeId`, the relations among the listed elements, flows by name, and counts. Deeper levels are summarized as `childCount`; call again with a deeper `scopeId` or `depth` to expand them. Data structures are left out unless `includeData` is true.',
+        'Returns an outline of the architecture: nested elements as {id, kind, name, summary, status, childCount, dataCount, children} starting at the top level or at `scopeId`, `depth` levels deep. `childCount` counts non-data children and `dataCount` the data structures an element owns; `children` is present only above the depth limit, so call again with a deeper `scopeId` or `depth` to expand. `relations` shows connectivity at the level returned: a single relation between two listed elements appears as itself (with `id`); relations between their descendants are lifted to the listed ancestors and merged into threads {from, to, count, relationIds (at most 10), kinds}. With `scopeId`, connections to elements outside the scope are lifted to outside `neighbors`, as on the diagram. `counts` covers the whole model, per kind including data. Data structures are left out of the outline unless `includeData` is true.',
       inputSchema: {
         scopeId: Id.optional().describe('Element whose inside to outline. Omit for the whole system.'),
         depth: z.number().int().min(1).max(10).optional().describe('Levels of nesting to include. Default 2.'),
@@ -211,26 +214,33 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'apply_changes',
     {
       title: 'Change the model',
-      description: `Applies one change set to the model as the agent, atomically: if any entry is invalid nothing is applied and the error names the entry (with "did you mean" suggestions for unknown ids). Returns the new revision, the ids created, updated and removed, and warnings.
+      description: `Applies one change set to the model as the agent, atomically: if any entry is invalid nothing is applied and the error names the entry (with "did you mean" suggestions for unknown ids). Returns the new revision, the ids created, updated and removed, and warnings. With \`dryRun: true\` it validates and returns the same result (with the revision it would get) without applying anything.
 
 Semantics:
 - \`summary\` (required): one line the human reads in the activity feed, e.g. "Model checkout components".
-- \`elements\`, \`relations\`, \`flows\`: upserts. With an existing \`id\` only the fields you send change. Without an id, or with an id that does not exist yet, the entry is created; new elements need \`kind\` and \`name\`, new relations \`from\` and \`to\`, new flows \`name\`. Generated ids are slugs of the name. Give your own readable ids when later entries in the same change set refer to them; entries can refer to elements created in the same change set.
-- Lists you send (codeRefs, fields, tags, notes, steps, dataIds) replace the stored list. Use \`addNotes\` (texts) and \`resolveNotes\` (note ids) on elements instead of resending notes.
+- \`elements\`, \`relations\`, \`flows\`: upserts. With an existing \`id\` only the fields you send change. Without an id, or with an id that does not exist yet, the entry is created; new elements need \`kind\` and \`name\`, new relations \`from\` and \`to\`, new flows \`name\`. Element and flow ids are generated as slugs of the name, relation ids as "<from>-<kind>-<to>"; supplying your own readable id is fine. Give your own ids when later entries in the same change set refer to them; entries can refer to elements created in the same change set.
+- Lists you send (codeRefs, fields, tags, notes, steps, dataIds) replace the stored list. For small corrections use the additive helpers instead:
+  - elements and relations: \`addCodeRefs\` (appended, duplicates by path+symbol+lines skipped), \`removeCodeRefs\` ([{path, symbol?}]: all refs to the path, or only that symbol);
+  - elements: \`setFields\` ([{name, type?, optional?, description?, ref?}]: upsert by name, only given properties change, \`ref: null\` clears), \`removeFields\` (names), \`addNotes\` (texts), \`resolveNotes\` (note ids);
+  - flows: \`updateSteps\` ([{index, ...properties}]), \`insertSteps\` ([{index, step}], inserted before that index; index = step count appends), \`removeSteps\` (indices). Indices are 0-based (step number − 1) and refer to the steps before this patch.
+  Within one entry a full list is applied first, then removals, then additions and updates. A helper that names something missing is an error.
 - \`parentId: null\` moves an element to the top level. Containment cycles are rejected.
 - New elements default to status "built" when they have code refs, otherwise "planned".
 - \`remove\` deletes by id. Removing an element also removes its descendants, attached relations and the flow steps that touch it.
-- Unknown \`dataIds\` and field \`ref\`s are dropped with a warning.
+- \`dataIds\` and field \`ref\`s you send must name data structures (kind "data"); otherwise the change set is rejected. References broken by a removal, or by an element no longer being of kind "data", are cleaned up with a warning.
+- Code ref paths are stored normalized (repo-relative, forward slashes, no "./").
 - Do not send \`layout\`.`,
       inputSchema: ChangeSet.extend({
         summary: z.string().min(1).max(200).describe('One line for the activity feed.'),
+        dryRun: z.boolean().optional().describe('Validate and report what would change without applying it.'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
-    async (changes) => {
+    async ({ dryRun, ...changes }) => {
+      if (dryRun) return ok({ dryRun: true, ...store.preview(changes, 'agent') });
       const humanChanges = store.journal({ since: session.agentCursor, actor: 'human' });
       const result = store.apply(changes, 'agent');
-      session.agentCursor = result.revision;
+      session.advanceAgentCursor(result.revision);
       return ok(humanChanges.length ? { ...result, humanChangesSinceYouLastLooked: humanChanges } : result);
     },
   );
@@ -240,7 +250,7 @@ Semantics:
     {
       title: 'Check code links',
       description:
-        'Checks code refs against the repository and returns the stale ones (missing-file, line-out-of-range, symbol-not-found) with their owner, plus built elements that have no code ref at all. Limit to one subtree with `scopeId`. Fix stale refs with apply_changes by sending the corrected `codeRefs` list.',
+        'Checks code refs against the repository and returns the stale ones with their owner, plus built elements that have no code ref at all. Reasons: missing-file; line-out-of-range (startLine or endLine past the end of the file); symbol-not-found (the `symbol`, matched as an identifier, does not occur in the file outside quotes; for "A.b" the last segment is enough); symbol-outside-range (it occurs, but not within startLine..endLine, or on startLine when there is no endLine). Limit to one subtree with `scopeId`. Fix stale refs with apply_changes: `removeCodeRefs` plus `addCodeRefs`, or the corrected `codeRefs` list.',
       inputSchema: { scopeId: Id.optional().describe('Only check this element and everything inside it.') },
       annotations: readOnly,
     },
@@ -348,6 +358,35 @@ Semantics:
   );
 
   return server;
+}
+
+/** What the browser draws for this perspective, as far as the agent needs it. */
+function visibleIn(model: Model, perspective: Perspective, scopeId: string | undefined): Record<string, unknown> {
+  if (perspective === 'data') return { visible: model.elements.filter((e) => e.kind === 'data').map(compact) };
+  if (perspective !== 'structure') return {};
+  const projection = projectStructure(model, scopeId);
+  return {
+    visible: projection.nodes.map((n) => ({
+      ...compact(n.element),
+      ...(n.role === 'neighbor' ? { neighbor: true } : {}),
+      ...(n.childCount ? { childCount: n.childCount } : {}),
+    })),
+    visibleRelations: projection.edges.map((e) => ({
+      from: e.from,
+      to: e.to,
+      count: e.relations.length,
+      relationIds: e.relations.slice(0, THREAD_ID_CAP).map((r) => r.id),
+    })),
+  };
+}
+
+function timeAgo(iso: string): string {
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  if (seconds < 90) return `${seconds} seconds`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  return hours < 36 ? `${hours} hours` : `${Math.round(hours / 24)} days`;
 }
 
 function openNotes(model: Model) {

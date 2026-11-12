@@ -13,11 +13,11 @@ const PRESENCE_TIMEOUT_MS = 60_000;
  */
 export class Session {
   private ui: UiState = UiState.parse({});
+  private uiAt?: string;
   private presence: AgentPresence = { connected: false };
   private presenceTimer?: NodeJS.Timeout;
   private listeners = new Set<(event: ServerEvent) => void>();
-  /** Store revision at the agent's last get_context or apply_changes. */
-  agentCursor = 0;
+  private cursor = 0;
 
   constructor(private presenceTimeoutMs = PRESENCE_TIMEOUT_MS) {}
 
@@ -25,9 +25,25 @@ export class Session {
     return this.ui;
   }
 
+  /** When a browser last reported the UI state (ISO time), or undefined if none has yet. */
+  get uiReportedAt(): string | undefined {
+    return this.uiAt;
+  }
+
   setUi(input: unknown): UiState {
     this.ui = UiState.parse(input);
+    this.uiAt = new Date().toISOString();
     return this.ui;
+  }
+
+  /** Store revision up to which the agent has seen the human's changes. */
+  get agentCursor(): number {
+    return this.cursor;
+  }
+
+  /** Moves the cursor forward only, so a slow response cannot hide changes a faster one already covered. */
+  advanceAgentCursor(revision: number): void {
+    this.cursor = Math.max(this.cursor, revision);
   }
 
   get agent(): AgentPresence {

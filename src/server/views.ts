@@ -1,5 +1,8 @@
-import type { CodeRef, Element, ElementKind, Flow, Model, Relation } from '../shared/model.ts';
+import { type CodeRef, type Element, type ElementKind, type Flow, type Model, normalizeCodePath, type Relation } from '../shared/model.ts';
 import { ancestorsOf, indexById } from '../shared/projection.ts';
+
+/** How many underlying relation ids a merged thread lists. */
+export const THREAD_ID_CAP = 10;
 
 /** The compact form every tool uses when listing elements. */
 export interface CompactElement {
@@ -137,47 +140,102 @@ export class ModelView {
     return this.model.elements.flatMap((e) => e.fields.filter((f) => f.ref === dataId).map((f) => ({ id: e.id, name: e.name, field: f.name })));
   }
 
-  /** Nested outline below a scope, `depth` levels deep. Elements filtered out by kind pass their children up. */
+  /**
+   * Nested outline below a scope, `depth` levels deep. Elements filtered out by kind pass their children up.
+   * Relations are lifted to the listed elements (and, for a scope, to the outside neighbors they connect to),
+   * the way the diagram draws them.
+   */
   outline(options: { scopeId?: string; depth: number; kinds?: ElementKind[]; includeData: boolean }): Record<string, unknown> {
     const included = new Set<string>();
-    const keep = (e: Element) => (options.includeData || e.kind !== 'data') && (!options.kinds?.length || options.kinds.includes(e.kind));
+    const shown = (e: Element) => options.includeData || e.kind !== 'data';
+    const keep = (e: Element) => shown(e) && (!options.kinds?.length || options.kinds.includes(e.kind));
     const build = (parentId: string | undefined, level: number): Record<string, unknown>[] => {
       const nodes: Record<string, unknown>[] = [];
       for (const child of this.children(parentId)) {
-        if (child.id === parentId) continue;
+        if (child.id === parentId || !shown(child)) continue;
         if (!keep(child)) {
-          if (level <= options.depth && (options.includeData || child.kind !== 'data')) nodes.push(...build(child.id, level));
+          if (level <= options.depth) nodes.push(...build(child.id, level));
           continue;
         }
         included.add(child.id);
-        const grandChildren = this.children(child.id).filter((c) => options.includeData || c.kind !== 'data');
         const node: Record<string, unknown> = { ...compact(child) };
         delete node.parentId;
         if (child.technology) node.technology = child.technology;
-        if (grandChildren.length) {
-          if (level < options.depth) node.children = build(child.id, level + 1);
-          else node.childCount = grandChildren.length;
+        const kids = this.children(child.id);
+        const childCount = kids.filter((k) => k.kind !== 'data').length;
+        const dataCount = kids.length - childCount;
+        if (childCount) node.childCount = childCount;
+        if (dataCount) node.dataCount = dataCount;
+        if (level < options.depth) {
+          const nested = build(child.id, level + 1);
+          if (nested.length) node.children = nested;
         }
         nodes.push(node);
       }
       return nodes;
     };
     const tree = build(options.scopeId, 1);
-    const relations = this.model.relations.filter((r) => included.has(r.from) && included.has(r.to)).map(compactRelation);
     const scope = options.scopeId ? this.byId.get(options.scopeId) : undefined;
+    const { threads, neighbors } = this.liftRelations(included, scope, options.includeData);
+    const byKind: Record<string, number> = {};
+    for (const e of this.model.elements) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
     return pruned({
       model: { name: this.model.name, description: this.model.description || undefined },
       scope: scope ? { ...compact(scope), breadcrumb: [...ancestorsOf(scope.id, this.byId), scope].map((e) => ({ id: e.id, name: e.name })) } : undefined,
       elements: tree,
-      relations,
+      neighbors: neighbors.map((id) => this.ref(id)),
+      relations: threads,
       flows: this.model.flows.map((f) => ({ id: f.id, name: f.name, steps: f.steps.length })),
-      counts: {
-        elements: this.model.elements.filter((e) => e.kind !== 'data').length,
-        data: this.model.elements.filter((e) => e.kind === 'data').length,
-        relations: this.model.relations.length,
-        flows: this.model.flows.length,
-      },
+      counts: { elements: this.model.elements.length, byKind, relations: this.model.relations.length, flows: this.model.flows.length },
     });
+  }
+
+  /**
+   * Maps every relation onto the listed elements: each end goes to its nearest listed ancestor-or-self,
+   * or, outside a scope, to the highest ancestor that is not the scope or above it. A single relation
+   * between two listed elements stays as itself; everything else becomes a merged thread.
+   */
+  private liftRelations(included: Set<string>, scope: Element | undefined, includeData: boolean): { threads: Record<string, unknown>[]; neighbors: string[] } {
+    const hidden = new Set(scope ? [...ancestorsOf(scope.id, this.byId), scope].map((e) => e.id) : []);
+    const visibleFor = (id: string): { id: string; neighbor: boolean } | undefined => {
+      const element = this.byId.get(id);
+      if (!element) return undefined;
+      if (element.kind === 'data') return includeData && included.has(id) ? { id, neighbor: false } : undefined;
+      const chain = [...ancestorsOf(id, this.byId), element];
+      if (!scope || chain.some((e) => e.id === scope.id)) {
+        const nearest = chain.findLast((e) => included.has(e.id));
+        return nearest ? { id: nearest.id, neighbor: false } : undefined;
+      }
+      const outside = chain.find((e) => !hidden.has(e.id));
+      return outside ? { id: outside.id, neighbor: true } : undefined;
+    };
+    const threads = new Map<string, { from: string; to: string; relations: Relation[] }>();
+    const neighbors = new Set<string>();
+    for (const relation of this.model.relations) {
+      const from = visibleFor(relation.from);
+      const to = visibleFor(relation.to);
+      if (!from || !to || from.id === to.id || (from.neighbor && to.neighbor)) continue;
+      if (from.neighbor) neighbors.add(from.id);
+      if (to.neighbor) neighbors.add(to.id);
+      const key = `${from.id}->${to.id}`;
+      const thread = threads.get(key) ?? { from: from.id, to: to.id, relations: [] };
+      thread.relations.push(relation);
+      threads.set(key, thread);
+    }
+    return {
+      neighbors: [...neighbors],
+      threads: [...threads.values()].map((t) => {
+        const only = t.relations.length === 1 ? t.relations[0]! : undefined;
+        if (only && only.from === t.from && only.to === t.to) return compactRelation(only);
+        return {
+          from: t.from,
+          to: t.to,
+          count: t.relations.length,
+          relationIds: t.relations.slice(0, THREAD_ID_CAP).map((r) => r.id),
+          kinds: [...new Set(t.relations.map((r) => r.kind))],
+        };
+      }),
+    };
   }
 
   search(query: string, options: { kinds?: ElementKind[]; limit: number }): Record<string, unknown>[] {
@@ -218,9 +276,13 @@ export class ModelView {
       .map((h) => ({ ...compact(h.element), matchedIn: [...h.matched] }));
   }
 
-  /** Elements, relations and flow steps whose code refs touch any of these repo-relative files or directories. */
+  /** Elements, relations and flow steps whose code refs touch any of these normalized repo-relative files or directories. */
   findByCode(paths: string[]): Record<string, unknown> {
-    const touches = (ref: CodeRef) => paths.filter((p) => !p || ref.path === p || ref.path.startsWith(`${p}/`) || p.startsWith(`${ref.path.replace(/\/+$/, '')}/`));
+    const touches = (ref: CodeRef) => {
+      const stored = normalizeCodePath(ref.path);
+      if (stored === '.') return paths;
+      return paths.filter((p) => !p || stored === p || stored.startsWith(`${p}/`) || p.startsWith(`${stored}/`));
+    };
     const matchedPaths = new Set<string>();
     const pick = (refs: CodeRef[]) => {
       const hit = refs.filter((r) => {

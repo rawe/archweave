@@ -1,6 +1,6 @@
 import { type CodeRef, type Element, type Flow, type Layout, type Model, type Perspective, PERSPECTIVES, slugify } from '../shared/model.ts';
 import { descendantsOf, indexById, projectStructure } from '../shared/projection.ts';
-import { canonicalLayout, canonicalModel, formatJson } from './canonical.ts';
+import { canonicalLayout, explicitModel, formatJson } from './canonical.ts';
 
 export const EXPORT_FORMATS = ['markdown', 'mermaid', 'json'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -26,7 +26,7 @@ export function exportModel(model: Model, layout: Layout, options: ExportOptions
   if (options.scopeId && !scope) throw new ExportError(`unknown scope element \`${options.scopeId}\``);
   const base = slugify(scope?.name ?? model.name);
   if (options.format === 'json') {
-    return { content: formatJson({ model: canonicalModel(model), layout: canonicalLayout(layout) }), filename: `${base}.archweave.json`, contentType: 'application/json' };
+    return { content: formatJson({ model: explicitModel(model), layout: canonicalLayout(layout) }), filename: `${base}.archweave.json`, contentType: 'application/json' };
   }
   const doc = new DocumentWriter(model, scope, {
     perspectives: new Set(options.perspectives?.length ? options.perspectives : PERSPECTIVES),
@@ -149,7 +149,7 @@ class DocumentWriter {
     const data = this.dataElements();
     if (!data.length) return;
     this.line('## Data');
-    this.line(fence(classDiagram(data, this.model)));
+    this.line(fence(dataDiagram(data, this.model)));
     if (this.options.diagramsOnly) return;
     for (const d of data) {
       this.line(`### ${d.name}`);
@@ -225,7 +225,7 @@ function flowchart(projection: ReturnType<typeof projectStructure>): string {
     if (!from || !to) continue;
     const label = edge.relations.length === 1 ? edge.relations[0]!.label || edge.relations[0]!.kind : `${edge.relations.length} relations`;
     const arrow = edge.relations.every((r) => r.status === 'planned') ? '-.->' : '-->';
-    lines.push(`  ${from} ${arrow}|${edgeText(label)}| ${to}`);
+    lines.push(`  ${from} ${arrow}|"${text(label)}"| ${to}`);
   }
   const neighbors = projection.nodes.filter((n) => n.role === 'neighbor').map((n) => ids.get(n.element.id));
   const planned = projection.nodes.filter((n) => n.element.status === 'planned').map((n) => ids.get(n.element.id));
@@ -237,38 +237,40 @@ function flowchart(projection: ReturnType<typeof projectStructure>): string {
 }
 
 function shape(element: Element): string {
-  const text = `"${label(element.name)}"`;
+  const name = `"${text(element.name)}"`;
   switch (element.kind) {
     case 'store':
-      return `[(${text})]`;
+      return `[(${name})]`;
     case 'queue':
-      return `([${text}])`;
+      return `([${name}])`;
     case 'actor':
-      return `((${text}))`;
+      return `((${name}))`;
     case 'external':
-      return `{{${text}}}`;
+      return `{{${name}}}`;
     case 'agent':
-      return `[[${text}]]`;
+      return `[[${name}]]`;
     default:
-      return `[${text}]`;
+      return `[${name}]`;
   }
 }
 
-function classDiagram(data: Element[], model: Model): string {
+/**
+ * The data structures and how they reference each other. Field types are free text that
+ * Mermaid class members cannot hold reliably, so the diagram shows structures and links only;
+ * the field tables carry the detail.
+ */
+function dataDiagram(data: Element[], model: Model): string {
   const ids = new Map(data.map((d, i) => [d.id, `d${i}`]));
-  const lines = ['classDiagram'];
-  for (const d of data) {
-    const members = d.fields.map((f) => `    ${member(f.type || 'any')} ${member(f.name)}${f.optional ? '?' : ''}`);
-    lines.push(`  class ${ids.get(d.id)}["${label(d.name)}"]${members.length ? ` {\n${members.join('\n')}\n  }` : ''}`);
-  }
+  const lines = ['flowchart LR'];
+  for (const d of data) lines.push(`  ${ids.get(d.id)}["${text(d.name)}"]`);
   for (const d of data) {
     for (const f of d.fields) {
-      if (f.ref && ids.has(f.ref)) lines.push(`  ${ids.get(d.id)} --> ${ids.get(f.ref)} : ${member(f.name)}`);
+      if (f.ref && ids.has(f.ref)) lines.push(`  ${ids.get(d.id)} -->|"${text(f.name)}"| ${ids.get(f.ref)}`);
     }
   }
   for (const r of model.relations) {
     if (r.kind === 'references' && ids.has(r.from) && ids.has(r.to)) {
-      lines.push(`  ${ids.get(r.from)} ..> ${ids.get(r.to)}${r.label ? ` : ${member(r.label)}` : ''}`);
+      lines.push(`  ${ids.get(r.from)} -.->${r.label ? `|"${text(r.label)}"|` : ''} ${ids.get(r.to)}`);
     }
   }
   return lines.join('\n');
@@ -282,12 +284,12 @@ function sequenceDiagram(flow: Flow, byId: Map<string, Element>): string {
       if (ids.has(id)) continue;
       ids.set(id, `p${ids.size}`);
       const element = byId.get(id);
-      lines.push(`  ${element?.kind === 'actor' ? 'actor' : 'participant'} ${ids.get(id)} as ${messageText(element?.name ?? id)}`);
+      lines.push(`  ${element?.kind === 'actor' ? 'actor' : 'participant'} ${ids.get(id)} as ${text(element?.name ?? id)}`);
     }
   }
   for (const step of flow.steps) {
     const data = step.dataIds.map((d) => byId.get(d)?.name ?? d);
-    lines.push(`  ${ids.get(step.from)}->>${ids.get(step.to)}: ${messageText(step.label + (data.length ? ` [${data.join(', ')}]` : ''))}`);
+    lines.push(`  ${ids.get(step.from)}->>${ids.get(step.to)}: ${text(step.label + (data.length ? ` [${data.join(', ')}]` : ''))}`);
   }
   return lines.join('\n');
 }
@@ -312,20 +314,23 @@ function oneLine(text: string): string {
   return text.replace(/\s*\n\s*/g, ' ').trim();
 }
 
-function label(text: string): string {
-  return oneLine(text).replace(/"/g, '#quot;').replace(/</g, '#lt;').replace(/>/g, '#gt;');
-}
+const MERMAID_ENTITIES: Record<string, string> = {
+  '"': '#quot;',
+  '#': '#35;',
+  ';': '#59;',
+  '<': '#lt;',
+  '>': '#gt;',
+  '&': '#amp;',
+  '{': '#123;',
+  '}': '#125;',
+  '|': '#124;',
+  '`': '#96;',
+  '%': '#37;',
+};
 
-function edgeText(text: string): string {
-  return label(text).replace(/\|/g, '/');
-}
-
-function messageText(text: string): string {
-  return oneLine(text).replace(/;/g, '#59;').replace(/#(?!\d+;|quot;|lt;|gt;)/g, '#35;');
-}
-
-function member(text: string): string {
-  return oneLine(text).replace(/[{}"]/g, '').replace(/</g, '~').replace(/>/g, '~');
+/** One line of Mermaid text with every character that can end a label or start syntax written as an entity code. */
+function text(value: string): string {
+  return oneLine(value).replace(/["#;<>&{}|`%]/g, (c) => MERMAID_ENTITIES[c]!);
 }
 
 function cell(text: string): string {

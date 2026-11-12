@@ -7,13 +7,17 @@ import { tempDir, waitFor } from './helpers.ts';
 
 const open: Persistence[] = [];
 
-async function boot(dataDir: string) {
-  const persistence = new Persistence(dataDir, { debounceMs: 10, defaultName: 'shop', log: () => undefined });
+async function boot(dataDir: string, debounceMs = 10) {
+  const logs: string[] = [];
+  const persistence = new Persistence(dataDir, { debounceMs, defaultName: 'shop', log: (m) => logs.push(m) });
   open.push(persistence);
   const store = new Store(await persistence.load());
   persistence.attach(store);
-  return { persistence, store };
+  return { persistence, store, logs };
 }
+
+const settle = () => new Promise((r) => setTimeout(r, 250));
+const readModel = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, 'model.json'), 'utf8'));
 
 afterEach(async () => {
   await Promise.all(open.splice(0).map((p) => p.close()));
@@ -104,5 +108,99 @@ describe('Persistence', () => {
     fs.writeFileSync(path.join(dir, 'model.json'), '{ not json');
     await new Promise((r) => setTimeout(r, 300));
     expect(store.currentRevision).toBe(0);
+  });
+
+  it('reloads only the document that changed on disk and keeps pending edits', async () => {
+    const dir = tempDir();
+    const { store, persistence } = await boot(dir, 600);
+    store.apply({ elements: [{ id: 'a', kind: 'service', name: 'A' }] }, 'human');
+    await persistence.flush();
+    await settle();
+
+    fs.writeFileSync(path.join(dir, 'layout.json'), JSON.stringify({ 'structure:root': { a: { x: 5, y: 5 } } }));
+    store.apply({ elements: [{ id: 'b', kind: 'store', name: 'B' }] }, 'human');
+    await waitFor(() => store.snapshot().layout['structure:root']?.a?.x === 5);
+    expect(store.snapshot().model.elements.map((e) => e.id)).toEqual(['a', 'b']);
+    await persistence.flush();
+    expect(readModel(dir).elements.map((e: { id: string }) => e.id)).toEqual(['a', 'b']);
+  });
+
+  it('keeps an unsaved edit when model.json changes on disk at the same time', async () => {
+    const dir = tempDir();
+    const { store, persistence, logs } = await boot(dir, 600);
+    store.apply({ elements: [{ id: 'a', kind: 'service', name: 'A' }] }, 'human');
+    await persistence.flush();
+    await settle();
+
+    fs.writeFileSync(path.join(dir, 'model.json'), JSON.stringify({ name: 'shop', elements: [{ id: 'x', kind: 'service', name: 'X' }] }));
+    store.apply({ elements: [{ id: 'b', kind: 'store', name: 'B' }] }, 'human');
+    await waitFor(() => logs.some((l) => /model\.json changed on disk while an edit was not saved yet/.test(l)));
+    expect(store.snapshot().model.elements.map((e) => e.id)).toEqual(['a', 'b']);
+    await persistence.flush();
+    expect(readModel(dir).elements.map((e: { id: string }) => e.id)).toEqual(['a', 'b']);
+  });
+
+  it('retries a failed write on the next flush', async () => {
+    const dir = tempDir();
+    const { store, persistence } = await boot(dir);
+    store.apply({ elements: [{ id: 'a', kind: 'service', name: 'A' }] }, 'human');
+    await persistence.flush();
+    await settle();
+
+    const target = path.join(dir, 'model.json');
+    fs.rmSync(target);
+    fs.mkdirSync(target);
+    fs.writeFileSync(path.join(target, 'blocker'), '');
+    store.apply({ elements: [{ id: 'b', kind: 'store', name: 'B' }] }, 'human');
+    await expect(persistence.flush()).rejects.toThrow();
+    fs.rmSync(target, { recursive: true });
+    await persistence.flush();
+    expect(readModel(dir).elements.map((e: { id: string }) => e.id)).toEqual(['a', 'b']);
+  });
+
+  it('writes layout.json when a removal drops layout entries', async () => {
+    const dir = tempDir();
+    const { store, persistence } = await boot(dir);
+    store.apply(
+      { elements: [{ id: 'a', kind: 'service', name: 'A' }, { id: 'b', kind: 'store', name: 'B' }], layout: { 'structure:root': { a: { x: 1, y: 1 }, b: { x: 2, y: 2 } } } },
+      'human',
+    );
+    await persistence.flush();
+    store.apply({ remove: { elements: ['b'] } }, 'human');
+    await persistence.flush();
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'layout.json'), 'utf8'))).toEqual({ 'structure:root': { a: { x: 1, y: 1 } } });
+  });
+
+  it('refuses to start from a model with broken references', async () => {
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, 'model.json'), JSON.stringify({ elements: [{ id: 'a', kind: 'service', name: 'A', parentId: 'gone' }] }));
+    await expect(boot(dir)).rejects.toThrow(/element `a`: unknown parent `gone`/);
+  });
+
+  it('ignores a reload whose model has broken references and says why', async () => {
+    const dir = tempDir();
+    const { store, persistence, logs } = await boot(dir);
+    store.apply({ elements: [{ id: 'a', kind: 'service', name: 'A' }] }, 'human');
+    await persistence.flush();
+    await settle();
+    fs.writeFileSync(path.join(dir, 'model.json'), JSON.stringify({ elements: [{ id: 'a', kind: 'service', name: 'A' }, { id: 'r', kind: 'store', name: 'R', parentId: 'nope' }] }));
+    await waitFor(() => logs.some((l) => /unknown parent `nope`/.test(l)));
+    expect(store.currentRevision).toBe(1);
+    expect(store.snapshot().model.elements.map((e) => e.id)).toEqual(['a']);
+  });
+
+  it('skips structurally invalid journal lines with a diagnostic', async () => {
+    const dir = tempDir();
+    const good = { revision: 4, at: '2026-01-01T00:00:00.000Z', actor: 'agent', summary: 'Seed', created: { elements: ['a'], relations: [], flows: [] }, updated: { elements: [], relations: [], flows: [] }, removed: { elements: [], relations: [], flows: [] } };
+    fs.mkdirSync(path.join(dir, 'state'));
+    fs.writeFileSync(
+      path.join(dir, 'state', 'journal.jsonl'),
+      ['null', '{"summary":"no revision"}', JSON.stringify({ ...good, revision: 'x' }), '42', '{broken', JSON.stringify(good), ''].join('\n'),
+    );
+    const { store, logs } = await boot(dir);
+    expect(store.currentRevision).toBe(4);
+    expect(store.journal()).toEqual([good]);
+    expect(logs.filter((l) => /journal/.test(l))).toHaveLength(5);
+    expect(logs.join('\n')).toMatch(/line 2/);
   });
 });

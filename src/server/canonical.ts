@@ -16,6 +16,16 @@ export function canonicalModel(model: Model): Record<string, unknown> {
   return { version: 1, ...out };
 }
 
+/** The model with every default filled in and arrays sorted by id, for exports that should be explicit. */
+export function explicitModel(model: Model): Model {
+  return Model.parse({
+    ...model,
+    elements: sortById(model.elements),
+    relations: sortById(model.relations),
+    flows: sortById(model.flows),
+  });
+}
+
 export function canonicalLayout(layout: Layout): Layout {
   const out: Layout = {};
   for (const canvas of Object.keys(layout).sort()) {

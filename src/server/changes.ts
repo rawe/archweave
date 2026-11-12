@@ -3,15 +3,19 @@ import {
   type Actor,
   type ChangeResult,
   ChangeSet,
+  type CodeRef,
   Element,
   type ElementPatch,
+  type Field,
   Flow,
   type FlowPatch,
+  type FlowStep,
   type Layout,
   type Model,
   type Note,
   Relation,
   type RelationPatch,
+  normalizeCodePath,
   slugify,
   uniqueId,
 } from '../shared/model.ts';
@@ -54,16 +58,30 @@ export function applyChangeSet(base: { model: Model; layout: Layout }, changes: 
   return new Draft(base, actor, now).run(changes);
 }
 
+/** An id the caller wrote into this change set that must name a data structure. */
+interface SuppliedDataRef {
+  where: string;
+  id: string;
+  what: 'data id' | 'ref';
+}
+
+const ELEMENT_HELPERS = new Set(['id', 'addNotes', 'resolveNotes', 'addCodeRefs', 'removeCodeRefs', 'setFields', 'removeFields']);
+const RELATION_HELPERS = new Set(['addCodeRefs', 'removeCodeRefs']);
+const FLOW_HELPERS = new Set(['updateSteps', 'insertSteps', 'removeSteps']);
+
 class Draft {
   private model: Model;
   private layout: Layout;
   private elements: Map<string, Element>;
   private relations: Map<string, Relation>;
   private flows: Map<string, Flow>;
+  /** Kinds before this change set, to find elements that stopped being data structures. */
+  private baseKinds: Map<string, Element['kind']>;
   private created = sets();
   private updated = sets();
   private removed = sets();
   private touched = sets();
+  private supplied: SuppliedDataRef[] = [];
   private warnings: string[] = [];
   private errors: string[] = [];
   private metaChanged = false;
@@ -79,6 +97,7 @@ class Draft {
     this.elements = new Map(this.model.elements.map((e) => [e.id, e]));
     this.relations = new Map(this.model.relations.map((r) => [r.id, r]));
     this.flows = new Map(this.model.flows.map((f) => [f.id, f]));
+    this.baseKinds = new Map(this.model.elements.map((e) => [e.id, e.kind]));
   }
 
   run(changes: ChangeSet): Applied {
@@ -91,7 +110,9 @@ class Draft {
     this.checkElements();
     this.checkRelations();
     this.checkFlows();
+    this.checkSuppliedData();
     this.failOnErrors();
+    this.dropLostData();
     if (changes.layout) this.applyLayout(changes.layout);
 
     this.model.elements = [...this.elements.values()];
@@ -158,41 +179,32 @@ class Draft {
       if (doomed.has(relation.from) || doomed.has(relation.to) || remove.relations?.includes(relation.id)) {
         this.relations.delete(relation.id);
         this.removed.relations.add(relation.id);
-        continue;
-      }
-      const kept = relation.dataIds.filter((id) => !doomed.has(id));
-      if (kept.length !== relation.dataIds.length) {
-        this.relations.set(relation.id, { ...relation, dataIds: kept });
-        this.markUpdated('relations', relation.id);
       }
     }
     for (const id of remove.flows ?? []) {
       this.flows.delete(id);
       this.removed.flows.add(id);
     }
-    if (doomed.size) {
-      for (const flow of [...this.flows.values()]) {
-        const steps = flow.steps
-          .filter((s) => !doomed.has(s.from) && !doomed.has(s.to))
-          .map((s) => (s.dataIds.some((d) => doomed.has(d)) ? { ...s, dataIds: s.dataIds.filter((d) => !doomed.has(d)) } : s));
-        if (JSON.stringify(steps) !== JSON.stringify(flow.steps)) {
-          this.flows.set(flow.id, { ...flow, steps });
-          this.markUpdated('flows', flow.id);
-        }
+    if (!doomed.size) return;
+    for (const flow of [...this.flows.values()]) {
+      const steps = flow.steps.filter((s) => !doomed.has(s.from) && !doomed.has(s.to));
+      if (steps.length !== flow.steps.length) {
+        this.flows.set(flow.id, { ...flow, steps });
+        this.markUpdated('flows', flow.id);
       }
-      for (const element of [...this.elements.values()]) {
-        if (!element.fields.some((f) => f.ref && doomed.has(f.ref))) continue;
-        const fields = element.fields.map((f) => (f.ref && doomed.has(f.ref) ? { ...f, ref: undefined } : f));
-        this.elements.set(element.id, { ...element, fields: fields.map(dropUndefined) });
-        this.markUpdated('elements', element.id);
+    }
+    for (const canvas of Object.keys(this.layout)) {
+      if (canvas.startsWith('structure:') && doomed.has(canvas.slice('structure:'.length))) {
+        delete this.layout[canvas];
+        this.layoutChanged = true;
+        continue;
       }
-      for (const canvas of Object.keys(this.layout)) {
-        if (canvas.startsWith('structure:') && doomed.has(canvas.slice('structure:'.length))) {
-          delete this.layout[canvas];
-          continue;
-        }
-        for (const id of Object.keys(this.layout[canvas]!)) if (doomed.has(id)) delete this.layout[canvas]![id];
+      for (const id of Object.keys(this.layout[canvas]!)) {
+        if (!doomed.has(id)) continue;
+        delete this.layout[canvas]![id];
+        this.layoutChanged = true;
       }
+      if (!Object.keys(this.layout[canvas]!).length) delete this.layout[canvas];
     }
   }
 
@@ -212,12 +224,17 @@ class Draft {
       ? { ...existing }
       : { status: patch.status ?? this.defaultStatus(patch), notes: [] };
     for (const [key, value] of Object.entries(patch)) {
-      if (value === undefined || key === 'id' || key === 'addNotes' || key === 'resolveNotes') continue;
+      if (value === undefined || ELEMENT_HELPERS.has(key)) continue;
       if (key === 'parentId' && value === null) delete next.parentId;
       else next[key] = value;
     }
     next.id = id;
     next.notes = this.applyNotes(where, next.notes as Note[], patch);
+    next.codeRefs = this.applyCodeRefs(where, (next.codeRefs as CodeRef[] | undefined) ?? [], patch);
+    next.fields = this.applyFields(where, (next.fields as Field[] | undefined) ?? [], patch);
+    for (const field of [...(patch.fields ?? []), ...(patch.setFields ?? [])]) {
+      if (field.ref) this.supplied.push({ where: `element \`${id}\` field \`${field.name}\``, id: field.ref, what: 'ref' });
+    }
 
     const parsed = Element.safeParse(next);
     if (!parsed.success) {
@@ -234,7 +251,7 @@ class Draft {
 
   private defaultStatus(patch: ElementPatch): Element['status'] {
     if (this.actor === 'human') return 'planned';
-    return patch.codeRefs?.length ? 'built' : 'planned';
+    return patch.codeRefs?.length || patch.addCodeRefs?.length ? 'built' : 'planned';
   }
 
   private applyNotes(where: string, notes: Note[], patch: ElementPatch): Note[] {
@@ -243,8 +260,7 @@ class Draft {
       result = result.map((n) => (patch.resolveNotes!.includes(n.id) ? { ...n, resolved: true } : n));
       for (const id of patch.resolveNotes) {
         if (!notes.some((n) => n.id === id)) {
-          const known = notes.map((n) => ({ id: n.id }));
-          const hint = known.length ? ` Its notes are: ${known.map((n) => `\`${n.id}\``).join(', ')}.` : ' It has no notes.';
+          const hint = notes.length ? ` Its notes are: ${notes.map((n) => `\`${n.id}\``).join(', ')}.` : ' It has no notes.';
           this.errors.push(`${where}: unknown note \`${id}\`.${hint}`);
         }
       }
@@ -252,6 +268,50 @@ class Draft {
     for (const text of patch.addNotes ?? []) {
       const taken = new Set(result.map((n) => n.id));
       result = [...result, { id: uniqueId(`note-${result.length + 1}`, taken), text, author: this.actor, createdAt: this.now.toISOString() }];
+    }
+    return result;
+  }
+
+  /** Normalizes paths, then applies `removeCodeRefs` and `addCodeRefs` (de-duplicated). */
+  private applyCodeRefs(where: string, refs: CodeRef[], patch: Pick<ElementPatch, 'addCodeRefs' | 'removeCodeRefs'>): CodeRef[] {
+    let result = refs.map(normalizeRef);
+    for (const selector of patch.removeCodeRefs ?? []) {
+      const path = normalizeCodePath(selector.path);
+      const kept = result.filter((r) => !(r.path === path && (selector.symbol === undefined || r.symbol === selector.symbol)));
+      if (kept.length === result.length) {
+        const known = result.map((r) => `\`${r.path}\`${r.symbol ? ` (\`${r.symbol}\`)` : ''}`);
+        const hint = known.length ? ` Its code refs are: ${known.join(', ')}.` : ' It has no code refs.';
+        this.errors.push(`${where}: removeCodeRefs: no code ref with path \`${path}\`${selector.symbol !== undefined ? ` and symbol \`${selector.symbol}\`` : ''}.${hint}`);
+      }
+      result = kept;
+    }
+    for (const ref of patch.addCodeRefs ?? []) {
+      const normalized = normalizeRef(ref);
+      if (!result.some((r) => sameRef(r, normalized))) result.push(normalized);
+    }
+    return result;
+  }
+
+  /** Applies `removeFields`, then `setFields` (upsert by name). */
+  private applyFields(where: string, fields: Field[], patch: ElementPatch): Field[] {
+    let result = [...fields];
+    for (const name of patch.removeFields ?? []) {
+      if (!result.some((f) => f.name === name)) {
+        const hint = fields.length ? ` Its fields are: ${fields.map((f) => `\`${f.name}\``).join(', ')}.` : ' It has no fields.';
+        this.errors.push(`${where}: removeFields: no field \`${name}\`.${hint}`);
+      }
+      result = result.filter((f) => f.name !== name);
+    }
+    for (const fieldPatch of patch.setFields ?? []) {
+      const at = result.findIndex((f) => f.name === fieldPatch.name);
+      const merged: Record<string, unknown> = at >= 0 ? { ...result[at] } : { name: fieldPatch.name, type: '' };
+      for (const [key, value] of Object.entries(fieldPatch)) {
+        if (value === undefined) continue;
+        if (key === 'ref' && value === null) delete merged.ref;
+        else merged[key] = value;
+      }
+      if (at >= 0) result[at] = merged as Field;
+      else result.push(merged as Field);
     }
     return result;
   }
@@ -268,7 +328,10 @@ class Draft {
       return;
     }
     const id = existing?.id ?? patch.id ?? uniqueId(slugify(`${patch.from}-${patch.kind ?? 'uses'}-${patch.to}`), new Set(this.relations.keys()));
-    const parsed = Relation.safeParse({ ...existing, ...definedOnly(patch), id });
+    const next: Record<string, unknown> = { ...existing, ...withoutKeys(definedOnly(patch), RELATION_HELPERS), id };
+    next.codeRefs = this.applyCodeRefs(where, (next.codeRefs as CodeRef[] | undefined) ?? [], patch);
+    for (const dataId of patch.dataIds ?? []) this.supplied.push({ where: `relation \`${id}\``, id: dataId, what: 'data id' });
+    const parsed = Relation.safeParse(next);
     if (!parsed.success) {
       this.errors.push(`${where}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
       return;
@@ -293,12 +356,18 @@ class Draft {
       return;
     }
     const id = existing?.id ?? patch.id ?? uniqueId(slugify(patch.name!), new Set(this.flows.keys()));
-    const parsed = Flow.safeParse({ ...existing, ...definedOnly(patch), id });
+    const suppliedSteps = new Set<object>(patch.steps ?? []);
+    const steps = this.applySteps(where, patch.steps ?? existing?.steps ?? [], patch, suppliedSteps);
+    steps.forEach((step, i) => {
+      if (!suppliedSteps.has(step)) return;
+      for (const dataId of step.dataIds ?? []) this.supplied.push({ where: `flow \`${id}\` step ${i + 1}`, id: dataId, what: 'data id' });
+    });
+    const parsed = Flow.safeParse({ ...existing, ...withoutKeys(definedOnly(patch), FLOW_HELPERS), steps, id });
     if (!parsed.success) {
       this.errors.push(`${where}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
       return;
     }
-    const flow = dropUndefined(parsed.data);
+    const flow = dropUndefined({ ...parsed.data, steps: parsed.data.steps.map((s) => dropUndefined({ ...s, codeRefs: s.codeRefs.map(normalizeRef) })) });
     if (existing && JSON.stringify(existing) === JSON.stringify(flow)) return;
     this.flows.set(id, flow);
     this.touched.flows.add(id);
@@ -306,33 +375,64 @@ class Draft {
     else this.created.flows.add(id);
   }
 
+  /**
+   * Applies `updateSteps`, `removeSteps` and `insertSteps`. All indices are 0-based and
+   * refer to `steps` as given; steps whose data ids come from the patch go into `supplied`.
+   */
+  private applySteps(where: string, steps: FlowStep[], patch: FlowPatch, supplied: Set<object>): FlowStep[] {
+    const count = steps.length;
+    const inRange = (op: string, index: number, max: number) => {
+      if (index <= max) return true;
+      const extent = count ? `the flow has ${count} step${count === 1 ? '' : 's'}, indices 0 to ${count - 1}` : 'the flow has no steps';
+      this.errors.push(`${where}: ${op}: index ${index} is out of range (${extent}).`);
+      return false;
+    };
+    const slots: (FlowStep | undefined)[] = [...steps];
+    const removed = new Set(patch.removeSteps ?? []);
+    for (const update of patch.updateSteps ?? []) {
+      if (!inRange('updateSteps', update.index, count - 1)) continue;
+      if (removed.has(update.index)) {
+        this.errors.push(`${where}: index ${update.index} is both updated and removed.`);
+        continue;
+      }
+      const { index, ...changes } = update;
+      const merged = { ...slots[index]!, ...definedOnly(changes) } as FlowStep;
+      if (changes.dataIds) supplied.add(merged);
+      slots[index] = merged;
+    }
+    for (const index of removed) if (inRange('removeSteps', index, count - 1)) slots[index] = undefined;
+    const inserts = new Map<number, FlowStep[]>();
+    for (const insert of patch.insertSteps ?? []) {
+      if (!inRange('insertSteps', insert.index, count)) continue;
+      inserts.set(insert.index, [...(inserts.get(insert.index) ?? []), insert.step]);
+      supplied.add(insert.step);
+    }
+    const out: FlowStep[] = [];
+    for (let i = 0; i <= count; i++) {
+      out.push(...(inserts.get(i) ?? []));
+      if (slots[i]) out.push(slots[i]!);
+    }
+    return out;
+  }
+
   private checkElements(): void {
     for (const id of this.touched.elements) {
       const element = this.elements.get(id)!;
-      if (element.parentId !== undefined) {
-        if (element.parentId === id) this.errors.push(`element \`${id}\`: cannot be its own parent.`);
-        else if (!this.elements.has(element.parentId)) {
-          this.errors.push(`element \`${id}\`: unknown parent \`${element.parentId}\`.${didYouMean(element.parentId, this.elements.values())}`);
-        } else {
-          const seen = new Set<string>([id]);
-          let cursor = this.elements.get(element.parentId);
-          while (cursor) {
-            if (seen.has(cursor.id)) {
-              this.errors.push(`element \`${id}\`: putting it inside \`${element.parentId}\` creates a containment cycle (\`${element.parentId}\` is inside \`${id}\`).`);
-              break;
-            }
-            seen.add(cursor.id);
-            cursor = cursor.parentId ? this.elements.get(cursor.parentId) : undefined;
+      if (element.parentId === undefined) continue;
+      if (element.parentId === id) this.errors.push(`element \`${id}\`: cannot be its own parent.`);
+      else if (!this.elements.has(element.parentId)) {
+        this.errors.push(`element \`${id}\`: unknown parent \`${element.parentId}\`.${didYouMean(element.parentId, this.elements.values())}`);
+      } else {
+        const seen = new Set<string>([id]);
+        let cursor = this.elements.get(element.parentId);
+        while (cursor) {
+          if (seen.has(cursor.id)) {
+            this.errors.push(`element \`${id}\`: putting it inside \`${element.parentId}\` creates a containment cycle (\`${element.parentId}\` is inside \`${id}\`).`);
+            break;
           }
+          seen.add(cursor.id);
+          cursor = cursor.parentId ? this.elements.get(cursor.parentId) : undefined;
         }
-      }
-      if (element.fields.some((f) => f.ref && !this.isData(f.ref))) {
-        const fields = element.fields.map((f) => {
-          if (!f.ref || this.isData(f.ref)) return f;
-          this.warnings.push(`element \`${id}\` field \`${f.name}\`: dropped ref \`${f.ref}\`, ${this.notDataReason(f.ref)}`);
-          return dropUndefined({ ...f, ref: undefined });
-        });
-        this.elements.set(id, { ...element, fields });
       }
     }
   }
@@ -345,33 +445,59 @@ class Draft {
           this.errors.push(`relation \`${id}\`: unknown element \`${relation[end]}\` in \`${end}\`.${didYouMean(relation[end], this.elements.values())}`);
         }
       }
-      const dataIds = this.keepData(relation.dataIds, `relation \`${id}\``);
-      if (dataIds.length !== relation.dataIds.length) this.relations.set(id, { ...relation, dataIds });
     }
   }
 
   private checkFlows(): void {
     for (const id of this.touched.flows) {
-      const flow = this.flows.get(id)!;
-      const steps = flow.steps.map((step, i) => {
+      this.flows.get(id)!.steps.forEach((step, i) => {
         for (const end of ['from', 'to'] as const) {
           if (!this.elements.has(step[end])) {
             this.errors.push(`flow \`${id}\` step ${i + 1}: unknown element \`${step[end]}\` in \`${end}\`.${didYouMean(step[end], this.elements.values())}`);
           }
         }
-        const dataIds = this.keepData(step.dataIds, `flow \`${id}\` step ${i + 1}`);
-        return dataIds.length === step.dataIds.length ? step : { ...step, dataIds };
       });
-      this.flows.set(id, { ...flow, steps });
     }
   }
 
-  private keepData(ids: string[], where: string): string[] {
-    return ids.filter((dataId) => {
-      if (this.isData(dataId)) return true;
-      this.warnings.push(`${where}: dropped data id \`${dataId}\`, ${this.notDataReason(dataId)}`);
-      return false;
-    });
+  /** Data ids and field refs written in this change set must name data structures after it is applied. */
+  private checkSuppliedData(): void {
+    for (const ref of this.supplied) {
+      if (!this.isData(ref.id)) this.errors.push(`${ref.where}: ${ref.what} \`${ref.id}\`: ${this.notDataReason(ref.id)}`);
+    }
+  }
+
+  /** Cleans stored data ids and field refs that point at elements removed or no longer of kind data. */
+  private dropLostData(): void {
+    const lost = new Set([...this.baseKinds].filter(([id, kind]) => kind === 'data' && !this.isData(id)).map(([id]) => id));
+    if (!lost.size) return;
+    for (const element of [...this.elements.values()]) {
+      if (!element.fields.some((f) => f.ref && lost.has(f.ref))) continue;
+      const fields = element.fields.map((f) => {
+        if (!f.ref || !lost.has(f.ref)) return f;
+        this.warnings.push(`element \`${element.id}\` field \`${f.name}\`: dropped ref \`${f.ref}\`, ${this.notDataReason(f.ref)}`);
+        return dropUndefined({ ...f, ref: undefined });
+      });
+      this.elements.set(element.id, { ...element, fields });
+      this.markUpdated('elements', element.id);
+    }
+    const keep = (ids: string[], where: string) =>
+      ids.filter((dataId) => {
+        if (!lost.has(dataId)) return true;
+        this.warnings.push(`${where}: dropped data id \`${dataId}\`, ${this.notDataReason(dataId)}`);
+        return false;
+      });
+    for (const relation of [...this.relations.values()]) {
+      if (!relation.dataIds.some((d) => lost.has(d))) continue;
+      this.relations.set(relation.id, { ...relation, dataIds: keep(relation.dataIds, `relation \`${relation.id}\``) });
+      this.markUpdated('relations', relation.id);
+    }
+    for (const flow of [...this.flows.values()]) {
+      if (!flow.steps.some((s) => s.dataIds.some((d) => lost.has(d)))) continue;
+      const steps = flow.steps.map((s, i) => (s.dataIds.some((d) => lost.has(d)) ? { ...s, dataIds: keep(s.dataIds, `flow \`${flow.id}\` step ${i + 1}`) } : s));
+      this.flows.set(flow.id, { ...flow, steps });
+      this.markUpdated('flows', flow.id);
+    }
   }
 
   private isData(id: string): boolean {
@@ -379,6 +505,7 @@ class Draft {
   }
 
   private notDataReason(id: string): string {
+    if (this.removed.elements.has(id)) return 'it is removed in this change set.';
     const element = this.elements.get(id);
     if (element) return `it is a ${element.kind}, not a data structure.`;
     const data = [...this.elements.values()].filter((e) => e.kind === 'data');
@@ -460,6 +587,18 @@ function definedOnly<T extends object>(value: T): Partial<T> {
 
 function dropUndefined<T extends object>(value: T): T {
   return definedOnly(value) as T;
+}
+
+function withoutKeys<T extends object>(value: T, keys: ReadonlySet<string>): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.has(key))) as Partial<T>;
+}
+
+function normalizeRef(ref: CodeRef): CodeRef {
+  return { ...ref, path: normalizeCodePath(ref.path) };
+}
+
+function sameRef(a: CodeRef, b: CodeRef): boolean {
+  return a.path === b.path && a.symbol === b.symbol && a.startLine === b.startLine && a.endLine === b.endLine;
 }
 
 function describePath(input: unknown, path: readonly PropertyKey[]): string {

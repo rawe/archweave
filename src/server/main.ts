@@ -2,7 +2,10 @@ import { createArchWeave } from './app.ts';
 import { configFromEnv } from './config.ts';
 
 const config = configFromEnv();
-const archweave = await createArchWeave(config);
+const archweave = await createArchWeave(config).catch((error: Error) => {
+  console.error(`archweave: ${error.message}`);
+  process.exit(1);
+});
 const running = await archweave.listen();
 
 console.log(`ArchWeave is modeling ${config.repoDir}`);

@@ -191,7 +191,15 @@ describe('ArchWeave end to end', () => {
     expect(put.status).toBe(200);
     const context = await call('get_context');
     expect(context.ui).toMatchObject({ perspective: 'structure', scope: { id: 'api', name: 'Order API' }, breadcrumb: [{ id: 'api', name: 'Order API' }] });
-    expect(context.ui.visible.map((e: any) => e.id)).toEqual(['orders', 'billing']);
+    expect(context.ui.visible.map((e: any) => [e.id, !!e.neighbor])).toEqual([
+      ['web', true],
+      ['orders', false],
+      ['billing', false],
+    ]);
+    expect(context.ui.visibleRelations).toEqual([
+      { from: 'web', to: 'orders', count: 1, relationIds: ['web-calls-orders'] },
+      { from: 'orders', to: 'billing', count: 1, relationIds: ['orders-calls-billing'] },
+    ]);
     const [orders] = context.selection.elements;
     expect(orders).toMatchObject({
       id: 'orders',
@@ -239,7 +247,9 @@ describe('ArchWeave end to end', () => {
     const outline = await call('get_model', {});
     expect(outline.elements.map((e: any) => e.id)).toEqual(['web', 'api']);
     expect(outline.elements[1].children.map((e: any) => e.id)).toEqual(['orders', 'billing']);
-    expect(outline.counts).toEqual({ elements: 4, data: 1, relations: 2, flows: 1 });
+    expect(outline.counts).toEqual({ elements: 5, byKind: { app: 1, service: 1, component: 2, data: 1 }, relations: 2, flows: 1 });
+    expect(outline.relations.map((r: any) => r.id)).toEqual(['web-calls-orders', 'orders-calls-billing']);
+    expect((await call('get_model', { depth: 1 })).relations).toEqual([{ from: 'web', to: 'api', count: 1, relationIds: ['web-calls-orders'], kinds: ['calls'] }]);
     const flow = await call('get_element', { id: 'place-order' });
     expect(flow.steps[0]).toMatchObject({ from: { name: 'Web app' }, to: { name: 'Orders' } });
     expect(await callError('get_element', { id: 'biling' })).toContain('Did you mean `billing`?');

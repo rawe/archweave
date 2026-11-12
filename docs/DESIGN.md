@@ -63,7 +63,7 @@ One in-memory store owns the model, layout, revision counter, journal and undo s
 Rules:
 - Validation is all-or-nothing. On error nothing is applied and the error names the offending entry.
 - Upsert semantics as documented on `ElementPatch`. Missing ids are generated with `slugify` + `uniqueId`.
-- Referential integrity: `parentId`, relation endpoints, `dataIds`, field `ref`, flow step endpoints must exist after the change set is applied (so one change set can create an element and relate to it). No containment cycles. Dangling `dataIds` and field `ref`s are dropped with a warning rather than rejected.
+- Referential integrity: `parentId`, relation endpoints, `dataIds`, field `ref`, flow step endpoints must exist after the change set is applied (so one change set can create an element and relate to it), and `dataIds` and field `ref`s must name elements of kind `data`. No containment cycles. A `dataIds` entry or field `ref` written in the change set that does not name a data structure is an error with a did-you-mean hint. Stored references broken by the change set (a removed element, an element that is no longer of kind `data`) are cleaned up with a warning.
 - Removing an element removes descendants, attached relations, flow steps that touch them, and their layout entries.
 - Elements created by the human default to `status: planned` unless given; elements created by the agent default to `built` when they carry at least one code ref, otherwise `planned`.
 - A change set that only contains `layout` does not create a journal entry or an undo step and does not bump the model revision visibly to the agent (it still broadcasts to browsers).

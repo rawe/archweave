@@ -1,13 +1,30 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { JournalEntry } from '../shared/model.ts';
+import { z } from 'zod';
+import { Actor, type JournalEntry } from '../shared/model.ts';
 import { canonicalLayout, canonicalModel, formatJson } from './canonical.ts';
 import type { Store } from './store.ts';
 
 const MODEL_FILE = 'model.json';
 const LAYOUT_FILE = 'layout.json';
 const JOURNAL_FILE = path.join('state', 'journal.jsonl');
+
+type Document = 'model' | 'layout' | 'journal';
+const FILES: Record<Document, string> = { model: MODEL_FILE, layout: LAYOUT_FILE, journal: JOURNAL_FILE };
+
+const IdLists = z
+  .object({ elements: z.array(z.string()).default([]), relations: z.array(z.string()).default([]), flows: z.array(z.string()).default([]) })
+  .default({ elements: [], relations: [], flows: [] });
+const JournalLine = z.object({
+  revision: z.number().int().positive(),
+  at: z.string(),
+  actor: Actor,
+  summary: z.string(),
+  created: IdLists,
+  updated: IdLists,
+  removed: IdLists,
+});
 
 export interface Loaded {
   model?: unknown;
@@ -32,7 +49,7 @@ export class Persistence {
   private watcher?: fs.FSWatcher;
   private timer?: NodeJS.Timeout;
   private reloadTimer?: NodeJS.Timeout;
-  private pending = { model: false, layout: false, journal: false };
+  private pending: Record<Document, boolean> = { model: false, layout: false, journal: false };
   private writing: Promise<void> = Promise.resolve();
   /** What this process last read or wrote, to tell its own writes from outside edits. */
   private known: Record<string, string | undefined> = {};
@@ -54,7 +71,7 @@ export class Persistence {
     const model = await this.readJson(MODEL_FILE);
     const layout = await this.readJson(LAYOUT_FILE);
     return {
-      model: model ?? (this.options.defaultName ? { name: this.options.defaultName } : undefined),
+      model: model ?? (this.options.defaultName ? this.emptyModel() : undefined),
       layout,
       journal: await this.readJournal(),
     };
@@ -105,26 +122,43 @@ export class Persistence {
     }, this.debounceMs);
   }
 
+  /** Writes the pending documents. A document that fails to write stays pending for the next flush. */
   private async writePending(): Promise<void> {
     if (!this.store) return;
-    const { model, layout } = this.store.snapshot();
+    const store = this.store;
+    const { model, layout } = store.snapshot();
     const pending = this.pending;
     this.pending = { model: false, layout: false, journal: false };
-    if (pending.model) await this.writeFile(MODEL_FILE, formatJson(canonicalModel(model)));
-    if (pending.layout) await this.writeFile(LAYOUT_FILE, formatJson(canonicalLayout(layout)));
-    if (pending.journal) {
-      const lines = this.store.journal().map((e) => JSON.stringify(e));
-      await this.writeFile(JOURNAL_FILE, lines.length ? `${lines.join('\n')}\n` : '');
+    const content: Record<Document, () => string> = {
+      model: () => formatJson(canonicalModel(model)),
+      layout: () => formatJson(canonicalLayout(layout)),
+      journal: () => store.journal().map((e) => `${JSON.stringify(e)}\n`).join(''),
+    };
+    let failure: unknown;
+    for (const doc of ['model', 'layout', 'journal'] as const) {
+      if (!pending[doc]) continue;
+      try {
+        await this.writeFile(FILES[doc], content[doc]());
+      } catch (error) {
+        this.pending[doc] = true;
+        failure ??= error;
+      }
     }
+    if (failure) throw failure;
   }
 
   private async writeFile(relative: string, content: string): Promise<void> {
     const target = path.join(this.dataDir, relative);
     const temp = `${target}.${process.pid}.tmp`;
-    this.known[relative] = content;
     await fsp.mkdir(path.dirname(target), { recursive: true });
-    await fsp.writeFile(temp, content);
-    await fsp.rename(temp, target);
+    try {
+      await fsp.writeFile(temp, content);
+      await fsp.rename(temp, target);
+    } catch (error) {
+      await fsp.rm(temp, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    this.known[relative] = content;
   }
 
   private scheduleReload(): void {
@@ -137,24 +171,39 @@ export class Persistence {
     }, 100);
   }
 
+  /**
+   * Takes over the documents that changed on disk since this process last read or wrote them.
+   * A document with an edit that is not saved yet keeps the edit; the next write overwrites the file.
+   */
   private async reloadIfChanged(): Promise<void> {
     if (!this.store) return;
-    const files = [MODEL_FILE, LAYOUT_FILE];
-    const texts = await Promise.all(files.map((f) => this.readText(f)));
-    if (texts.every((text, i) => text === this.known[files[i]!])) return;
-    let model: unknown;
-    let layout: unknown;
+    const texts = { model: await this.readText(MODEL_FILE), layout: await this.readText(LAYOUT_FILE) };
+    const parsed: { model?: unknown; layout?: unknown } = {};
+    for (const doc of ['model', 'layout'] as const) {
+      const text = texts[doc];
+      if (text === this.known[FILES[doc]]) continue;
+      if (this.pending[doc]) {
+        this.log(`archweave: ${FILES[doc]} changed on disk while an edit was not saved yet; keeping the edit, it overwrites the file.`);
+        continue;
+      }
+      try {
+        parsed[doc] = text === undefined ? (doc === 'model' ? this.emptyModel() : {}) : JSON.parse(text);
+      } catch (error) {
+        this.log(`archweave: ignoring unreadable ${FILES[doc]} on disk: ${(error as Error).message}`);
+      }
+    }
+    if (parsed.model === undefined && parsed.layout === undefined) return;
     try {
-      model = texts[0] === undefined ? (this.options.defaultName ? { name: this.options.defaultName } : {}) : JSON.parse(texts[0]);
-      layout = texts[1] === undefined ? {} : JSON.parse(texts[1]);
-      this.store.replace(model, layout);
+      this.store.replace(parsed.model, parsed.layout);
     } catch (error) {
-      this.log(`archweave: ignoring unreadable change on disk: ${(error as Error).message}`);
+      this.log(`archweave: ignoring the change on disk: ${describeInvalid(error)}`);
       return;
     }
-    files.forEach((f, i) => (this.known[f] = texts[i]));
-    this.pending.model = false;
-    this.pending.layout = false;
+    for (const doc of ['model', 'layout'] as const) if (parsed[doc] !== undefined) this.known[FILES[doc]] = texts[doc];
+  }
+
+  private emptyModel(): unknown {
+    return this.options.defaultName ? { name: this.options.defaultName } : {};
   }
 
   private async readText(relative: string): Promise<string | undefined> {
@@ -181,14 +230,25 @@ export class Persistence {
     const text = await this.readText(JOURNAL_FILE);
     if (!text) return [];
     const entries: JournalEntry[] = [];
-    for (const line of text.split('\n')) {
-      if (!line.trim()) continue;
+    text.split('\n').forEach((line, i) => {
+      if (!line.trim()) return;
+      let value: unknown;
       try {
-        entries.push(JSON.parse(line) as JournalEntry);
+        value = JSON.parse(line);
       } catch {
-        this.log('archweave: skipped an unreadable journal line');
+        this.log(`archweave: skipped journal line ${i + 1}: not JSON`);
+        return;
       }
-    }
+      const entry = JournalLine.safeParse(value);
+      if (entry.success) entries.push(entry.data);
+      else this.log(`archweave: skipped journal line ${i + 1}: ${entry.error.issues.map((issue) => `${issue.path.join('.') || 'entry'}: ${issue.message}`).join('; ')}`);
+    });
     return entries;
   }
+}
+
+function describeInvalid(error: unknown): string {
+  const issues = (error as { issues?: { path: PropertyKey[]; message: string }[] }).issues;
+  if (issues) return issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+  return (error as Error).message;
 }

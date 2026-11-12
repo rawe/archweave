@@ -118,24 +118,82 @@ describe('Store.apply', () => {
     expect(() => store.apply({ elements: [{ id: 'api', parentId: 'api' }] }, 'human')).toThrowError(/own parent/);
   });
 
-  it('drops dangling data ids and field refs with warnings', () => {
+  it('rejects unknown or non-data ids in supplied data ids and field refs', () => {
     const store = shop();
-    const result = store.apply(
+    const before = store.snapshot();
+    let message = '';
+    try {
+      store.apply(
+        {
+          relations: [{ id: 'checkout-calls-billing', dataIds: ['order', 'ordr', 'web'] }],
+          elements: [{ id: 'order', fields: [{ name: 'id', type: 'uuid' }, { name: 'invoice', type: 'Invoice', ref: 'invoice' }] }],
+          flows: [{ id: 'place-order', updateSteps: [{ index: 0, dataIds: ['oder'] }] }],
+        },
+        'agent',
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/Nothing was applied/);
+    expect(message).toMatch(/relation `checkout-calls-billing`: data id `ordr`: no such data structure\. Did you mean `order`\?/);
+    expect(message).toMatch(/data id `web`: it is a app, not a data structure/);
+    expect(message).toMatch(/element `order` field `invoice`: ref `invoice`: no such data structure/);
+    expect(message).toMatch(/flow `place-order` step 1: data id `oder`: no such data structure\. Did you mean `order`\?/);
+    expect(store.snapshot()).toEqual(before);
+  });
+
+  it('cleans references broken by a removal with warnings', () => {
+    const store = shop();
+    store.apply(
       {
-        relations: [{ id: 'checkout-calls-billing', dataIds: ['order', 'invoice', 'web'] }],
-        elements: [{ id: 'order', fields: [{ name: 'id', type: 'uuid' }, { name: 'invoice', type: 'Invoice', ref: 'invoice' }] }],
+        elements: [{ id: 'line', kind: 'data', name: 'Line', fields: [{ name: 'order', ref: 'order' }] }],
+        flows: [{ id: 'place-order', updateSteps: [{ index: 0, dataIds: ['order'] }] }],
       },
       'agent',
     );
-    expect(store.snapshot().model.relations.find((r) => r.id === 'checkout-calls-billing')!.dataIds).toEqual(['order']);
-    expect(element(store, 'order')!.fields[1]).toEqual({ name: 'invoice', type: 'Invoice' });
+    const result = store.apply({ remove: { elements: ['order'] } }, 'agent');
+    const { model } = store.snapshot();
+    expect(model.relations.find((r) => r.id === 'web-calls-checkout')!.dataIds).toEqual([]);
+    expect(model.flows[0]!.steps[0]!.dataIds).toEqual([]);
+    expect(element(store, 'line')!.fields).toEqual([{ name: 'order', type: '' }]);
+    expect(result.updated).toEqual({ elements: ['line'], relations: ['web-calls-checkout'], flows: ['place-order'] });
+    expect(result.warnings.join('\n')).toMatch(/relation `web-calls-checkout`: dropped data id `order`/);
+    expect(result.warnings.join('\n')).toMatch(/element `line` field `order`: dropped ref `order`/);
+  });
+
+  it('cleans references to an element that stops being a data structure', () => {
+    const store = shop();
+    store.apply(
+      {
+        elements: [{ id: 'line', kind: 'data', name: 'Line', fields: [{ name: 'order', ref: 'order' }] }],
+        flows: [{ id: 'place-order', updateSteps: [{ index: 0, dataIds: ['order'] }] }],
+      },
+      'agent',
+    );
+    const result = store.apply({ elements: [{ id: 'order', kind: 'component' }] }, 'agent');
+    const { model } = store.snapshot();
+    expect(model.relations.find((r) => r.id === 'web-calls-checkout')!.dataIds).toEqual([]);
+    expect(model.flows[0]!.steps[0]!.dataIds).toEqual([]);
+    expect(element(store, 'line')!.fields).toEqual([{ name: 'order', type: '' }]);
+    expect(result.updated.relations).toEqual(['web-calls-checkout']);
+    expect(result.updated.flows).toEqual(['place-order']);
+    expect(result.updated.elements.sort()).toEqual(['line', 'order']);
     expect(result.warnings).toHaveLength(3);
-    expect(result.warnings.join('\n')).toMatch(/`web`, it is a app, not a data structure/);
+    expect(result.warnings.join('\n')).toMatch(/it is a component, not a data structure/);
+  });
+
+  it('normalizes code ref paths when storing them', () => {
+    const store = shop();
+    store.apply({ elements: [{ id: 'api', codeRefs: [{ path: './api//main.ts' }, { path: 'api\\routes\\' }] }] }, 'agent');
+    expect(element(store, 'api')!.codeRefs).toEqual([{ path: 'api/main.ts' }, { path: 'api/routes' }]);
   });
 
   it('removes descendants, attached relations, flow steps and layout entries', () => {
     const store = shop();
+    const changes: StoreChange[] = [];
+    store.subscribe((c) => changes.push(c));
     const result = store.apply({ remove: { elements: ['checkout'] } }, 'human');
+    expect(changes[0]).toMatchObject({ modelChanged: true, layoutChanged: true });
     const { model, layout } = store.snapshot();
     expect(result.removed.elements.sort()).toEqual(['checkout', 'pricing']);
     expect(result.removed.relations.sort()).toEqual(['checkout-calls-billing', 'checkout-uses-pricing', 'web-calls-checkout']);
@@ -221,5 +279,171 @@ describe('Store.undo', () => {
     while (store.undo() !== undefined) undone++;
     expect(undone).toBe(50);
     expect(store.snapshot().model.elements).toHaveLength(5);
+  });
+});
+
+describe('Store list helpers', () => {
+  it('adds and removes code refs without resending the list', () => {
+    const store = shop();
+    const result = store.apply(
+      {
+        elements: [
+          { id: 'api', addCodeRefs: [{ path: './api/main.ts' }, { path: 'api/routes.ts', symbol: 'routes' }, { path: 'api/routes.ts', symbol: 'routes' }] },
+          { id: 'billing', removeCodeRefs: [{ path: 'api/billing.ts' }], addCodeRefs: [{ path: 'api/billing/index.ts' }] },
+        ],
+        relations: [{ id: 'checkout-calls-billing', addCodeRefs: [{ path: 'api/checkout.ts', symbol: 'charge', startLine: 3 }] }],
+      },
+      'agent',
+    );
+    expect(result.updated.elements).toEqual(['api', 'billing']);
+    expect(element(store, 'api')!.codeRefs).toEqual([{ path: 'api/main.ts' }, { path: 'api/routes.ts', symbol: 'routes' }]);
+    expect(element(store, 'billing')!.codeRefs).toEqual([{ path: 'api/billing/index.ts' }]);
+    expect(store.snapshot().model.relations.find((r) => r.id === 'checkout-calls-billing')!.codeRefs).toEqual([
+      { path: 'api/checkout.ts', symbol: 'charge', startLine: 3 },
+    ]);
+
+    expect(() => store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/routes.ts', symbol: 'other' }] }] }, 'agent')).toThrowError(
+      /no code ref with path `api\/routes\.ts` and symbol `other`/,
+    );
+    store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/routes.ts', symbol: 'routes' }] }] }, 'agent');
+    expect(element(store, 'api')!.codeRefs).toEqual([{ path: 'api/main.ts' }]);
+    expect(() => store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/nope.ts' }] }] }, 'agent')).toThrowError(
+      /no code ref with path `api\/nope\.ts`/,
+    );
+  });
+
+  it('upserts and removes fields by name', () => {
+    const store = shop();
+    store.apply({ elements: [{ id: 'line', kind: 'data', name: 'Line' }] }, 'agent');
+    store.apply(
+      {
+        elements: [
+          {
+            id: 'order',
+            setFields: [
+              { name: 'id', description: 'Primary key' },
+              { name: 'lines', type: 'Line[]', ref: 'line' },
+              { name: 'customer.name', type: 'string', optional: true },
+            ],
+          },
+        ],
+      },
+      'agent',
+    );
+    expect(element(store, 'order')!.fields).toEqual([
+      { name: 'id', type: 'uuid', description: 'Primary key' },
+      { name: 'lines', type: 'Line[]', ref: 'line' },
+      { name: 'customer.name', type: 'string', optional: true },
+    ]);
+    store.apply({ elements: [{ id: 'order', setFields: [{ name: 'lines', ref: null }], removeFields: ['customer.name'] }] }, 'agent');
+    expect(element(store, 'order')!.fields).toEqual([
+      { name: 'id', type: 'uuid', description: 'Primary key' },
+      { name: 'lines', type: 'Line[]' },
+    ]);
+    expect(() => store.apply({ elements: [{ id: 'order', removeFields: ['nope'] }] }, 'agent')).toThrowError(/no field `nope`. Its fields are: `id`, `lines`/);
+    expect(() => store.apply({ elements: [{ id: 'order', setFields: [{ name: 'x', ref: 'lne' }] }] }, 'agent')).toThrowError(/Did you mean `line`\?/);
+  });
+
+  it('updates, inserts and removes flow steps by index', () => {
+    const store = shop();
+    store.apply(
+      {
+        flows: [
+          {
+            id: 'place-order',
+            updateSteps: [{ index: 1, label: 'price the cart', dataIds: ['order'] }],
+            removeSteps: [2],
+            insertSteps: [
+              { index: 0, step: { from: 'web', to: 'web', label: 'validate' } },
+              { index: 3, step: { from: 'checkout', to: 'billing', label: 'charge later' } },
+            ],
+          },
+        ],
+      },
+      'agent',
+    );
+    expect(store.snapshot().model.flows[0]!.steps.map((s) => [s.from, s.to, s.label, s.dataIds])).toEqual([
+      ['web', 'web', 'validate', []],
+      ['web', 'checkout', 'submit cart', []],
+      ['checkout', 'pricing', 'price the cart', ['order']],
+      ['checkout', 'billing', 'charge later', []],
+    ]);
+    expect(() => store.apply({ flows: [{ id: 'place-order', updateSteps: [{ index: 9, label: 'x' }] }] }, 'agent')).toThrowError(
+      /updateSteps: index 9 is out of range \(the flow has 4 steps, indices 0 to 3\)/,
+    );
+    expect(() => store.apply({ flows: [{ id: 'place-order', insertSteps: [{ index: 1, step: { from: 'web', to: 'nope', label: 'x' } }] }] }, 'agent')).toThrowError(
+      /unknown element `nope`/,
+    );
+    expect(() => store.apply({ flows: [{ id: 'place-order', removeSteps: [0], updateSteps: [{ index: 0, label: 'x' }] }] }, 'agent')).toThrowError(
+      /index 0 is both updated and removed/,
+    );
+  });
+
+  it('keeps full list replacement working next to the helpers', () => {
+    const store = shop();
+    store.apply({ elements: [{ id: 'api', codeRefs: [{ path: 'a.ts' }], addCodeRefs: [{ path: 'b.ts' }] }] }, 'agent');
+    expect(element(store, 'api')!.codeRefs).toEqual([{ path: 'a.ts' }, { path: 'b.ts' }]);
+  });
+});
+
+describe('Store.preview', () => {
+  it('validates and reports a change set without applying it', () => {
+    const store = shop();
+    const before = store.snapshot();
+    const changes: StoreChange[] = [];
+    store.subscribe((c) => changes.push(c));
+    const result = store.preview({ elements: [{ kind: 'store', name: 'Ledger' }], remove: { elements: ['pricing'] } }, 'agent');
+    expect(result).toMatchObject({ revision: 2, created: { elements: ['ledger'] }, removed: { elements: ['pricing'] } });
+    expect(store.snapshot().model).toBe(before.model);
+    expect(store.snapshot()).toEqual(before);
+    expect(changes).toEqual([]);
+    expect(store.journal()).toHaveLength(1);
+    expect(() => store.preview({ relations: [{ from: 'web', to: 'nope' }] }, 'agent')).toThrowError(ChangeError);
+  });
+});
+
+describe('Store integrity', () => {
+  const valid = { elements: [{ id: 'a', kind: 'service', name: 'A' }] };
+
+  it('validates both documents before replacing either', () => {
+    const store = shop();
+    const before = store.snapshot();
+    expect(() => store.replace(valid, { 'structure:root': { a: { x: 'left' } } })).toThrow();
+    expect(store.snapshot().model).toBe(before.model);
+    expect(store.snapshot().layout).toBe(before.layout);
+  });
+
+  it('refuses a model with broken references, duplicates or cycles, naming the problem', () => {
+    const broken = {
+      elements: [
+        { id: 'a', kind: 'service', name: 'A', parentId: 'b' },
+        { id: 'b', kind: 'component', name: 'B', parentId: 'a' },
+        { id: 'c', kind: 'component', name: 'C', parentId: 'ghost' },
+        { id: 'c', kind: 'component', name: 'C again' },
+        { id: 'd', kind: 'data', name: 'D', fields: [{ name: 'x', ref: 'a' }] },
+      ],
+      relations: [{ id: 'r', from: 'a', to: 'zz', dataIds: ['b'] }],
+      flows: [{ id: 'f', name: 'F', steps: [{ from: 'a', to: 'nobody', label: 'x', dataIds: ['q'] }] }],
+    };
+    let message = '';
+    try {
+      new Store({ model: broken });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/duplicate element id `c`/);
+    expect(message).toMatch(/element `c`: unknown parent `ghost`/);
+    expect(message).toMatch(/containment cycle/);
+    expect(message).toMatch(/element `d` field `x`: ref `a` is not a data structure/);
+    expect(message).toMatch(/relation `r`: unknown element `zz` in `to`/);
+    expect(message).toMatch(/relation `r`: data id `b` is not a data structure/);
+    expect(message).toMatch(/flow `f` step 1: unknown element `nobody` in `to`/);
+    expect(message).toMatch(/flow `f` step 1: data id `q` is not a data structure/);
+
+    const store = shop();
+    const before = store.snapshot();
+    expect(() => store.replace(broken, {})).toThrow(/unknown parent `ghost`/);
+    expect(store.snapshot().model).toBe(before.model);
+    expect(store.snapshot().layout).toBe(before.layout);
   });
 });

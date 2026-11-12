@@ -88,4 +88,62 @@ describe('StaleLinks', () => {
       ['Order', 'symbol-not-found'],
     ]);
   });
+
+  it('checks empty files like any other', async () => {
+    const dir = tempRepo({ 'src/empty.ts': '' });
+    const model = Model.parse({
+      elements: [{ id: 'e', kind: 'module', name: 'E', codeRefs: [{ path: 'src/empty.ts', symbol: 'Thing' }, { path: 'src/empty.ts', startLine: 3 }, { path: 'src/empty.ts' }] }],
+    });
+    const links = await new StaleLinks(new Repo(dir)).check(model);
+    expect(links.map((l) => l.reason)).toEqual(['symbol-not-found', 'line-out-of-range']);
+  });
+
+  it('requires a symbol to occur within its line range', async () => {
+    const dir = tempRepo({ 'src/a.ts': SOURCE });
+    const model = Model.parse({
+      elements: [
+        {
+          id: 'e',
+          kind: 'module',
+          name: 'E',
+          codeRefs: [
+            { path: 'src/a.ts', symbol: 'createOrder', startLine: 1, endLine: 2 },
+            { path: 'src/a.ts', symbol: 'createOrder', startLine: 4 },
+            { path: 'src/a.ts', symbol: 'Store', startLine: 1, endLine: 3 },
+            { path: 'src/a.ts', symbol: 'nowhere', startLine: 1, endLine: 3 },
+          ],
+        },
+      ],
+    });
+    const links = await new StaleLinks(new Repo(dir)).check(model);
+    expect(links.map((l) => [l.ref.symbol, l.reason])).toEqual([
+      ['createOrder', 'symbol-outside-range'],
+      ['nowhere', 'symbol-not-found'],
+    ]);
+  });
+
+  it('matches a symbol as an identifier, not inside quotes', async () => {
+    const dir = tempRepo({ 'src/b.ts': ['const kind = "dataType";', "const label = 'Order';", 'export function realOne() {}', ''].join('\n') });
+    const model = Model.parse({
+      elements: [
+        {
+          id: 'e',
+          kind: 'module',
+          name: 'E',
+          codeRefs: [
+            { path: 'src/b.ts', symbol: 'dataType' },
+            { path: 'src/b.ts', symbol: "'Order'" },
+            { path: 'src/b.ts', symbol: '"realOne"' },
+            { path: 'src/b.ts', symbol: 'kind' },
+          ],
+        },
+      ],
+    });
+    const links = await new StaleLinks(new Repo(dir)).check(model);
+    expect(links.map((l) => [l.ref.symbol, l.reason])).toEqual([
+      ['dataType', 'symbol-not-found'],
+      ["'Order'", 'symbol-not-found'],
+    ]);
+  });
 });
+
