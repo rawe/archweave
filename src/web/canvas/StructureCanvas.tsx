@@ -146,7 +146,12 @@ export function StructureCanvas() {
   const [menu, setMenu] = useState<{ at: { x: number; y: number }; items: (MenuItem | 'sep')[] } | null>(null);
   const [tidying, setTidying] = useState(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const dwell = useRef<{ id: string; since: number } | null>(null);
+  const dwell = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const clearDwell = useCallback(() => {
+    if (dwell.current) clearTimeout(dwell.current.timer);
+    dwell.current = null;
+  }, []);
+  useEffect(() => clearDwell, [clearDwell]);
 
   const staleOwners = useMemo(() => new Set(stale.filter((s) => s.ownerType === 'element').map((s) => s.ownerId)), [stale]);
   const unseenInside = useMemo(() => {
@@ -553,18 +558,22 @@ export function StructureCanvas() {
           return p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h;
         });
       if (!hit) {
-        dwell.current = null;
+        clearDwell();
         return setDropTarget(null);
       }
-      if (dwell.current?.id !== hit.id) dwell.current = { id: hit.id, since: performance.now() };
-      if (performance.now() - dwell.current.since >= DWELL_MS) setDropTarget(hit.id);
+      if (dwell.current?.id === hit.id) return;
+      // A timer, not the next drag event: holding perfectly still over the target must count too.
+      clearDwell();
+      setDropTarget(null);
+      const id = hit.id;
+      dwell.current = { id, timer: setTimeout(() => setDropTarget(id), DWELL_MS) };
     },
-    [rf],
+    [rf, clearDwell],
   );
 
   const onNodeDragStop: OnNodeDrag<ElementNodeType> = useCallback(
     (_e, _node, dragged) => {
-      dwell.current = null;
+      clearDwell();
       const target = dropTarget;
       setDropTarget(null);
       if (target) {
@@ -578,7 +587,7 @@ export function StructureCanvas() {
       const moved = Object.fromEntries(dragged.map((n) => [n.id, { x: Math.round(n.position.x), y: Math.round(n.position.y) }]));
       void commit({ layout: { [key]: moved } });
     },
-    [dropTarget, key],
+    [dropTarget, key, clearDwell],
   );
 
   const paneMenu = (at: { x: number; y: number }): (MenuItem | 'sep')[] => [
