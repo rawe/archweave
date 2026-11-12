@@ -13,7 +13,7 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "AgentPresence",
-          "startLine": 303,
+          "startLine": 306,
           "digest": "ifHPZnDL7Mav"
         }
       ],
@@ -397,7 +397,7 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "commit",
-          "startLine": 199,
+          "startLine": 201,
           "digest": "-6v_dBjRDR1B"
         },
         {
@@ -629,7 +629,7 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "Persistence",
-          "startLine": 46,
+          "startLine": 47,
           "digest": "76nksfsyWp1d"
         }
       ]
@@ -1173,7 +1173,7 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FocusRequest",
-          "startLine": 310,
+          "startLine": 313,
           "digest": "cKOJ0ox4aUmy"
         }
       ],
@@ -1469,7 +1469,7 @@
         {
           "path": "src/web/inspector/sections.tsx",
           "symbol": "Notes",
-          "startLine": 16,
+          "startLine": 17,
           "digest": "_WVIcEVjgmZD"
         }
       ]
@@ -1491,7 +1491,7 @@
         {
           "path": "src/server/store.ts",
           "symbol": "parseModel",
-          "startLine": 186,
+          "startLine": 230,
           "digest": "q90jPgjctCe-"
         }
       ]
@@ -1560,7 +1560,7 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "readJournal",
-          "startLine": 229,
+          "startLine": 230,
           "digest": "6q8BbmB9NE57"
         }
       ],
@@ -1822,7 +1822,7 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "slugify",
-          "startLine": 366,
+          "startLine": 369,
           "digest": "Q02Oq3HI094t"
         }
       ]
@@ -1839,19 +1839,19 @@
         {
           "path": "src/server/store.ts",
           "symbol": "Store",
-          "startLine": 39,
+          "startLine": 50,
           "digest": "AyXzWVf-9Uh1"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "apply",
-          "startLine": 71,
+          "startLine": 83,
           "digest": "_CeYYA-xVY3W"
         },
         {
           "path": "src/server/store.ts",
           "symbol": "replace",
-          "startLine": 128,
+          "startLine": 144,
           "digest": "9kw6PMYj7_0Q"
         }
       ]
@@ -1978,19 +1978,19 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "Persistence",
-          "startLine": 46,
+          "startLine": 47,
           "digest": "76nksfsyWp1d"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "writePending",
-          "startLine": 126,
+          "startLine": 127,
           "digest": "qaX4URwP2l-A"
         },
         {
           "path": "src/server/persistence.ts",
           "symbol": "reloadIfChanged",
-          "startLine": 178,
+          "startLine": 179,
           "digest": "bqipVgubQNUy"
         }
       ]
@@ -2400,7 +2400,7 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Snapshot",
-          "startLine": 344,
+          "startLine": 347,
           "digest": "EMfJlbtDbHZw"
         }
       ],
@@ -2433,7 +2433,7 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "StaleLink",
-          "startLine": 333,
+          "startLine": 336,
           "digest": "NSTVuPXab-Jy"
         }
       ],
@@ -2533,7 +2533,7 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "UiState",
-          "startLine": 293,
+          "startLine": 296,
           "digest": "xHsDT-MVTSCw"
         }
       ],
@@ -2681,7 +2681,7 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "applyChanges",
-          "startLine": 203,
+          "startLine": 205,
           "digest": "AtersBpa9ffe"
         }
       ]
@@ -3058,7 +3058,7 @@
         {
           "path": "src/server/store.ts",
           "symbol": "record",
-          "startLine": 151,
+          "startLine": 168,
           "digest": "6h-LhPgBRsdB"
         }
       ]
@@ -3073,7 +3073,7 @@
         {
           "path": "src/server/store.ts",
           "symbol": "snapshot",
-          "startLine": 58,
+          "startLine": 70,
           "digest": "DPQCVwBrXfBA"
         }
       ]
@@ -3105,8 +3105,8 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "replace",
-          "startLine": 196,
-          "endLine": 200,
+          "startLine": 197,
+          "endLine": 201,
           "digest": "eUmNca6Vte1h"
         }
       ]
@@ -3127,7 +3127,7 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "load",
-          "startLine": 67,
+          "startLine": 68,
           "digest": "viZDPYbvU-p-"
         }
       ]
@@ -3142,7 +3142,7 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "attach",
-          "startLine": 81,
+          "startLine": 82,
           "digest": "VIg-U6PILZIv"
         }
       ]
@@ -3169,7 +3169,7 @@
         {
           "path": "src/server/persistence.ts",
           "symbol": "writeFile",
-          "startLine": 150,
+          "startLine": 151,
           "digest": "oubgOhfGuCCG"
         }
       ]
@@ -3433,7 +3433,7 @@
         {
           "path": "src/web/state/bootstrap.ts",
           "symbol": "uiStateOf",
-          "startLine": 96,
+          "startLine": 113,
           "digest": "-xvi_hULXzCg"
         }
       ]
@@ -3526,7 +3526,7 @@
             {
               "path": "src/server/store.ts",
               "symbol": "apply",
-              "startLine": 71,
+              "startLine": 83,
               "digest": "_CeYYA-xVY3W"
             }
           ]
@@ -3613,7 +3613,7 @@
             {
               "path": "src/server/persistence.ts",
               "symbol": "attach",
-              "startLine": 81,
+              "startLine": 82,
               "digest": "VIg-U6PILZIv"
             }
           ]
@@ -3641,7 +3641,7 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "onAgentEntry",
-              "startLine": 239,
+              "startLine": 241,
               "digest": "3NIAkHO8bQhJ"
             }
           ]
@@ -3672,7 +3672,7 @@
             {
               "path": "src/server/persistence.ts",
               "symbol": "writePending",
-              "startLine": 126,
+              "startLine": 127,
               "digest": "qaX4URwP2l-A"
             }
           ]
@@ -3725,7 +3725,7 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "handleFocusRequest",
-              "startLine": 421,
+              "startLine": 423,
               "digest": "i522OO9nSfUz"
             }
           ]
@@ -3835,7 +3835,7 @@
             {
               "path": "src/server/persistence.ts",
               "symbol": "scheduleReload",
-              "startLine": 164,
+              "startLine": 165,
               "digest": "XLJXsAC0Qzfn"
             }
           ]
@@ -3853,7 +3853,7 @@
             {
               "path": "src/server/persistence.ts",
               "symbol": "reloadIfChanged",
-              "startLine": 178,
+              "startLine": 179,
               "digest": "bqipVgubQNUy"
             }
           ]
@@ -3870,7 +3870,7 @@
             {
               "path": "src/server/store.ts",
               "symbol": "replace",
-              "startLine": 128,
+              "startLine": 144,
               "digest": "9kw6PMYj7_0Q"
             }
           ]
@@ -3884,7 +3884,7 @@
             {
               "path": "src/server/store.ts",
               "symbol": "parseModel",
-              "startLine": 186,
+              "startLine": 230,
               "digest": "q90jPgjctCe-"
             }
           ]
@@ -3930,8 +3930,8 @@
             {
               "path": "src/web/state/bootstrap.ts",
               "symbol": "refreshStale",
-              "startLine": 47,
-              "endLine": 52,
+              "startLine": 64,
+              "endLine": 69,
               "digest": "ffQ9KT6fmNVa"
             }
           ]
@@ -4073,7 +4073,7 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "commit",
-              "startLine": 199,
+              "startLine": 201,
               "digest": "-6v_dBjRDR1B"
             }
           ]
