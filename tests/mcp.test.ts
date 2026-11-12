@@ -248,7 +248,7 @@ describe('guide', () => {
     const { tools } = await client.listTools();
     const describe = (name: string) => tools.find((t) => t.name === name)!;
     expect(describe('check_code_links').description).toMatch(/moved.*suggestion[\s\S]*changed[\s\S]*repair: true/);
-    expect(Object.keys((describe('check_code_links').inputSchema as any).properties)).toEqual(['scopeId', 'repair']);
+    expect(Object.keys((describe('check_code_links').inputSchema as any).properties)).toEqual(['scopeId', 'repair', 'seal']);
     expect(describe('find_by_code').description).toMatch(/`check` is "ok", "moved"/);
     expect(describe('apply_changes').description).toMatch(/\[\{path, symbol\?, startLine\?\}\]/);
     expect(describe('apply_changes').description).toMatch(/actor, external, system/);

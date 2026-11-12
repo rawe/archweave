@@ -86,7 +86,7 @@ All JSON. Errors are `{ "error": string, "details"?: unknown }` with a 4xx or 5x
 | `GET /api/code/file?path=` | `{ path, exists, content?, lineCount?, language?, truncated? }`. Text files up to 1 MB. |
 | `GET /api/code/files?q=&limit=` | Repo file paths matching a fuzzy query, for the code link picker. Uses `git ls-files` when the repo is a Git checkout, otherwise a walk that skips `node_modules`, `.git`, `dist`, `build` and dot-directories. |
 | `GET /api/code/stale` | `StaleLink[]` |
-| `POST /api/code/repair` | Body `{ scopeId? }`. Re-anchors every code link whose text moved within its file and seals unsealed links that pass all checks. Returns `{ revision, summary?, repaired, sealed, stale }`. |
+| `POST /api/code/repair` | Body `{ scopeId?, seal? }`. Re-anchors every code link whose text moved within its file; with `seal: true` also seals unsealed links that pass all checks. Returns `{ revision, summary?, repaired, sealed, stale }`. |
 | `GET /api/export?format=markdown\|json\|mermaid&scope=<id>&perspectives=structure,data,flows&code=true\|false` | Download. |
 
 Server-sent events (`event:` name, JSON `data:`):
@@ -109,7 +109,7 @@ Every code ref is checked against the repository: `missing-file` when the path d
 
 Refs without a seal (no line range, unreadable file, or written before sealing existed) keep the plain checks.
 
-**Repair** (`check_code_links` with `repair: true` as the agent, `POST /api/code/repair` with optional body `{ scopeId }` as the human) applies every `moved` suggestion across elements, relations and flow steps in one journaled change set ("Re-anchored 11 code links in src/server/routes.ts"), and seals refs that have a line range, no seal, and pass every check (the safe way to seal models from before sealing; plain reads never write). It returns `{ revision, summary?, repaired, sealed, stale }`, where `stale` is what still needs attention. `changed` refs are never repaired automatically.
+**Repair** (`check_code_links` with `repair: true` as the agent, `POST /api/code/repair` with optional body `{ scopeId, seal }` as the human) applies every `moved` suggestion across elements, relations and flow steps in one journaled change set ("Re-anchored 11 code links in src/server/routes.ts"). With `seal: true` it also seals refs that have a line range, no seal, and pass every check. Sealing is a separate, explicit step because it declares the current ranges right, and a passing check cannot prove that for a link that was never sealed; plain reads never write. It returns `{ revision, summary?, repaired, sealed, stale }`, where `stale` is what still needs attention. `changed` refs are never repaired automatically.
 
 ### Export
 
@@ -138,7 +138,7 @@ Keep the surface small. Tool results are compact JSON text. Every tool that retu
 | `search` | `query`, `kinds?`, `limit?` | Elements whose name, summary, description, tags, field names or code paths match. |
 | `find_by_code` | `paths: string[]` | Elements, relations and flow steps whose code refs touch those files or directories, each ref with its current `check` (`ok`, `moved` with `suggestion`, `changed`, or another stale reason) and a count per check. Call this after changing code to find what to update and what needs re-anchoring. |
 | `apply_changes` | `ChangeSet` (as in `model.ts`) | `ChangeResult`. Applied as actor `agent`. `summary` is required here. |
-| `check_code_links` | `scopeId?`, `repair?` | Stale links (flow refs with their `step`), plus built elements of kinds that should have code (app, service, component, module, data) without any code ref. With `repair: true`: re-anchors moved links and seals unsealed ones that pass, in one change set, and returns what it changed and what still needs attention (see Stale link detection). |
+| `check_code_links` | `scopeId?`, `repair?`, `seal?` | Stale links (flow refs with their `step`), plus built elements of kinds that should have code (app, service, component, module, data) without any code ref. With `repair: true`: re-anchors moved links in one change set and returns what it changed and what still needs attention. With `seal: true`: seals unsealed links that pass, after the agent verified them (see Stale link detection). |
 | `get_changes` | `since?` (revision), `actor?` | Journal entries. |
 | `focus_ui` | `elementIds`, `perspective?`, `scopeId?`, `flowId?`, `message?` | Asks the browser to show and highlight these elements. Returns whether a browser is connected. |
 | `export` | `format`, `scope?` | The export text. |

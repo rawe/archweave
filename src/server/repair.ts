@@ -46,10 +46,10 @@ export interface RepairResult {
 const ATTEMPTS = 3;
 
 /**
- * Re-anchors every `moved` code ref to its suggested range and seals unsealed refs that pass all checks,
- * in one journaled change set. `changed` and other stale refs are left alone and reported.
+ * Re-anchors every `moved` code ref to its suggested range and, with `seal`, seals unsealed refs that pass
+ * all checks, in one journaled change set. `changed` and other stale refs are left alone and reported.
  */
-export async function repairCodeLinks(store: Store, stale: StaleLinks, options: { actor: Actor; scopeId?: string }): Promise<RepairResult> {
+export async function repairCodeLinks(store: Store, stale: StaleLinks, options: { actor: Actor; scopeId?: string; seal?: boolean }): Promise<RepairResult> {
   for (let attempt = 1; ; attempt++) {
     const snapshot = store.snapshot();
     const statuses = await stale.inspect(ownedRefs(snapshot.model, options.scopeId));
@@ -59,7 +59,8 @@ export async function repairCodeLinks(store: Store, stale: StaleLinks, options: 
       throw new Error('The model changed while the code links were being checked. Try again.');
     }
     const moved = statuses.filter((s) => s.reason === 'moved' && s.suggestion);
-    const unsealed = statuses.filter((s) => !s.reason && s.ref.startLine && !s.ref.digest);
+    // Sealing declares the current ranges right, and a passing check cannot prove that, so it is opt-in.
+    const unsealed = options.seal ? statuses.filter((s) => !s.reason && s.ref.startLine && !s.ref.digest) : [];
     const remaining = statuses.filter((s) => s.reason && s.reason !== 'moved').map(staleLink);
     if (!moved.length && !unsealed.length) return { revision: snapshot.revision, repaired: [], sealed: 0, stale: remaining };
 

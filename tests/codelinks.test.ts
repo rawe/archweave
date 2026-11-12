@@ -360,11 +360,13 @@ describe('repairCodeLinks', () => {
       { path: FILE }, // no range: nothing to seal
     ];
     const store = new Store({ sealer: stale.sealer, model: { elements: [{ id: 'x', kind: 'module', name: 'X', codeRefs: refs }] } });
-    const result = await repairCodeLinks(store, stale, { actor: 'agent' });
+    expect(await repairCodeLinks(store, stale, { actor: 'agent' })).toMatchObject({ sealed: 0, repaired: [] });
+    expect(store.snapshot().model.elements[0]!.codeRefs.some((r) => r.digest)).toBe(false);
+    const result = await repairCodeLinks(store, stale, { actor: 'agent', seal: true });
     expect(result).toMatchObject({ summary: 'Sealed 2 code links', sealed: 2, repaired: [] });
     expect(result.stale.map((l) => l.reason)).toEqual(['symbol-outside-range', 'line-out-of-range']);
     expect(store.snapshot().model.elements[0]!.codeRefs.map((r) => !!r.digest)).toEqual([true, true, false, false, false]);
-    expect((await repairCodeLinks(store, stale, { actor: 'agent' })).sealed).toBe(0);
+    expect((await repairCodeLinks(store, stale, { actor: 'agent', seal: true })).sealed).toBe(0);
   });
 
   it('stays within a scope', async () => {

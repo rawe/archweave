@@ -278,14 +278,18 @@ Refs with a line range are sealed when written: the server stores a \`digest\` o
 - changed: the text was edited. \`suggestion\`, when present, is where the symbol is now (same length); check it in the code.
 Other reasons, for every ref: missing-file; line-out-of-range (startLine or endLine past the end of the file); symbol-not-found (the \`symbol\`, matched as an identifier, does not occur in the file outside quotes; for "A.b" the last segment is enough); symbol-outside-range (it occurs, but not within startLine..endLine, or on startLine when there is no endLine).
 
-With \`repair: true\` it also changes the model, in one journaled change set: every moved ref (on elements, relations and flow steps) is re-anchored to its suggestion, and refs with a line range that have no seal yet but pass every check are sealed (models from before sealing). It returns what it re-anchored, how many it sealed, and what still needs attention. Changed and other stale refs are never repaired automatically: look at the code, then fix the ref with apply_changes (a new line range is sealed afresh), or, when the ref is still right, re-send it unchanged in \`addCodeRefs\` (in \`updateSteps\` for flow steps) to re-seal it.`,
+With \`repair: true\` it also changes the model, in one journaled change set: every moved ref (on elements, relations and flow steps) is re-anchored to its suggestion. It returns what it re-anchored and what still needs attention. With \`seal: true\` refs with a line range that have no seal yet but pass every check are sealed (models from before sealing, or refs written while their file was unreadable). Sealing declares the current range right, so verify unsealed ranges against the code first: a passing check does not prove them. Changed and other stale refs are never repaired automatically: look at the code, then fix the ref with apply_changes (a new line range is sealed afresh), or, when the ref is still right, re-send it unchanged in \`addCodeRefs\` (in \`updateSteps\` for flow steps) to re-seal it.`,
       inputSchema: {
         scopeId: Id.optional().describe('Only check this element and everything inside it, and relations and flow steps that touch them.'),
-        repair: z.boolean().optional().describe('Re-anchor moved refs and seal unsealed refs that pass every check. Default false (read only).'),
+        repair: z.boolean().optional().describe('Re-anchor moved refs. Default false (read only).'),
+        seal: z
+          .boolean()
+          .optional()
+          .describe('Seal refs with a line range that have no seal yet and pass every check. Only after you verified those ranges against the code. Default false.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ scopeId, repair }) => {
+    async ({ scopeId, repair, seal }) => {
       const model = store.snapshot().model;
       const v = new ModelView(model);
       if (scopeId && !v.byId.has(scopeId)) throw new Error(`Unknown element \`${scopeId}\`.${didYouMean(scopeId, v.byId.values())}`);
@@ -296,8 +300,8 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
         .filter((e) => (!inScope || inScope.has(e.id)) && e.status === 'built' && !e.codeRefs.length && CODE_EXPECTED_KINDS.includes(e.kind))
         .map(compact);
       const named = <T extends { ownerType: string; ownerId: string }>(l: T) => ({ ...l, ownerName: nameOf(l.ownerType, l.ownerId) });
-      if (repair) {
-        const result = await repairCodeLinks(store, stale, { actor: 'agent', scopeId });
+      if (repair || seal) {
+        const result = await repairCodeLinks(store, stale, { actor: 'agent', scopeId, seal });
         return ok({
           revision: result.revision,
           ...(result.summary ? { summary: result.summary } : {}),
@@ -313,7 +317,9 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
       const unsealed = statuses.filter((s) => !s.reason && s.ref.startLine && !s.ref.digest).length;
       const hints = [
         moved ? `${moved} moved: call again with repair: true to re-anchor them.` : '',
-        unsealed ? `${unsealed} refs with a line range have no seal yet, so moves cannot be told from edits: repair: true seals them.` : '',
+        unsealed
+          ? `${unsealed} refs with a line range have no seal yet, so moves cannot be told from edits. A passing check does not prove such a range is right (a range without a symbol passes whenever the file is long enough): verify them against the code, fix the wrong ones, then call again with seal: true.`
+          : '',
       ].filter(Boolean);
       return ok({
         stale: links.map(named),

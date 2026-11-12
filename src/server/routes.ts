@@ -106,13 +106,14 @@ export function apiRoutes(deps: ApiDeps): Hono {
 
   api.get('/code/stale', async (c) => c.json(await stale.check(store.snapshot().model)));
 
-  /** Re-anchors moved code refs and seals unsealed ones that check out, as the human. Body (optional): `{ scopeId? }`. */
+  /** Re-anchors moved code refs as the human; with `seal: true` also seals unsealed ones that check out. Body (optional): `{ scopeId?, seal? }`. */
   api.post('/code/repair', async (c) => {
     const body = hasJsonBody(c.req.raw) ? await jsonBody(c.req.raw) : {};
     const scopeId = body && typeof body === 'object' ? (body as { scopeId?: unknown }).scopeId : undefined;
     if (scopeId !== undefined && typeof scopeId !== 'string') throw new BadRequest('`scopeId` must be an element id');
     if (scopeId && !store.snapshot().model.elements.some((e) => e.id === scopeId)) throw new BadRequest(`Unknown element \`${scopeId}\``);
-    return c.json(await repairCodeLinks(store, stale, { actor: 'human', scopeId: scopeId || undefined }));
+    const seal = !!body && typeof body === 'object' && (body as { seal?: unknown }).seal === true;
+    return c.json(await repairCodeLinks(store, stale, { actor: 'human', scopeId: scopeId || undefined, seal }));
   });
 
   api.get('/export', (c) => {
