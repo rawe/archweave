@@ -6,10 +6,10 @@ The model lives in your repository as plain JSON (`.archweave/model.json` and `.
 
 ## Run it with Docker
 
-Build the image once from an ArchWeave checkout:
+Until the image is published, build it once from an ArchWeave checkout. This tags it as `ghcr.io/rawe/archweave:0.1.0` and `:latest` in your local Docker daemon, the same name the compose file pulls:
 
-```sh
-docker build -t archweave .
+```bash
+make release VERSION=0.1.0
 ```
 
 Copy [`docker-compose.yml`](docker-compose.yml) into the repository you want to model and start it there:
@@ -18,7 +18,7 @@ Copy [`docker-compose.yml`](docker-compose.yml) into the repository you want to 
 docker compose up -d
 ```
 
-Open <http://localhost:4317>. The compose file mounts the repository at `/repo`, stores the model in `/repo/.archweave` and publishes the port on `127.0.0.1` only. If the image does not exist yet, compose builds it from `ARCHWEAVE_SOURCE` (a path to an ArchWeave checkout). Files are written as user `1000:1000`; set `ARCHWEAVE_UID` and `ARCHWEAVE_GID` to your own ids if they differ.
+Open <http://localhost:4317>. The compose file mounts the repository at `/repo`, stores the model in `/repo/.archweave` and publishes the port on `127.0.0.1` only. Set `ARCHWEAVE_IMAGE` to use a different image or tag. Files are written as user `1000:1000`; set `ARCHWEAVE_UID` and `ARCHWEAVE_GID` to your own ids if they differ.
 
 ## Run it with Node
 

@@ -2,9 +2,7 @@
 # Then open http://localhost:4317 and connect your coding agent to http://localhost:4317/mcp.
 services:
   archweave:
-    image: archweave
-    # Builds the image when it does not exist yet. Point ARCHWEAVE_SOURCE at an ArchWeave checkout.
-    build: ${ARCHWEAVE_SOURCE:-.}
+    image: ${ARCHWEAVE_IMAGE:-ghcr.io/rawe/archweave:latest}
     # Files in .archweave/ are written as this user; match your own (`id -u`, `id -g`).
     user: "${ARCHWEAVE_UID:-1000}:${ARCHWEAVE_GID:-1000}"
     ports:
