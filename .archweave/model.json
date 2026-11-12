@@ -13,8 +13,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "AgentPresence",
-          "startLine": 296,
-          "endLine": 300,
+          "startLine": 303,
+          "endLine": 307,
           "digest": "r4K2pA-LIy2b"
         }
       ],
@@ -228,8 +228,8 @@
         {
           "path": "src/server/changes.ts",
           "symbol": "parseChangeSet",
-          "startLine": 51,
-          "endLine": 56,
+          "startLine": 53,
+          "endLine": 58,
           "digest": "OBDXNHzCli_n"
         }
       ]
@@ -244,8 +244,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "ChangeResult",
-          "startLine": 260,
-          "endLine": 266,
+          "startLine": 267,
+          "endLine": 273,
           "digest": "Lo1xkb73FVWb"
         }
       ],
@@ -408,8 +408,8 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "useStore",
-          "startLine": 120,
-          "endLine": 147,
+          "startLine": 119,
+          "endLine": 146,
           "digest": "1B8htvweOQS7"
         },
         {
@@ -422,8 +422,8 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "receiveSnapshot",
-          "startLine": 182,
-          "endLine": 194,
+          "startLine": 181,
+          "endLine": 193,
           "digest": "rS330KDy2cVz"
         }
       ]
@@ -539,15 +539,15 @@
         {
           "path": "src/server/stale.ts",
           "symbol": "symbolLines",
-          "startLine": 287,
-          "endLine": 304,
+          "startLine": 302,
+          "endLine": 319,
           "digest": "GnmLnhvNyLPh"
         },
         {
           "path": "src/server/stale.ts",
           "symbol": "findMoved",
-          "startLine": 238,
-          "endLine": 260,
+          "startLine": 253,
+          "endLine": 275,
           "note": "Finds where sealed text moved to",
           "digest": "4BG1CewG48cb"
         }
@@ -719,8 +719,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Element",
-          "startLine": 78,
-          "endLine": 98,
+          "startLine": 80,
+          "endLine": 100,
           "digest": "fJc2NI_nqyVX"
         },
         {
@@ -816,22 +816,22 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "ElementPatch",
-          "startLine": 213,
-          "endLine": 223,
+          "startLine": 215,
+          "endLine": 225,
           "digest": "T2SdOx7pfwCr"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "patchShape",
-          "startLine": 172,
-          "endLine": 176,
+          "startLine": 174,
+          "endLine": 178,
           "digest": "ZGIrJIvImRMy"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "RelationPatch",
-          "startLine": 225,
-          "endLine": 226,
+          "startLine": 227,
+          "endLine": 228,
           "digest": "snDK79-Guath"
         }
       ],
@@ -965,8 +965,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Field",
-          "startLine": 59,
-          "endLine": 66,
+          "startLine": 61,
+          "endLine": 68,
           "digest": "5LL5Betiv7JX"
         }
       ],
@@ -1064,8 +1064,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Flow",
-          "startLine": 140,
-          "endLine": 146,
+          "startLine": 142,
+          "endLine": 148,
           "digest": "8EZChoMDDV33"
         }
       ],
@@ -1101,8 +1101,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FlowPatch",
-          "startLine": 231,
-          "endLine": 237,
+          "startLine": 233,
+          "endLine": 239,
           "digest": "nNrRVHKPxSZA"
         }
       ],
@@ -1156,8 +1156,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FlowStep",
-          "startLine": 130,
-          "endLine": 138,
+          "startLine": 132,
+          "endLine": 140,
           "digest": "SvleigymlZNo"
         }
       ],
@@ -1224,8 +1224,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "FocusRequest",
-          "startLine": 303,
-          "endLine": 309,
+          "startLine": 310,
+          "endLine": 316,
           "digest": "nCARof2V5agh"
         }
       ],
@@ -1268,8 +1268,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 349,
-          "endLine": 387,
+          "startLine": 345,
+          "endLine": 383,
           "note": "focus_ui registration and handler",
           "digest": "l0bvSLFVxYsm"
         }
@@ -1452,8 +1452,8 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 34,
-          "endLine": 35,
+          "startLine": 35,
+          "endLine": 36,
           "note": "GET /api/health",
           "digest": "TPC6ES0qyIB8"
         },
@@ -1550,8 +1550,8 @@
         {
           "path": "src/server/store.ts",
           "symbol": "parseModel",
-          "startLine": 166,
-          "endLine": 171,
+          "startLine": 186,
+          "endLine": 191,
           "digest": "oNzxY3TaOl_0"
         }
       ]
@@ -1566,8 +1566,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "JournalEntry",
-          "startLine": 269,
-          "endLine": 277,
+          "startLine": 276,
+          "endLine": 284,
           "digest": "ocSMStkxFHPs"
         }
       ],
@@ -1648,8 +1648,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Layout",
-          "startLine": 162,
-          "endLine": 165,
+          "startLine": 164,
+          "endLine": 167,
           "digest": "r4MX1G-HYPt2"
         }
       ],
@@ -1749,8 +1749,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Model",
-          "startLine": 148,
-          "endLine": 156,
+          "startLine": 150,
+          "endLine": 158,
           "digest": "8K79CDdKvKjp"
         }
       ],
@@ -1881,8 +1881,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Model",
-          "startLine": 148,
-          "endLine": 156,
+          "startLine": 150,
+          "endLine": 158,
           "digest": "8K79CDdKvKjp"
         },
         {
@@ -1895,8 +1895,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "slugify",
-          "startLine": 359,
-          "endLine": 369,
+          "startLine": 366,
+          "endLine": 376,
           "digest": "VUcNHRx_ksJ0"
         }
       ]
@@ -1927,8 +1927,8 @@
         {
           "path": "src/server/store.ts",
           "symbol": "replace",
-          "startLine": 120,
-          "endLine": 131,
+          "startLine": 128,
+          "endLine": 139,
           "digest": "p32SuIa_y7Bz"
         }
       ]
@@ -2001,8 +2001,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Note",
-          "startLine": 69,
-          "endLine": 76,
+          "startLine": 71,
+          "endLine": 78,
           "digest": "atOcjDDe8yGt"
         }
       ],
@@ -2091,15 +2091,15 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Relation",
-          "startLine": 114,
-          "endLine": 127,
+          "startLine": 116,
+          "endLine": 129,
           "digest": "491tl-8SBu6v"
         },
         {
           "path": "src/shared/model.ts",
           "symbol": "RELATION_KINDS",
-          "startLine": 100,
-          "endLine": 110,
+          "startLine": 102,
+          "endLine": 112,
           "digest": "6NX0OzT2R7w3"
         }
       ],
@@ -2204,8 +2204,8 @@
         },
         {
           "path": "src/server/routes.ts",
-          "startLine": 68,
-          "endLine": 94,
+          "startLine": 69,
+          "endLine": 95,
           "note": "GET /api/events SSE stream",
           "digest": "qz5HUbaNB6tN"
         },
@@ -2304,8 +2304,8 @@
         {
           "path": "src/web/api.ts",
           "symbol": "EventHandlers",
-          "startLine": 100,
-          "endLine": 105,
+          "startLine": 96,
+          "endLine": 101,
           "note": "Browser side handlers",
           "digest": "dg7MAgjghC82"
         }
@@ -2405,8 +2405,8 @@
         {
           "path": "src/web/api.ts",
           "symbol": "subscribe",
-          "startLine": 108,
-          "endLine": 121,
+          "startLine": 104,
+          "endLine": 117,
           "digest": "KB8zsNzshVqe"
         },
         {
@@ -2451,8 +2451,8 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 51,
-          "endLine": 57,
+          "startLine": 52,
+          "endLine": 58,
           "note": "GET /api/session",
           "digest": "3tq5bcUr9OhL"
         }
@@ -2505,8 +2505,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "Snapshot",
-          "startLine": 337,
-          "endLine": 341,
+          "startLine": 344,
+          "endLine": 348,
           "digest": "UgoKCEEx2YKb"
         }
       ],
@@ -2539,8 +2539,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "StaleLink",
-          "startLine": 326,
-          "endLine": 335,
+          "startLine": 333,
+          "endLine": 342,
           "digest": "e6gif_JCBl_E"
         }
       ],
@@ -2604,8 +2604,8 @@
         {
           "path": "src/web/lib/layout.ts",
           "symbol": "layoutAll",
-          "startLine": 63,
-          "endLine": 104,
+          "startLine": 59,
+          "endLine": 100,
           "digest": "SIHPzTsJrpz0"
         }
       ]
@@ -2645,8 +2645,8 @@
         {
           "path": "src/shared/model.ts",
           "symbol": "UiState",
-          "startLine": 286,
-          "endLine": 294,
+          "startLine": 293,
+          "endLine": 301,
           "digest": "WtiaqICCzate"
         }
       ],
@@ -2781,7 +2781,7 @@
         {
           "path": "src/web/state/store.ts",
           "symbol": "applyChanges",
-          "startLine": 201,
+          "startLine": 203,
           "digest": "AtersBpa9ffe"
         }
       ]
@@ -2885,7 +2885,7 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 35,
+          "startLine": 36,
           "note": "GET /api/health",
           "digest": "T6tovgSbVEMt"
         }
@@ -2965,7 +2965,7 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "currentRevision",
-          "startLine": 35,
+          "startLine": 36,
           "digest": "T6tovgSbVEMt"
         }
       ]
@@ -3046,8 +3046,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "apply",
-          "startLine": 261,
-          "endLine": 267,
+          "startLine": 270,
+          "endLine": 276,
           "digest": "-P-59-YPkUaO"
         }
       ]
@@ -3093,7 +3093,7 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "publish",
-          "startLine": 379,
+          "startLine": 375,
           "digest": "QnX7ev4upoLi"
         }
       ]
@@ -3161,8 +3161,8 @@
         {
           "path": "src/server/store.ts",
           "symbol": "record",
-          "startLine": 143,
-          "endLine": 148,
+          "startLine": 151,
+          "endLine": 156,
           "digest": "tcpFeZDK8-wP"
         }
       ]
@@ -3312,7 +3312,7 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "check",
-          "startLine": 107,
+          "startLine": 108,
           "digest": "aKDQ7WJAWc-Q"
         }
       ]
@@ -3368,7 +3368,7 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "apply",
-          "startLine": 39,
+          "startLine": 40,
           "digest": "Nrsr2R517fjL"
         }
       ]
@@ -3386,8 +3386,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "readFile",
-          "startLine": 96,
-          "endLine": 105,
+          "startLine": 97,
+          "endLine": 106,
           "digest": "1NFK1BbPjSof"
         }
       ]
@@ -3425,15 +3425,15 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "setUi",
-          "startLine": 59,
-          "endLine": 66,
+          "startLine": 60,
+          "endLine": 67,
           "digest": "DTMLJDICb-Bl"
         },
         {
           "path": "src/server/routes.ts",
           "symbol": "subscribe",
-          "startLine": 68,
-          "endLine": 94,
+          "startLine": 69,
+          "endLine": 95,
           "digest": "qz5HUbaNB6tN"
         }
       ]
@@ -3563,8 +3563,8 @@
         {
           "path": "src/web/api.ts",
           "symbol": "subscribe",
-          "startLine": 108,
-          "endLine": 121,
+          "startLine": 104,
+          "endLine": 117,
           "digest": "KB8zsNzshVqe"
         }
       ]
@@ -3620,8 +3620,8 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 261,
-              "endLine": 267,
+              "startLine": 270,
+              "endLine": 276,
               "note": "apply_changes handler",
               "digest": "-P-59-YPkUaO"
             }
@@ -3714,8 +3714,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "writeSSE",
-              "startLine": 68,
-              "endLine": 94,
+              "startLine": 69,
+              "endLine": 95,
               "digest": "qz5HUbaNB6tN"
             }
           ]
@@ -3752,15 +3752,15 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "receiveSnapshot",
-              "startLine": 182,
-              "endLine": 194,
+              "startLine": 181,
+              "endLine": 193,
               "digest": "rS330KDy2cVz"
             },
             {
               "path": "src/web/state/store.ts",
               "symbol": "onAgentEntry",
-              "startLine": 237,
-              "endLine": 267,
+              "startLine": 239,
+              "endLine": 269,
               "digest": "R9EIiTWvFiBa"
             }
           ]
@@ -3815,8 +3815,8 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 364,
-              "endLine": 386,
+              "startLine": 360,
+              "endLine": 382,
               "note": "focus_ui handler: validates ids, publishes",
               "digest": "6kPHV6bzUKBs"
             }
@@ -3846,8 +3846,8 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "handleFocusRequest",
-              "startLine": 419,
-              "endLine": 439,
+              "startLine": 421,
+              "endLine": 441,
               "digest": "_TJ7rW_ofWP7"
             }
           ]
@@ -3994,8 +3994,8 @@
             {
               "path": "src/server/store.ts",
               "symbol": "replace",
-              "startLine": 120,
-              "endLine": 131,
+              "startLine": 128,
+              "endLine": 139,
               "digest": "p32SuIa_y7Bz"
             }
           ]
@@ -4009,8 +4009,8 @@
             {
               "path": "src/server/store.ts",
               "symbol": "parseModel",
-              "startLine": 166,
-              "endLine": 171,
+              "startLine": 186,
+              "endLine": 191,
               "digest": "oNzxY3TaOl_0"
             }
           ]
@@ -4095,8 +4095,8 @@
             {
               "path": "src/web/api.ts",
               "symbol": "exportUrl",
-              "startLine": 93,
-              "endLine": 97,
+              "startLine": 89,
+              "endLine": 93,
               "digest": "h1c0XnBmjRYj"
             }
           ]
@@ -4221,7 +4221,7 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "apply",
-              "startLine": 39,
+              "startLine": 40,
               "digest": "Nrsr2R517fjL"
             }
           ]
@@ -4258,8 +4258,8 @@
             {
               "path": "src/web/state/store.ts",
               "symbol": "prune",
-              "startLine": 173,
-              "endLine": 180,
+              "startLine": 172,
+              "endLine": 179,
               "digest": "dy7rBbBA6ItZ"
             }
           ]
@@ -4315,7 +4315,7 @@
             {
               "path": "src/web/api.ts",
               "symbol": "putUi",
-              "startLine": 80,
+              "startLine": 79,
               "digest": "32LvAiOkMcAE"
             }
           ]
