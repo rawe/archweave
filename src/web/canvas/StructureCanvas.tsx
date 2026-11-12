@@ -148,7 +148,7 @@ export function StructureCanvas() {
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const dwell = useRef<{ id: string; since: number } | null>(null);
 
-  const staleOwners = useMemo(() => new Set(stale.map((s) => s.ownerId)), [stale]);
+  const staleOwners = useMemo(() => new Set(stale.filter((s) => s.ownerType === 'element').map((s) => s.ownerId)), [stale]);
   const unseenInside = useMemo(() => {
     const out = new Set<string>();
     const byId = new Map(model.elements.map((e) => [e.id, e]));

@@ -20,7 +20,7 @@ export function DataCatalog() {
   const leaving = useStore((s) => s.leaving);
   const stale = useStore((s) => s.stale);
   const groups = useMemo(() => groupStructures(index, filter), [index, filter]);
-  const staleOwners = useMemo(() => new Set(stale.map((s) => s.ownerId)), [stale]);
+  const staleOwners = useMemo(() => new Set(stale.filter((s) => s.ownerType === 'element').map((s) => s.ownerId)), [stale]);
   const sheet = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
 

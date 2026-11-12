@@ -1,6 +1,7 @@
 /** Connects the store to the server and to the address bar. Called once from main. */
 import type { Perspective, UiState } from '../../shared/model.ts';
 import { api, subscribe } from '../api.ts';
+import { refreshStale } from './codeLinks.ts';
 import { dataFocusId, getState, handleFocusRequest, receiveSnapshot, setAgent, setState, useStore, type State } from './store.ts';
 
 export function bootstrap(): () => void {
@@ -36,14 +37,11 @@ export function bootstrap(): () => void {
     })
     .catch(() => undefined);
 
-  let staleTimer: ReturnType<typeof setTimeout> | undefined;
-  const refreshStale = () => {
-    clearTimeout(staleTimer);
-    staleTimer = setTimeout(() => {
-      api.stale().then((stale) => setState({ stale: Array.isArray(stale) ? stale : [] }), () => undefined);
-    }, 600);
-  };
   refreshStale();
+  // Code changes in the editor, not here: look again whenever the human comes back to the page.
+  const onReturn = () => document.visibilityState === 'visible' && refreshStale(150);
+  window.addEventListener('focus', onReturn);
+  document.addEventListener('visibilitychange', onReturn);
 
   const unsubscribeEvents = subscribe({
     snapshot: ({ snapshot, entry }) => {
@@ -90,6 +88,8 @@ export function bootstrap(): () => void {
     unsubscribeUi();
     unsubscribeHash();
     window.removeEventListener('popstate', onPop);
+    window.removeEventListener('focus', onReturn);
+    document.removeEventListener('visibilitychange', onReturn);
   };
 }
 

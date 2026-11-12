@@ -80,7 +80,7 @@ export function ElementInspector({ el, index }: { el: Element; index: ModelIndex
         <MarkdownField value={el.description} onCommit={(description) => patch({ description })} placeholder="Add a description" label="Description" />
       </div>
 
-      <CodeRefs ownerId={el.id} refs={el.codeRefs} onChange={(codeRefs) => patch({ codeRefs }, `Updated code links of ${el.name}`)} />
+      <CodeRefs owner={{ type: 'element', id: el.id }} refs={el.codeRefs} onChange={(codeRefs) => patch({ codeRefs }, `Updated code links of ${el.name}`)} />
 
       {isData ? (
         <>

@@ -3,9 +3,11 @@ import { Copy, ExternalLink, Link2, X } from 'lucide-react';
 import type { CodeRef } from '../../shared/model.ts';
 import { api, type CodeFile } from '../api.ts';
 import { IconButton, Tip } from '../chrome/primitives.tsx';
+import { keepLink, linkProblem, reanchorLink } from '../state/codeLinks.ts';
 import { closeCode, commit, getState, navigateToElement, navigateToRelation, toast, useStore } from '../state/store.ts';
+import { sameLink } from '../lib/codeRefs.ts';
 import { copyText, cx } from '../lib/dom.ts';
-import { lineRange } from '../lib/format.ts';
+import { lineRange, linesLabel } from '../lib/format.ts';
 import { KindIcon } from '../lib/kinds.tsx';
 
 const LINE_H = 20;
@@ -42,6 +44,10 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
   const perspective = useStore((s) => s.perspective);
   const stepIndex = useStore((s) => s.stepIndex);
   const flowId = useStore((s) => s.flowId);
+  // The followed link, while it still needs attention.
+  const link = useStore((s) => (code.link ? s.stale.find((l) => sameLink(l, code.link!)) : undefined));
+  const suggestion = link?.suggestion;
+  const [atSuggestion, setAtSuggestion] = useState(false);
   const [file, setFile] = useState<CodeFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<{ a: number; b: number } | null>(null);
@@ -78,11 +84,14 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
 
   useLayoutEffect(() => {
     if (!lines.length || !scroller.current) return;
-    const start = code.startLine ?? 1;
+    const start = (atSuggestion && suggestion ? suggestion.startLine : code.startLine) ?? 1;
     scroller.current.scrollTop = Math.max(0, (start - 1) * LINE_H - scroller.current.clientHeight / 3);
-  }, [lines, code.startLine, code.endLine]);
+  }, [lines, code.startLine, code.endLine, atSuggestion, suggestion]);
 
-  useEffect(() => setRange(null), [code.startLine, code.endLine]);
+  useEffect(() => {
+    setRange(null);
+    setAtSuggestion(false);
+  }, [code.startLine, code.endLine]);
 
   // Elements, relations and flow steps that link into this same file.
   const linked = useMemo(() => {
@@ -142,6 +151,8 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
 
   const editorUrl = hostPath ? `vscode://file/${hostPath.replace(/\/$/, '')}/${code.path}:${range ? Math.min(range.a, range.b) : (code.startLine ?? 1)}` : null;
   const marked = (n: number) => !!code.startLine && n >= code.startLine && n <= (code.endLine ?? code.startLine);
+  const suggested = (n: number) => !!suggestion && n >= suggestion.startLine && n <= suggestion.endLine;
+  const suggestedLines = suggestion ? linesLabel(suggestion.startLine, suggestion.endLine) : '';
   const picked = (n: number) => !!range && n >= Math.min(range.a, range.b) && n <= Math.max(range.a, range.b);
 
   return (
@@ -211,6 +222,26 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
           <IconButton icon={X} label="Close" keys="Esc" size={15} onClick={closeCode} />
         </div>
       </header>
+      {link && (
+        <div className="drawer-note" role="status">
+          <span className="drawer-note-text">{linkProblem(link)}</span>
+          {suggestion && link.reason === 'changed' && (
+            <button type="button" className="drawer-note-btn" onClick={() => setAtSuggestion((v) => !v)}>
+              {atSuggestion ? `Back to ${linesLabel(code.startLine, code.endLine)}` : `Show ${suggestedLines}`}
+            </button>
+          )}
+          {link.reason === 'changed' && (
+            <button type="button" className="drawer-note-btn" onClick={() => keepLink(link)}>
+              Still right
+            </button>
+          )}
+          {suggestion && (link.reason === 'changed' || link.reason === 'moved') && (
+            <button type="button" className="drawer-note-btn is-main" onClick={() => reanchorLink(link, suggestion)}>
+              {link.reason === 'moved' ? 'Re-anchor' : `Use ${suggestedLines}`}
+            </button>
+          )}
+        </div>
+      )}
       <div className="drawer-body" ref={scroller} onMouseUp={pickFromTextSelection}>
         {error && <p className="drawer-msg">{error}</p>}
         {file && !file.exists && <p className="drawer-msg is-warn">This file no longer exists in the repository.</p>}
@@ -221,7 +252,7 @@ function Drawer({ height, setHeight }: { height: number; setHeight: (h: number) 
             {lines.map((html, i) => {
               const n = i + 1;
               return (
-                <div key={n} data-line={n} className={cx('code-line', marked(n) && 'is-ref', picked(n) && 'is-picked')}>
+                <div key={n} data-line={n} className={cx('code-line', marked(n) && 'is-ref', suggested(n) && 'is-suggested', picked(n) && 'is-picked')}>
                   <span
                     className="code-no"
                     onPointerDown={(e) => {

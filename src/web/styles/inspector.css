@@ -598,6 +598,41 @@
   color: var(--warn);
 }
 
+.code-ref.is-stale {
+  flex-wrap: wrap;
+}
+
+/* fixes for a link that needs attention, under its reason */
+.code-ref-fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex-basis: 100%;
+  padding: 0 8px 6px 26px;
+  margin-top: -3px;
+}
+
+.code-ref-fix {
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.code-ref-fix.is-main {
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.code-ref-fix:hover {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
 .code-ref.is-open {
   background: var(--surface-2);
 }

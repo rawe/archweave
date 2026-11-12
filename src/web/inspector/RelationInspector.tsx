@@ -118,7 +118,7 @@ function SingleRelation({ rel, index }: { rel: Relation; index: ModelIndex }) {
           />
         )}
       </Section>
-      <CodeRefs ownerId={rel.id} refs={rel.codeRefs} onChange={(codeRefs) => patch({ codeRefs })} />
+      <CodeRefs owner={{ type: 'relation', id: rel.id }} refs={rel.codeRefs} onChange={(codeRefs) => patch({ codeRefs })} />
       <footer className="insp-foot">
         <span className="foot-id mono">{rel.id}</span>
         <span className="foot-spacer" />

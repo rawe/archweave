@@ -37,6 +37,8 @@ export interface CodeView {
   endLine?: number;
   /** The element or relation whose link was followed. */
   ownerId?: string;
+  /** When the followed link needs attention: what the server found, so the drawer can show the suggestion and fixes. */
+  link?: StaleLink;
 }
 
 export type Overlay = 'palette' | 'export' | 'help' | 'activity' | null;

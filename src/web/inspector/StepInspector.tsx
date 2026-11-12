@@ -85,7 +85,7 @@ export function StepInspector({ flow, stepIndex, index }: { flow: Flow; stepInde
           </div>
         )}
       </Section>
-      <CodeRefs ownerId={flow.id} refs={step.codeRefs} onChange={(codeRefs) => update({ codeRefs })} />
+      <CodeRefs owner={{ type: 'flow', id: flow.id, step: stepIndex + 1 }} refs={step.codeRefs} onChange={(codeRefs) => update({ codeRefs })} />
       <footer className="insp-foot">
         <Tip label="Move earlier" side="top">
           <button type="button" className="foot-btn" aria-label="Move earlier" disabled={stepIndex === 0} onClick={() => move(-1)}>

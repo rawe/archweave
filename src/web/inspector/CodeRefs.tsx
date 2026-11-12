@@ -1,33 +1,22 @@
 import { useRef, useState } from 'react';
 import { FileCode, Plus, X } from 'lucide-react';
-import type { CodeRef, StaleLink } from '../../shared/model.ts';
+import type { CodeRef } from '../../shared/model.ts';
 import { api } from '../api.ts';
 import { Picker, type PickItem } from '../chrome/Picker.tsx';
 import { Tip } from '../chrome/primitives.tsx';
+import { keepLink, linkProblem, reanchorLink } from '../state/codeLinks.ts';
 import { openCode, useStore } from '../state/store.ts';
+import { staleFor, type RefOwner } from '../lib/codeRefs.ts';
 import { cx } from '../lib/dom.ts';
-import { dirName, fileName, lineRange } from '../lib/format.ts';
+import { dirName, fileName, lineRange, linesLabel } from '../lib/format.ts';
 import { Section } from './fields.tsx';
 
-const REASON: Record<string, string> = {
-  'missing-file': 'File no longer exists',
-  'line-out-of-range': 'Lines are past the end of the file',
-  'symbol-not-found': 'Symbol not found in the file',
-  'symbol-outside-range': 'Symbol is outside the linked lines',
-};
-
-/** Readable text for a stale reason, including reasons this UI does not know yet. */
-export function staleReason(reason: StaleLink['reason'] | string): string {
-  if (REASON[reason]) return REASON[reason]!;
-  const words = String(reason || 'stale link').replace(/[-_]+/g, ' ').trim();
-  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
-}
-
-function sameRef(a: CodeRef, b: CodeRef) {
-  return a.path === b.path && a.symbol === b.symbol && a.startLine === b.startLine && a.endLine === b.endLine;
-}
-
-export function CodeRefs({ ownerId, refs, onChange }: { ownerId: string; refs: CodeRef[]; onChange: (refs: CodeRef[]) => void }) {
+/**
+ * The Code section of an element, relation or flow step. `onChange` gets the full list; refs the
+ * human did not touch are passed back exactly as read (seal included), so their seals hold.
+ */
+export function CodeRefs({ owner, refs, onChange }: { owner: RefOwner; refs: CodeRef[]; onChange: (refs: CodeRef[]) => void }) {
+  const ownerId = owner.id;
   const stale = useStore((s) => s.stale);
   const current = useStore((s) => s.code);
   const [picking, setPicking] = useState(false);
@@ -50,15 +39,14 @@ export function CodeRefs({ ownerId, refs, onChange }: { ownerId: string; refs: C
       {refs.length > 0 && (
         <ul className="code-refs">
           {refs.map((ref, i) => {
-            const problem = stale.find((s) => s.ownerId === ownerId && sameRef(s.ref, ref));
+            const problem = staleFor(stale, owner, ref);
             const open = current?.path === ref.path && current.startLine === ref.startLine;
+            const follow = () => openCode({ path: ref.path, startLine: ref.startLine, endLine: ref.endLine, ownerId, ...(problem ? { link: problem } : {}) });
+            const suggestion = problem?.suggestion;
+            const target = suggestion && linesLabel(suggestion.startLine, suggestion.endLine);
             return (
               <li key={`${ref.path}-${ref.symbol}-${ref.startLine}-${i}`} className={cx('code-ref', problem && 'is-stale', open && 'is-open')}>
-                <button
-                  type="button"
-                  className="code-ref-main"
-                  onClick={() => openCode({ path: ref.path, startLine: ref.startLine, endLine: ref.endLine, ownerId })}
-                >
+                <button type="button" className="code-ref-main" onClick={follow}>
                   <FileCode size={14} strokeWidth={1.6} aria-hidden className="code-ref-icon" />
                   <span className="code-ref-text">
                     <span className="code-ref-path mono" title={ref.path}>
@@ -72,7 +60,7 @@ export function CodeRefs({ ownerId, refs, onChange }: { ownerId: string; refs: C
                         {ref.startLine ? `L${lineRange(ref.startLine, ref.endLine)}` : ''}
                       </span>
                     )}
-                    {problem && <span className="code-ref-problem">{staleReason(problem.reason)}</span>}
+                    {problem && <span className="code-ref-problem">{linkProblem(problem)}</span>}
                     {ref.note && !problem && <span className="code-ref-note">{ref.note}</span>}
                   </span>
                 </button>
@@ -81,6 +69,28 @@ export function CodeRefs({ ownerId, refs, onChange }: { ownerId: string; refs: C
                     <X size={13} strokeWidth={1.8} />
                   </button>
                 </Tip>
+                {problem?.reason === 'moved' && suggestion && (
+                  <div className="code-ref-fixes">
+                    <button type="button" className="code-ref-fix is-main" onClick={() => reanchorLink(problem, suggestion)}>
+                      Re-anchor
+                    </button>
+                  </div>
+                )}
+                {problem?.reason === 'changed' && (
+                  <div className="code-ref-fixes">
+                    <button type="button" className="code-ref-fix" onClick={follow}>
+                      Open
+                    </button>
+                    <button type="button" className="code-ref-fix" onClick={() => keepLink(problem)}>
+                      Still right
+                    </button>
+                    {suggestion && (
+                      <button type="button" className="code-ref-fix" onClick={() => reanchorLink(problem, suggestion)}>
+                        Use {target}
+                      </button>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}

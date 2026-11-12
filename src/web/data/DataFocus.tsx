@@ -42,7 +42,7 @@ export function DataFocus({ focusId }: { focusId: string }) {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => layoutFocus(model, focusId, { expanded }), [model, focusId, expanded, fonts]);
-  const staleOwners = useMemo(() => new Set(stale.map((s) => s.ownerId)), [stale]);
+  const staleOwners = useMemo(() => new Set(stale.filter((s) => s.ownerType === 'element').map((s) => s.ownerId)), [stale]);
   const refNames = useMemo(() => Object.fromEntries(model.elements.filter((e) => e.kind === 'data').map((e) => [e.id, e.name])), [model.elements]);
   const owner = useMemo(() => {
     const parentId = layout?.center.element.parentId;

@@ -10,6 +10,7 @@ import {
   slugify,
   uniqueId,
   type ChangeSet,
+  type CodeRef,
   type Layout,
   type Model,
 } from '../../shared/model.ts';
@@ -31,7 +32,7 @@ export function applyLocal(doc: Doc, cs: ChangeSet, now = Date.now()): Doc {
     const elements = [...model.elements];
     const index = new Map(elements.map((el, i) => [el.id, i]));
     for (const patch of cs.elements) {
-      const { addNotes, resolveNotes, parentId, ...rest } = patch;
+      const { addNotes, resolveNotes, parentId, addCodeRefs, removeCodeRefs: _remove, ...rest } = patch;
       const at = patch.id ? index.get(patch.id) : undefined;
       let next: Element;
       if (at !== undefined) {
@@ -60,6 +61,7 @@ export function applyLocal(doc: Doc, cs: ChangeSet, now = Date.now()): Doc {
       if (resolveNotes?.length) {
         next.notes = next.notes.map((n) => (resolveNotes.includes(n.id) ? { ...n, resolved: true } : n));
       }
+      if (addCodeRefs?.length) next.codeRefs = addRefs(next.codeRefs, addCodeRefs);
       if (at !== undefined) elements[at] = next;
       else {
         index.set(next.id, elements.length);
@@ -71,9 +73,12 @@ export function applyLocal(doc: Doc, cs: ChangeSet, now = Date.now()): Doc {
 
   if (cs.relations?.length) {
     const relations = [...model.relations];
-    for (const patch of cs.relations) {
+    for (const { addCodeRefs, removeCodeRefs: _remove, ...patch } of cs.relations) {
       const at = patch.id ? relations.findIndex((r) => r.id === patch.id) : -1;
-      if (at >= 0) relations[at] = { ...relations[at]!, ...stripUndefined(patch) };
+      if (at >= 0) {
+        const next = { ...relations[at]!, ...stripUndefined(patch) };
+        relations[at] = addCodeRefs?.length ? { ...next, codeRefs: addRefs(next.codeRefs, addCodeRefs) } : next;
+      }
       else {
         if (!patch.from || !patch.to) continue;
         const id = patch.id ?? uniqueId(slugify(`${patch.from}-${patch.kind ?? 'uses'}-${patch.to}`), new Set(relations.map((r) => r.id)));
@@ -86,9 +91,19 @@ export function applyLocal(doc: Doc, cs: ChangeSet, now = Date.now()): Doc {
 
   if (cs.flows?.length) {
     const flows = [...model.flows];
-    for (const patch of cs.flows) {
+    // Inserting and removing steps is left to the server's snapshot; the UI sends whole step lists.
+    for (const { updateSteps, insertSteps: _insert, removeSteps: _remove, ...patch } of cs.flows) {
       const at = patch.id ? flows.findIndex((f) => f.id === patch.id) : -1;
-      if (at >= 0) flows[at] = { ...flows[at]!, ...stripUndefined(patch) };
+      if (at >= 0) {
+        const next = { ...flows[at]!, ...stripUndefined(patch) };
+        for (const { index, addCodeRefs, removeCodeRefs: _r, ...fields } of updateSteps ?? []) {
+          const step = next.steps[index];
+          if (!step) continue;
+          const merged = { ...step, ...stripUndefined(fields) };
+          next.steps = next.steps.map((s, i) => (i === index ? (addCodeRefs?.length ? { ...merged, codeRefs: addRefs(merged.codeRefs, addCodeRefs) } : merged) : s));
+        }
+        flows[at] = next;
+      }
       else {
         if (!patch.name) continue;
         const id = patch.id ?? uniqueId(slugify(patch.name), new Set(flows.map((f) => f.id)));
@@ -150,6 +165,14 @@ export function applyLocal(doc: Doc, cs: ChangeSet, now = Date.now()): Doc {
 
 export function isLayoutOnly(cs: ChangeSet): boolean {
   return !!cs.layout && !cs.model && !cs.elements?.length && !cs.relations?.length && !cs.flows?.length && !cs.remove;
+}
+
+/** `addCodeRefs` as the server applies it: refs already present (same location) stay where they are. */
+function addRefs(refs: CodeRef[], added: CodeRef[]): CodeRef[] {
+  const out = [...refs];
+  for (const ref of added)
+    if (!out.some((r) => r.path === ref.path && r.symbol === ref.symbol && r.startLine === ref.startLine && r.endLine === ref.endLine)) out.push(ref);
+  return out;
 }
 
 function stripUndefined<T extends object>(obj: T): Partial<T> {

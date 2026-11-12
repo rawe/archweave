@@ -22,6 +22,12 @@ export function lineRange(start?: number, end?: number): string {
   return end && end !== start ? `${start}–${end}` : `${start}`;
 }
 
+/** "line 15" or "lines 9–12", for sentences about a range. */
+export function linesLabel(start?: number, end?: number): string {
+  if (!start) return '';
+  return end && end !== start ? `lines ${start}–${end}` : `line ${start}`;
+}
+
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const MOD = isMac ? '⌘' : 'Ctrl';
 

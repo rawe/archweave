@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CircleQuestionMark, Download, FileCode, LayoutGrid, Maximize, Moon, Plus, Rows3, Undo2, Workflow, Network, Braces, Text } from 'lucide-react';
+import { CircleQuestionMark, Download, FileCheck, FileCode, LayoutGrid, Maximize, Moon, Plus, Rows3, Undo2, Workflow, Network, Braces, Text } from 'lucide-react';
 import { fuzzyScore } from '../lib/fuzzy.ts';
 import { cx } from '../lib/dom.ts';
-import { MOD } from '../lib/format.ts';
+import { MOD, plural } from '../lib/format.ts';
 import { KindIcon } from '../lib/kinds.tsx';
 import { sendCanvasCommand } from '../lib/commands.ts';
 import { toggleTheme } from '../lib/theme.ts';
-import { getState, navigateToElement, openCode, openFlow, setOverlay, setPerspective, toggleNamesOnly, undo, useStore } from '../state/store.ts';
+import { checkLinks, sealLinks, unsealedLinks } from '../state/codeLinks.ts';
+import { getState, navigateToElement, openCode, openFlow, setOverlay, setPerspective, toast, toggleNamesOnly, undo, useStore } from '../state/store.ts';
 import { scopePath, useIndex } from '../state/selectors.ts';
 import { Keys } from './primitives.tsx';
 
@@ -28,6 +29,8 @@ export function Palette() {
   const index = useIndex();
   const model = useStore((s) => s.model);
   const perspective = useStore((s) => s.perspective);
+  const stale = useStore((s) => s.stale);
+  const unsealed = useMemo(() => unsealedLinks(model, stale), [model, stale]);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null);
@@ -70,13 +73,17 @@ export function Palette() {
       cmd('tidy', 'Tidy layout', <LayoutGrid {...ICON} />, () => sendCanvasCommand('tidy')),
       cmd('names-only', useStore.getState().namesOnly ? 'Show summaries on nodes' : 'Names only on nodes', <Text {...ICON} />, toggleNamesOnly),
       cmd('fit', 'Fit to screen', <Maximize {...ICON} />, () => sendCanvasCommand('fit'), '⇧ 1'),
+      cmd('check-links', 'Check code links', <FileCheck {...ICON} />, () =>
+        void checkLinks().then((stale) => (stale.length ? setOverlay('activity') : toast({ tone: 'info', text: 'Every code link matches the code' }))),
+      ),
+      ...(unsealed ? [cmd('seal-links', `Seal ${plural(unsealed, 'unchecked code link')}…`, <FileCheck {...ICON} />, () => void sealLinks())] : []),
       cmd('export', 'Export…', <Download {...ICON} />, () => setOverlay('export'), `${MOD} E`),
       cmd('theme', 'Toggle theme', <Moon {...ICON} />, toggleTheme, '⇧ T'),
       cmd('undo', 'Undo last change', <Undo2 {...ICON} />, () => void undo(), `${MOD} Z`),
       cmd('help', 'Shortcuts and help', <CircleQuestionMark {...ICON} />, () => setOverlay('help'), '?'),
     );
     return out;
-  }, [model, index, perspective]);
+  }, [model, index, perspective, unsealed]);
 
   const results = useMemo(() => {
     const q = query.trim();

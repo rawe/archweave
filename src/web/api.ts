@@ -5,6 +5,7 @@ import type {
   ChangeSet,
   FocusRequest,
   JournalEntry,
+  LineRange,
   Snapshot,
   StaleLink,
   UiState,
@@ -60,6 +61,15 @@ export interface CodeFile {
   truncated?: boolean;
 }
 
+/** What `POST /api/code/repair` did, and what still needs attention. */
+export interface RepairResult {
+  revision: number;
+  summary?: string;
+  repaired: { ownerType: StaleLink['ownerType']; ownerId: string; step?: number; path: string; symbol?: string; from: LineRange; to: LineRange }[];
+  sealed: number;
+  stale: StaleLink[];
+}
+
 export const api = {
   snapshot: () => request<Snapshot>('/api/snapshot'),
   applyChanges: (changeSet: ChangeSet) =>
@@ -74,6 +84,12 @@ export const api = {
       Array.isArray(r) ? r : (r?.files ?? []),
     ),
   stale: () => request<StaleLink[]>('/api/code/stale'),
+  /** Re-anchors moved links. Sealing unsealed links happens only with `seal: true`, as its own deliberate step. */
+  repairLinks: (opts: { scopeId?: string; seal?: boolean } = {}) =>
+    request<RepairResult>('/api/code/repair', {
+      method: 'POST',
+      body: JSON.stringify({ ...(opts.scopeId ? { scopeId: opts.scopeId } : {}), ...(opts.seal ? { seal: true } : {}) }),
+    }),
   exportUrl: (opts: { format: 'markdown' | 'json' | 'mermaid'; scope?: string; perspectives: string[]; code: boolean }) => {
     const params = new URLSearchParams({ format: opts.format, perspectives: opts.perspectives.join(','), code: String(opts.code) });
     if (opts.scope) params.set('scope', opts.scope);
