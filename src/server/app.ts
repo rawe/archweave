@@ -14,8 +14,6 @@ import { Session } from './session.ts';
 import { StaleLinks } from './stale.ts';
 import { Store } from './store.ts';
 
-export const VERSION = '0.1.0';
-
 export interface Tuning {
   debounceMs?: number;
   keepAliveMs?: number;
@@ -43,23 +41,23 @@ export async function createArchWeave(config: Config, tuning: Tuning = {}): Prom
   const repo = new Repo(config.repoDir, config.hostRepoPath);
   const persistence = new Persistence(config.dataDir, { debounceMs: tuning.debounceMs, defaultName: repo.name, log: tuning.log });
   const loaded = await persistence.load();
+  const stale = new StaleLinks(repo);
   let store: Store;
   try {
-    store = new Store(loaded);
+    store = new Store({ ...loaded, sealer: stale.sealer });
   } catch (error) {
     throw new Error(`Cannot load the model in ${config.dataDir}: ${(error as Error).message}\nFix model.json or layout.json and start again.`);
   }
   persistence.attach(store);
   const session = new Session(tuning.presenceTimeoutMs);
   const stopBroadcast = broadcastStoreChanges(store, session);
-  const stale = new StaleLinks(repo);
   let uiUrl = `http://localhost:${config.port}`;
 
   const app = new Hono();
   app.use('*', hostGuard(config));
   app.use('*', jsonBodyGuard);
-  app.route('/api', apiRoutes({ store, session, repo, stale, version: VERSION, hostRepoPath: config.hostRepoPath, keepAliveMs: tuning.keepAliveMs }));
-  app.all('/mcp', (c) => handleMcpRequest(c.req.raw, { store, session, repo, stale, version: VERSION, uiUrl }));
+  app.route('/api', apiRoutes({ store, session, repo, stale, version: config.version, hostRepoPath: config.hostRepoPath, keepAliveMs: tuning.keepAliveMs }));
+  app.all('/mcp', (c) => handleMcpRequest(c.req.raw, { store, session, repo, stale, version: config.version, uiUrl }));
   serveWeb(app, webDirCandidates(config.webDir));
 
   const close = async () => {

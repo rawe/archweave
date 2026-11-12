@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { serverVersion } from './version.ts';
 
 export interface Config {
   repoDir: string;
@@ -10,6 +11,8 @@ export interface Config {
   allowedHosts: string[];
   /** Directory of the built web UI; absent means "look in the default places". */
   webDir?: string;
+  /** Reported by the health check and the MCP server info. */
+  version: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
@@ -25,5 +28,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
       .map((h) => h.trim().toLowerCase())
       .filter(Boolean),
     webDir: env.ARCHWEAVE_WEB_DIR ? path.resolve(env.ARCHWEAVE_WEB_DIR) : undefined,
+    version: serverVersion(env),
   };
 }

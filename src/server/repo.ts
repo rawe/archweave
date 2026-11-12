@@ -76,10 +76,35 @@ export class Repo {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR') return undefined;
       throw error;
     }
+    return this.confine(relative, real);
+  }
+
+  private confine(relative: string, real: string): string {
     const inside = path.relative(this.root, real);
     if (inside.startsWith('..') || path.isAbsolute(inside)) throw new PathError(`${relative} resolves outside the repository`);
     if (inside.split(path.sep).includes('.git')) throw new PathError(`${relative} is inside .git`);
     return real;
+  }
+
+  /** Synchronous `resolve`, for the store's write path. */
+  resolveSync(relative: string): string | undefined {
+    const normalized = this.normalize(relative);
+    let real: string;
+    try {
+      real = fs.realpathSync(path.join(this.root, normalized));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR') return undefined;
+      throw error;
+    }
+    return this.confine(relative, real);
+  }
+
+  /** Synchronous `info`. */
+  infoSync(relative: string): FileInfo | undefined {
+    const absolute = this.resolveSync(relative);
+    if (!absolute) return undefined;
+    const stat = fs.statSync(absolute);
+    return { absolute, isFile: stat.isFile(), mtimeMs: stat.mtimeMs, size: stat.size };
   }
 
   async info(relative: string): Promise<FileInfo | undefined> {

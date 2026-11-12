@@ -120,20 +120,22 @@ export class ModelView {
     return [...out.values()].map((e) => ({ id: e.id, name: e.name, via: [...e.via].join(', ') }));
   }
 
-  usersOfData(dataId: string): { id: string; name: string; kind: string; via: string }[] {
-    const out: { id: string; name: string; kind: string; via: string }[] = [];
+  /** Non-data elements that touch a data structure, once each, with every way they use it. */
+  usersOfData(dataId: string): { id: string; name: string; kind: string; via: string[] }[] {
+    const out = new Map<string, { id: string; name: string; kind: string; via: string[] }>();
+    const add = (id: string, via: string) => {
+      const e = this.byId.get(id);
+      if (!e) return;
+      const entry = out.get(id) ?? { id: e.id, name: e.name, kind: e.kind, via: [] };
+      if (!entry.via.includes(via)) entry.via.push(via);
+      out.set(id, entry);
+    };
     for (const r of this.model.relations) {
       const otherId = r.to === dataId ? r.from : r.from === dataId ? r.to : undefined;
-      const other = otherId ? this.byId.get(otherId) : undefined;
-      if (other && other.kind !== 'data') out.push({ id: other.id, name: other.name, kind: other.kind, via: r.to === dataId ? r.kind : `${r.kind} (incoming)` });
-      if (r.dataIds.includes(dataId)) {
-        for (const end of [r.from, r.to]) {
-          const e = this.byId.get(end);
-          if (e) out.push({ id: e.id, name: e.name, kind: e.kind, via: `carried by ${r.id}` });
-        }
-      }
+      if (otherId && this.byId.get(otherId)?.kind !== 'data') add(otherId, r.to === dataId ? r.kind : `${r.kind} (incoming)`);
+      if (r.dataIds.includes(dataId)) for (const end of [r.from, r.to]) add(end, `carried by ${r.id}`);
     }
-    return out;
+    return [...out.values()];
   }
 
   fieldRefsTo(dataId: string): { id: string; name: string; field: string }[] {
@@ -277,7 +279,7 @@ export class ModelView {
   }
 
   /** Elements, relations and flow steps whose code refs touch any of these normalized repo-relative files or directories. */
-  findByCode(paths: string[]): Record<string, unknown> {
+  findByCode(paths: string[]): FoundByCode {
     const touches = (ref: CodeRef) => {
       const stored = normalizeCodePath(ref.path);
       if (stored === '.') return paths;
@@ -308,6 +310,13 @@ export class ModelView {
     );
     return { elements, relations, flowSteps, unmatchedPaths: paths.filter((p) => !matchedPaths.has(p)) };
   }
+}
+
+export interface FoundByCode {
+  elements: (CompactElement & { codeRefs: CodeRef[] })[];
+  relations: (Record<string, unknown> & { codeRefs: CodeRef[] })[];
+  flowSteps: { flowId: string; flowName: string; step: number; from: string; to: string; label: string; codeRefs: CodeRef[] }[];
+  unmatchedPaths: string[];
 }
 
 /** Drops undefined values, empty strings and empty arrays so tool output stays small. */

@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type ArchWeave, createArchWeave, type Running, VERSION } from '../src/server/app.ts';
+import { type ArchWeave, createArchWeave, type Running } from '../src/server/app.ts';
 import { configFromEnv } from '../src/server/config.ts';
+import { PACKAGE_VERSION, serverVersion } from '../src/server/version.ts';
 import { tempDir, tempRepo } from './helpers.ts';
 
 let archweave: ArchWeave;
@@ -68,11 +71,35 @@ describe('health check', () => {
     expect((await request('GET', '/', {})).text).toContain('web UI is not built');
     const before = await request('GET', '/api/health', {});
     expect(before.status).toBe(200);
-    expect(JSON.parse(before.text)).toEqual({ status: 'ok', version: VERSION, revision: archweave.store.currentRevision });
+    expect(JSON.parse(before.text)).toEqual({ status: 'ok', version: PACKAGE_VERSION, revision: archweave.store.currentRevision });
 
     const applied = await request('POST', '/api/changes', { 'content-type': 'application/json' }, JSON.stringify({ elements: [{ id: 'health-probe', kind: 'service', name: 'Probe' }] }));
     expect(applied.status).toBe(200);
     expect(JSON.parse((await request('GET', '/api/health', {})).text).revision).toBe(JSON.parse(applied.text).revision);
+  });
+});
+
+describe('version', () => {
+  it('comes from ARCHWEAVE_VERSION when set, else from package.json', async () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
+    expect(PACKAGE_VERSION).toBe(pkg.version);
+    expect(serverVersion({})).toBe(pkg.version);
+    expect(serverVersion({ ARCHWEAVE_VERSION: '' })).toBe(pkg.version);
+    expect(serverVersion({ ARCHWEAVE_VERSION: '1.2.3' })).toBe('1.2.3');
+
+    const config = { ...configFromEnv({ ARCHWEAVE_REPO_DIR: tempRepo({}), ARCHWEAVE_VERSION: '9.8.7-test' }), port: 0, webDir: tempDir('archweave-web-') };
+    const other = await createArchWeave(config, { debounceMs: 10, log: () => undefined });
+    const server = await other.listen();
+    try {
+      const health = await fetch(`${server.url}/api/health`).then((r) => r.json());
+      expect(health.version).toBe('9.8.7-test');
+      const client = new Client({ name: 'version-probe', version: '1.0.0' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${server.url}/mcp`)));
+      expect(client.getServerVersion()).toMatchObject({ name: 'archweave', version: '9.8.7-test' });
+      await client.close();
+    } finally {
+      await server.close();
+    }
   });
 });
 

@@ -28,6 +28,11 @@ export const ELEMENT_KINDS = [
 export const ElementKind = z.enum(ELEMENT_KINDS);
 export type ElementKind = z.infer<typeof ElementKind>;
 
+/** Kinds that stand for something outside the code: they never carry code refs and exist as soon as they are modeled. */
+export const CODELESS_KINDS: readonly ElementKind[] = ['actor', 'external', 'system'];
+/** Kinds whose built elements should link code; an agent, store or queue may live outside the repository. */
+export const CODE_EXPECTED_KINDS: readonly ElementKind[] = ['app', 'service', 'component', 'module', 'data'];
+
 /** planned = designed but not implemented yet; built = exists in code; deprecated = scheduled for removal. */
 export const Status = z.enum(['planned', 'built', 'deprecated']);
 export type Status = z.infer<typeof Status>;
@@ -42,6 +47,11 @@ export const CodeRef = z.object({
   startLine: z.number().int().positive().optional(),
   endLine: z.number().int().positive().optional(),
   note: z.string().optional(), // why this location matters
+  /**
+   * Seal of the text at startLine..endLine when the ref was written: computed by the server,
+   * never by clients (a sent digest is ignored). Lets the checker tell moved code from changed code.
+   */
+  digest: z.string().optional(),
 });
 export type CodeRef = z.infer<typeof CodeRef>;
 
@@ -174,8 +184,11 @@ function patchShape<S extends z.ZodRawShape>(shape: S) {
 // Additive list helpers. Order within one patch: the full list (if sent) replaces
 // the stored one, then removals apply, then additions and updates.
 
-/** Removes code refs with this path, or only the one with this path and symbol. */
-export const CodeRefSelector = z.object({ path: z.string().min(1), symbol: z.string().optional() });
+/**
+ * Removes code refs with this path, narrowed to the given symbol and/or start line
+ * (startLine picks one symbol-less ref among several to the same file).
+ */
+export const CodeRefSelector = z.object({ path: z.string().min(1), symbol: z.string().optional(), startLine: z.number().int().positive().optional() });
 export type CodeRefSelector = z.infer<typeof CodeRefSelector>;
 
 /** Upserts a field by name: given properties change, the rest stay. `ref: null` clears the ref. */
@@ -189,7 +202,10 @@ export const FieldPatch = z.object({
 export type FieldPatch = z.infer<typeof FieldPatch>;
 
 const codeRefHelpers = {
-  /** Appends code refs, skipping ones already present (same path, symbol and line range). */
+  /**
+   * Appends code refs. A ref already present (same path, symbol and line range) is not duplicated:
+   * it is re-sealed against the current file text and takes the sent `note`, if any.
+   */
   addCodeRefs: z.array(CodeRef).optional(),
   removeCodeRefs: z.array(CodeRefSelector).optional(),
 };
@@ -213,8 +229,8 @@ export type RelationPatch = z.infer<typeof RelationPatch>;
 export const StepIndex = z.number().int().min(0);
 
 export const FlowPatch = z.object(patchShape(Flow.shape)).extend({
-  /** Changes the given properties of existing steps. */
-  updateSteps: z.array(z.object(patchShape(FlowStep.shape)).extend({ index: StepIndex })).optional(),
+  /** Changes the given properties of existing steps; `addCodeRefs`/`removeCodeRefs` work as on elements. */
+  updateSteps: z.array(z.object(patchShape(FlowStep.shape)).extend({ index: StepIndex, ...codeRefHelpers })).optional(),
   /** Inserts steps before the step at `index`; `index` equal to the step count appends. */
   insertSteps: z.array(z.object({ index: StepIndex, step: FlowStep })).optional(),
   removeSteps: z.array(StepIndex).optional(),
@@ -292,13 +308,30 @@ export interface FocusRequest {
   message?: string;
 }
 
+/**
+ * Why a code ref no longer matches the repository.
+ * - symbol-outside-range: the symbol exists in the file but not within startLine..endLine.
+ * - moved (sealed refs only): the sealed text is gone from its lines but found verbatim elsewhere in the file; see `suggestion`.
+ * - changed (sealed refs only): the sealed text is gone and not found elsewhere; `suggestion`, when present, is where the symbol is now.
+ */
+export type StaleReason = 'missing-file' | 'line-out-of-range' | 'symbol-not-found' | 'symbol-outside-range' | 'moved' | 'changed';
+
+/** A suggested new line range for a moved or changed ref. */
+export interface LineRange {
+  startLine: number;
+  endLine: number;
+}
+
 /** A code reference whose target no longer matches the repository. */
 export interface StaleLink {
   ownerType: 'element' | 'relation' | 'flow';
   ownerId: string;
+  /** For flow refs: the 1-based step number that holds the ref. */
+  step?: number;
   ref: CodeRef;
-  /** symbol-outside-range: the symbol exists in the file but not within startLine..endLine. */
-  reason: 'missing-file' | 'line-out-of-range' | 'symbol-not-found' | 'symbol-outside-range';
+  reason: StaleReason;
+  /** For `moved` (always) and `changed` (when it can be determined): the range the ref should point at now. */
+  suggestion?: LineRange;
 }
 
 export interface Snapshot {

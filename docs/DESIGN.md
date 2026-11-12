@@ -65,7 +65,7 @@ Rules:
 - Upsert semantics as documented on `ElementPatch`. Missing ids are generated with `slugify` + `uniqueId`.
 - Referential integrity: `parentId`, relation endpoints, `dataIds`, field `ref`, flow step endpoints must exist after the change set is applied (so one change set can create an element and relate to it), and `dataIds` and field `ref`s must name elements of kind `data`. No containment cycles. A `dataIds` entry or field `ref` written in the change set that does not name a data structure is an error with a did-you-mean hint. Stored references broken by the change set (a removed element, an element that is no longer of kind `data`) are cleaned up with a warning.
 - Removing an element removes descendants, attached relations, flow steps that touch them, and their layout entries.
-- Elements created by the human default to `status: planned` unless given; elements created by the agent default to `built` when they carry at least one code ref, otherwise `planned`.
+- Elements created by the human default to `status: planned` unless given; elements created by the agent default to `built` when they carry at least one code ref or are of a kind that never has code (actor, external, system), otherwise `planned`.
 - A change set that only contains `layout` does not create a journal entry or an undo step and does not bump the model revision visibly to the agent (it still broadcasts to browsers).
 - Undo: the store keeps the last 50 model snapshots. `undo()` restores the previous one and journals it.
 
@@ -86,6 +86,7 @@ All JSON. Errors are `{ "error": string, "details"?: unknown }` with a 4xx or 5x
 | `GET /api/code/file?path=` | `{ path, exists, content?, lineCount?, language?, truncated? }`. Text files up to 1 MB. |
 | `GET /api/code/files?q=&limit=` | Repo file paths matching a fuzzy query, for the code link picker. Uses `git ls-files` when the repo is a Git checkout, otherwise a walk that skips `node_modules`, `.git`, `dist`, `build` and dot-directories. |
 | `GET /api/code/stale` | `StaleLink[]` |
+| `POST /api/code/repair` | Body `{ scopeId? }`. Re-anchors every code link whose text moved within its file and seals unsealed links that pass all checks. Returns `{ revision, summary?, repaired, sealed, stale }`. |
 | `GET /api/export?format=markdown\|json\|mermaid&scope=<id>&perspectives=structure,data,flows&code=true\|false` | Download. |
 
 Server-sent events (`event:` name, JSON `data:`):
@@ -98,7 +99,17 @@ Repository access is read-only and confined to `ARCHWEAVE_REPO_DIR`: resolve the
 
 ### Stale link detection
 
-`missing-file` when the path does not exist, `line-out-of-range` when `endLine` or `startLine` exceeds the file's line count, `symbol-not-found` when `symbol` is given and does not occur as a whole word in the file. Computed on demand with a short cache keyed by file mtime.
+Every code ref is checked against the repository: `missing-file` when the path does not exist, `line-out-of-range` when `endLine` or `startLine` exceeds the file's line count, `symbol-not-found` when `symbol` is given and does not occur as an identifier (whole word, not in quotes) in the file, `symbol-outside-range` when it occurs but not within `startLine..endLine`. Computed on demand with a cache keyed by file mtime and size.
+
+**Seals.** When a ref with a line range is written through the store (create or change, by anyone) and the file is readable, the server stores `digest`: SHA-256 over the linked lines, each trimmed of whitespace at both ends, joined by `\n`, first 12 base64url characters. Clients never send it; a sent digest is never stored. A ref sent back exactly as it was read (same location and digest, as the UI does when it resends a list) keeps its seal, so resending a list never accepts drift. Any other written ref is sealed afresh, and so is a ref re-sent in `addCodeRefs` (on elements, relations, and flow steps through `updateSteps`), which is how an agent accepts edited code as still right. A ref that is already stale when written comes back as a warning in the `ChangeResult`.
+
+**Checking a sealed ref** compares text. If the linked lines still match the seal, the checks above apply. Otherwise:
+- `moved`: a window of the same length with the same seal exists elsewhere in the file (nearest to the old start first; with a `symbol`, the window must contain it). `suggestion` is the new `{startLine, endLine}`.
+- `changed`: the text was edited. With a `symbol` that no longer occurs, the reason is `symbol-not-found`. With a symbol that still occurs in the old range there is no suggestion; elsewhere, `suggestion` keeps the old length and starts at the symbol's only declaration-like occurrence (`function x`, `class x`, `def x`, `const x`, …) or its only occurrence, else none. Without a symbol, a range past the end of the file is `line-out-of-range`.
+
+Refs without a seal (no line range, unreadable file, or written before sealing existed) keep the plain checks.
+
+**Repair** (`check_code_links` with `repair: true` as the agent, `POST /api/code/repair` with optional body `{ scopeId }` as the human) applies every `moved` suggestion across elements, relations and flow steps in one journaled change set ("Re-anchored 11 code links in src/server/routes.ts"), and seals refs that have a line range, no seal, and pass every check (the safe way to seal models from before sealing; plain reads never write). It returns `{ revision, summary?, repaired, sealed, stale }`, where `stale` is what still needs attention. `changed` refs are never repaired automatically.
 
 ### Export
 
@@ -125,9 +136,9 @@ Keep the surface small. Tool results are compact JSON text. Every tool that retu
 | `get_model` | `scopeId?`, `depth?` (default 2), `kinds?`, `includeData?` | Outline of the model: nested elements as `{id, kind, name, summary, status, children}` plus relations among them, flows by name, counts. |
 | `get_element` | `id` | One element in full: fields, code refs, notes, parent chain, children, relations in and out with the other end's name, flows it takes part in, data it touches. Works for relations ids too. |
 | `search` | `query`, `kinds?`, `limit?` | Elements whose name, summary, description, tags, field names or code paths match. |
-| `find_by_code` | `paths: string[]` | Elements, relations and flow steps whose code refs touch those files or directories. Call this after changing code to find what to update. |
+| `find_by_code` | `paths: string[]` | Elements, relations and flow steps whose code refs touch those files or directories, each ref with its current `check` (`ok`, `moved` with `suggestion`, `changed`, or another stale reason) and a count per check. Call this after changing code to find what to update and what needs re-anchoring. |
 | `apply_changes` | `ChangeSet` (as in `model.ts`) | `ChangeResult`. Applied as actor `agent`. `summary` is required here. |
-| `check_code_links` | `scopeId?` | Stale links, plus built elements without any code ref. |
+| `check_code_links` | `scopeId?`, `repair?` | Stale links (flow refs with their `step`), plus built elements of kinds that should have code (app, service, component, module, data) without any code ref. With `repair: true`: re-anchors moved links and seals unsealed ones that pass, in one change set, and returns what it changed and what still needs attention (see Stale link detection). |
 | `get_changes` | `since?` (revision), `actor?` | Journal entries. |
 | `focus_ui` | `elementIds`, `perspective?`, `scopeId?`, `flowId?`, `message?` | Asks the browser to show and highlight these elements. Returns whether a browser is connected. |
 | `export` | `format`, `scope?` | The export text. |

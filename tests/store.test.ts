@@ -62,6 +62,24 @@ describe('Store.apply', () => {
     expect(element(store, 'a3')?.status).toBe('deprecated');
   });
 
+  it('defaults agent-created actors, externals and systems to built: they never have code', () => {
+    const store = new Store();
+    store.apply(
+      {
+        elements: [
+          { id: 'user', kind: 'actor', name: 'User' },
+          { id: 'stripe', kind: 'external', name: 'Stripe' },
+          { id: 'shop', kind: 'system', name: 'Shop' },
+          { id: 'old', kind: 'external', name: 'Old', status: 'deprecated' },
+          { id: 'llm', kind: 'agent', name: 'Planner' },
+        ],
+      },
+      'agent',
+    );
+    store.apply({ elements: [{ id: 'buyer', kind: 'actor', name: 'Buyer' }] }, 'human');
+    expect(['user', 'stripe', 'shop', 'old', 'llm', 'buyer'].map((id) => element(store, id)?.status)).toEqual(['built', 'built', 'built', 'deprecated', 'planned', 'planned']);
+  });
+
   it('patches only the given fields of an existing element', () => {
     const store = shop();
     const result = store.apply({ elements: [{ id: 'api', name: 'Orders API' }] }, 'human');
@@ -310,6 +328,30 @@ describe('Store list helpers', () => {
     expect(() => store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/nope.ts' }] }] }, 'agent')).toThrowError(
       /no code ref with path `api\/nope\.ts`/,
     );
+  });
+
+  it('removes one symbol-less ref among several to the same file by its start line', () => {
+    const store = shop();
+    store.apply({ elements: [{ id: 'api', addCodeRefs: [{ path: 'api/routes.ts', startLine: 4 }, { path: 'api/routes.ts', startLine: 9 }, { path: 'api/routes.ts', symbol: 'routes', startLine: 4 }] }] }, 'agent');
+    store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/routes.ts', startLine: 9 }] }] }, 'agent');
+    expect(element(store, 'api')!.codeRefs).toEqual([
+      { path: 'api/main.ts' },
+      { path: 'api/routes.ts', startLine: 4 },
+      { path: 'api/routes.ts', symbol: 'routes', startLine: 4 },
+    ]);
+    store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/routes.ts', symbol: 'routes', startLine: 4 }] }] }, 'agent');
+    expect(element(store, 'api')!.codeRefs).toEqual([{ path: 'api/main.ts' }, { path: 'api/routes.ts', startLine: 4 }]);
+    expect(() => store.apply({ elements: [{ id: 'api', removeCodeRefs: [{ path: 'api/routes.ts', startLine: 5 }] }] }, 'agent')).toThrowError(
+      /no code ref with path `api\/routes\.ts` starting at line 5\. Its code refs are: `api\/main\.ts`, `api\/routes\.ts` lines 4\./,
+    );
+  });
+
+  it('adds and removes code refs of a flow step', () => {
+    const store = shop();
+    store.apply({ flows: [{ id: 'place-order', updateSteps: [{ index: 2, label: 'charge card', addCodeRefs: [{ path: 'api/billing.ts', startLine: 3 }, { path: 'api/billing.ts', startLine: 8 }] }] }] }, 'agent');
+    store.apply({ flows: [{ id: 'place-order', updateSteps: [{ index: 2, removeCodeRefs: [{ path: 'api/billing.ts', startLine: 3 }] }] }] }, 'agent');
+    const step = store.snapshot().model.flows[0]!.steps[2]!;
+    expect(step).toEqual({ from: 'checkout', to: 'billing', label: 'charge card', dataIds: [], codeRefs: [{ path: 'api/billing.ts', startLine: 8 }] });
   });
 
   it('upserts and removes fields by name', () => {

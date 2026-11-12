@@ -2,6 +2,7 @@ import { descendantsOf } from '../shared/projection.ts';
 import {
   type Actor,
   type ChangeResult,
+  CODELESS_KINDS,
   ChangeSet,
   type CodeRef,
   Element,
@@ -19,6 +20,7 @@ import {
   slugify,
   uniqueId,
 } from '../shared/model.ts';
+import type { CodeSealer } from './stale.ts';
 import { didYouMean } from './suggest.ts';
 
 export class ChangeError extends Error {
@@ -53,9 +55,12 @@ export function parseChangeSet(input: unknown): ChangeSet {
   throw new ChangeError(`Invalid change set:\n${issues.join('\n')}`, parsed.error.issues);
 }
 
-/** Applies a change set to copies of model and layout. Throws ChangeError, leaving the inputs untouched. */
-export function applyChangeSet(base: { model: Model; layout: Layout }, changes: ChangeSet, actor: Actor, now: Date): Applied {
-  return new Draft(base, actor, now).run(changes);
+/**
+ * Applies a change set to copies of model and layout. Throws ChangeError, leaving the inputs untouched.
+ * With a `sealer`, code refs written by the change set are sealed against the repository (see `CodeRef.digest`).
+ */
+export function applyChangeSet(base: { model: Model; layout: Layout }, changes: ChangeSet, actor: Actor, now: Date, sealer?: CodeSealer): Applied {
+  return new Draft(base, actor, now, sealer).run(changes);
 }
 
 /** An id the caller wrote into this change set that must name a data structure. */
@@ -68,6 +73,7 @@ interface SuppliedDataRef {
 const ELEMENT_HELPERS = new Set(['id', 'addNotes', 'resolveNotes', 'addCodeRefs', 'removeCodeRefs', 'setFields', 'removeFields']);
 const RELATION_HELPERS = new Set(['addCodeRefs', 'removeCodeRefs']);
 const FLOW_HELPERS = new Set(['updateSteps', 'insertSteps', 'removeSteps']);
+const STEP_HELPERS = new Set(['index', 'addCodeRefs', 'removeCodeRefs']);
 
 class Draft {
   private model: Model;
@@ -91,6 +97,7 @@ class Draft {
     base: { model: Model; layout: Layout },
     private actor: Actor,
     private now: Date,
+    private sealer?: CodeSealer,
   ) {
     this.model = structuredClone(base.model);
     this.layout = structuredClone(base.layout);
@@ -230,7 +237,7 @@ class Draft {
     }
     next.id = id;
     next.notes = this.applyNotes(where, next.notes as Note[], patch);
-    next.codeRefs = this.applyCodeRefs(where, (next.codeRefs as CodeRef[] | undefined) ?? [], patch);
+    next.codeRefs = this.applyCodeRefs(where, existing?.codeRefs ?? [], (next.codeRefs as CodeRef[] | undefined) ?? [], patch);
     next.fields = this.applyFields(where, (next.fields as Field[] | undefined) ?? [], patch);
     for (const field of [...(patch.fields ?? []), ...(patch.setFields ?? [])]) {
       if (field.ref) this.supplied.push({ where: `element \`${id}\` field \`${field.name}\``, id: field.ref, what: 'ref' });
@@ -251,6 +258,7 @@ class Draft {
 
   private defaultStatus(patch: ElementPatch): Element['status'] {
     if (this.actor === 'human') return 'planned';
+    if (patch.kind && CODELESS_KINDS.includes(patch.kind)) return 'built';
     return patch.codeRefs?.length || patch.addCodeRefs?.length ? 'built' : 'planned';
   }
 
@@ -272,24 +280,48 @@ class Draft {
     return result;
   }
 
-  /** Normalizes paths, then applies `removeCodeRefs` and `addCodeRefs` (de-duplicated). */
-  private applyCodeRefs(where: string, refs: CodeRef[], patch: Pick<ElementPatch, 'addCodeRefs' | 'removeCodeRefs'>): CodeRef[] {
-    let result = refs.map(normalizeRef);
+  /**
+   * Normalizes paths, then applies `removeCodeRefs` and `addCodeRefs` (de-duplicated).
+   * Seals: a sent ref that matches a stored one in location and digest (as when a client sends back the list
+   * it read, or a ref from before sealing without a digest) is unchanged and keeps its seal, so resending a list
+   * never accepts drift by accident. Every other ref, and any ref sent in `addCodeRefs`, is sealed afresh;
+   * a sent digest is never stored.
+   */
+  private applyCodeRefs(where: string, previous: CodeRef[], refs: CodeRef[], patch: Pick<ElementPatch, 'addCodeRefs' | 'removeCodeRefs'>): CodeRef[] {
+    const unchanged = new Set(previous.map((ref) => sealKey(normalizeRef(ref))));
+    let result = refs.map((ref) => {
+      const normalized = normalizeRef(ref);
+      return unchanged.has(sealKey(normalized)) ? normalized : this.sealed(where, normalized);
+    });
     for (const selector of patch.removeCodeRefs ?? []) {
       const path = normalizeCodePath(selector.path);
-      const kept = result.filter((r) => !(r.path === path && (selector.symbol === undefined || r.symbol === selector.symbol)));
+      const matches = (r: CodeRef) =>
+        r.path === path && (selector.symbol === undefined || r.symbol === selector.symbol) && (selector.startLine === undefined || r.startLine === selector.startLine);
+      const kept = result.filter((r) => !matches(r));
       if (kept.length === result.length) {
-        const known = result.map((r) => `\`${r.path}\`${r.symbol ? ` (\`${r.symbol}\`)` : ''}`);
+        const known = result.map(describeRef);
         const hint = known.length ? ` Its code refs are: ${known.join(', ')}.` : ' It has no code refs.';
-        this.errors.push(`${where}: removeCodeRefs: no code ref with path \`${path}\`${selector.symbol !== undefined ? ` and symbol \`${selector.symbol}\`` : ''}.${hint}`);
+        const narrowed = [selector.symbol !== undefined ? ` and symbol \`${selector.symbol}\`` : '', selector.startLine !== undefined ? ` starting at line ${selector.startLine}` : ''].join('');
+        this.errors.push(`${where}: removeCodeRefs: no code ref with path \`${path}\`${narrowed}.${hint}`);
       }
       result = kept;
     }
     for (const ref of patch.addCodeRefs ?? []) {
       const normalized = normalizeRef(ref);
-      if (!result.some((r) => sameRef(r, normalized))) result.push(normalized);
+      const at = result.findIndex((r) => sameRef(r, normalized));
+      if (at < 0) result.push(this.sealed(where, normalized));
+      else result[at] = this.sealed(where, { ...result[at]!, ...(normalized.note !== undefined ? { note: normalized.note } : {}) });
     }
     return result;
+  }
+
+  /** The ref with a fresh seal (when the repository is known and the range is readable), warning when it is stale already. */
+  private sealed(where: string, ref: CodeRef): CodeRef {
+    const { digest: _ignored, ...bare } = ref;
+    if (!this.sealer) return bare;
+    const seal = this.sealer(bare);
+    if (seal.reason) this.warnings.push(`${where}: code ref ${describeRef(bare)}: ${staleWarning(bare, seal.reason)}`);
+    return seal.digest ? { ...bare, digest: seal.digest } : bare;
   }
 
   /** Applies `removeFields`, then `setFields` (upsert by name). */
@@ -329,7 +361,7 @@ class Draft {
     }
     const id = existing?.id ?? patch.id ?? uniqueId(slugify(`${patch.from}-${patch.kind ?? 'uses'}-${patch.to}`), new Set(this.relations.keys()));
     const next: Record<string, unknown> = { ...existing, ...withoutKeys(definedOnly(patch), RELATION_HELPERS), id };
-    next.codeRefs = this.applyCodeRefs(where, (next.codeRefs as CodeRef[] | undefined) ?? [], patch);
+    next.codeRefs = this.applyCodeRefs(where, existing?.codeRefs ?? [], (next.codeRefs as CodeRef[] | undefined) ?? [], patch);
     for (const dataId of patch.dataIds ?? []) this.supplied.push({ where: `relation \`${id}\``, id: dataId, what: 'data id' });
     const parsed = Relation.safeParse(next);
     if (!parsed.success) {
@@ -357,7 +389,9 @@ class Draft {
     }
     const id = existing?.id ?? patch.id ?? uniqueId(slugify(patch.name!), new Set(this.flows.keys()));
     const suppliedSteps = new Set<object>(patch.steps ?? []);
-    const steps = this.applySteps(where, patch.steps ?? existing?.steps ?? [], patch, suppliedSteps);
+    const previousRefs = existing?.steps.flatMap((s) => s.codeRefs) ?? [];
+    const settled = new Set<object>();
+    const steps = this.applySteps(where, patch.steps ?? existing?.steps ?? [], patch, suppliedSteps, previousRefs, settled);
     steps.forEach((step, i) => {
       if (!suppliedSteps.has(step)) return;
       for (const dataId of step.dataIds ?? []) this.supplied.push({ where: `flow \`${id}\` step ${i + 1}`, id: dataId, what: 'data id' });
@@ -367,7 +401,12 @@ class Draft {
       this.errors.push(`${where}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
       return;
     }
-    const flow = dropUndefined({ ...parsed.data, steps: parsed.data.steps.map((s) => dropUndefined({ ...s, codeRefs: s.codeRefs.map(normalizeRef) })) });
+    const flow = dropUndefined({
+      ...parsed.data,
+      steps: parsed.data.steps.map((s, i) =>
+        dropUndefined({ ...s, codeRefs: settled.has(steps[i]!) ? s.codeRefs : this.applyCodeRefs(`flow \`${id}\` step ${i + 1}`, previousRefs, s.codeRefs, {}) }),
+      ),
+    });
     if (existing && JSON.stringify(existing) === JSON.stringify(flow)) return;
     this.flows.set(id, flow);
     this.touched.flows.add(id);
@@ -379,7 +418,7 @@ class Draft {
    * Applies `updateSteps`, `removeSteps` and `insertSteps`. All indices are 0-based and
    * refer to `steps` as given; steps whose data ids come from the patch go into `supplied`.
    */
-  private applySteps(where: string, steps: FlowStep[], patch: FlowPatch, supplied: Set<object>): FlowStep[] {
+  private applySteps(where: string, steps: FlowStep[], patch: FlowPatch, supplied: Set<object>, previousRefs: CodeRef[], settled: Set<object>): FlowStep[] {
     const count = steps.length;
     const inRange = (op: string, index: number, max: number) => {
       if (index <= max) return true;
@@ -395,9 +434,14 @@ class Draft {
         this.errors.push(`${where}: index ${update.index} is both updated and removed.`);
         continue;
       }
-      const { index, ...changes } = update;
-      const merged = { ...slots[index]!, ...definedOnly(changes) } as FlowStep;
+      const { index } = update;
+      const changes = withoutKeys(definedOnly(update), STEP_HELPERS);
+      const merged = { ...slots[index]!, ...changes } as FlowStep;
       if (changes.dataIds) supplied.add(merged);
+      if (update.addCodeRefs || update.removeCodeRefs) {
+        merged.codeRefs = this.applyCodeRefs(`${where} step ${index + 1}`, previousRefs, merged.codeRefs ?? [], update);
+        settled.add(merged);
+      }
       slots[index] = merged;
     }
     for (const index of removed) if (inRange('removeSteps', index, count - 1)) slots[index] = undefined;
@@ -599,6 +643,35 @@ function normalizeRef(ref: CodeRef): CodeRef {
 
 function sameRef(a: CodeRef, b: CodeRef): boolean {
   return a.path === b.path && a.symbol === b.symbol && a.startLine === b.startLine && a.endLine === b.endLine;
+}
+
+/** What a ref points at and its seal, for recognizing a resent ref as the stored one. */
+function sealKey(ref: CodeRef): string {
+  return JSON.stringify([ref.path, ref.symbol ?? null, ref.startLine ?? null, ref.endLine ?? null, ref.digest ?? null]);
+}
+
+function describeRef(ref: CodeRef): string {
+  const lines = ref.startLine ? ` lines ${lineSpan(ref)}` : '';
+  return `\`${ref.path}\`${ref.symbol ? ` (\`${ref.symbol}\`)` : ''}${lines}`;
+}
+
+function lineSpan(ref: CodeRef): string {
+  return ref.endLine && ref.endLine !== ref.startLine ? `${ref.startLine}–${ref.endLine}` : `${ref.startLine}`;
+}
+
+function staleWarning(ref: CodeRef, reason: string): string {
+  switch (reason) {
+    case 'missing-file':
+      return 'the file does not exist (yet).';
+    case 'line-out-of-range':
+      return 'the line range is past the end of the file.';
+    case 'symbol-not-found':
+      return `\`${ref.symbol}\` does not occur in the file as an identifier.`;
+    case 'symbol-outside-range':
+      return `\`${ref.symbol}\` does not occur within lines ${lineSpan(ref)}. A symbol must literally occur in its range; for things registered by a string name (routes, tool names), give the line range without a symbol.`;
+    default:
+      return reason;
+  }
 }
 
 function describePath(input: unknown, path: readonly PropertyKey[]): string {

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { PERSPECTIVES, type Perspective } from '../shared/model.ts';
 import { EXPORT_FORMATS, ExportError, type ExportFormat, exportModel } from './export.ts';
+import { repairCodeLinks } from './repair.ts';
 import { PathError, type Repo } from './repo.ts';
 import type { ServerEvent, Session } from './session.ts';
 import type { StaleLinks } from './stale.ts';
@@ -105,6 +106,15 @@ export function apiRoutes(deps: ApiDeps): Hono {
 
   api.get('/code/stale', async (c) => c.json(await stale.check(store.snapshot().model)));
 
+  /** Re-anchors moved code refs and seals unsealed ones that check out, as the human. Body (optional): `{ scopeId? }`. */
+  api.post('/code/repair', async (c) => {
+    const body = hasJsonBody(c.req.raw) ? await jsonBody(c.req.raw) : {};
+    const scopeId = body && typeof body === 'object' ? (body as { scopeId?: unknown }).scopeId : undefined;
+    if (scopeId !== undefined && typeof scopeId !== 'string') throw new BadRequest('`scopeId` must be an element id');
+    if (scopeId && !store.snapshot().model.elements.some((e) => e.id === scopeId)) throw new BadRequest(`Unknown element \`${scopeId}\``);
+    return c.json(await repairCodeLinks(store, stale, { actor: 'human', scopeId: scopeId || undefined }));
+  });
+
   api.get('/export', (c) => {
     const format = (c.req.query('format') ?? 'markdown') as ExportFormat;
     if (!EXPORT_FORMATS.includes(format)) throw new BadRequest(`format must be one of ${EXPORT_FORMATS.join(', ')}`);
@@ -138,6 +148,11 @@ export function broadcastStoreChanges(store: Store, session: Session): () => voi
 }
 
 class BadRequest extends Error {}
+
+function hasJsonBody(request: Request): boolean {
+  const length = request.headers.get('content-length');
+  return request.headers.has('transfer-encoding') || (length !== null && length !== '0');
+}
 
 async function jsonBody(request: Request): Promise<unknown> {
   try {

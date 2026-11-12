@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 const server = process.env.ARCHWEAVE_DEV_SERVER ?? 'http://127.0.0.1:4317';
@@ -10,6 +10,9 @@ export default defineConfig({
     outDir: 'dist/web',
     emptyOutDir: true,
     chunkSizeWarningLimit: 2500,
+  },
+  test: {
+    include: ['tests/**/*.test.ts'],
   },
   server: {
     port: 5173,

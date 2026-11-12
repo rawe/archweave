@@ -9,8 +9,8 @@ These are the server's MCP instructions, the same text as \`get_guide\` returns.
 
 - The human says "this", "here", "the selected", or refers to something they are looking at: call \`get_context\` first. It returns the selection fully expanded, the scope they are in, open notes and what they changed since you last looked.
 - Getting oriented: \`get_model\` (outline, two levels by default), then \`get_element\` for detail and \`search\` to find things by name, field or file.
-- After changing code: \`find_by_code\` with the paths you touched, then update what it returns with \`apply_changes\`.
-- Before finishing a task that touched code: \`check_code_links\` to repair refs you broke.
+- After changing code: \`find_by_code\` with the paths you touched. It shows what is linked there and the \`check\` of every ref (ok, moved, changed, …). Then \`check_code_links\` with \`repair: true\` re-anchors the moved ones in one step; look at the changed ones yourself (see "Keep code links working"), and update the model with \`apply_changes\`.
+- Before finishing a task that touched code: \`check_code_links\` (with \`repair: true\`) so no link is left stale.
 - To point at something while you explain it: \`focus_ui\`.
 
 ## Model in levels
@@ -29,8 +29,18 @@ These are the server's MCP instructions, the same text as \`get_guide\` returns.
 ## Link the code
 
 - Every built element carries \`codeRefs\` to the files that best show it: the entry point, the main class, the schema, the route table. Three precise refs beat twenty. Add \`symbol\` and \`startLine\`/\`endLine\` when you know them, and a short \`note\` when the reason is not obvious.
+- A \`symbol\` must literally occur, as an identifier, within \`startLine\`..\`endLine\` (or on \`startLine\` when there is no \`endLine\`); otherwise the ref is reported stale. For things registered by a string name, such as routes ("/api/orders") or tool names, give the line range without a \`symbol\`.
 - Paths are repo-relative with forward slashes ("src/orders/service.ts"). A ref may point at a directory for a module.
-- Status: \`built\` exists in code, \`planned\` is designed but not implemented, \`deprecated\` is on its way out. Elements you create without code refs start as \`planned\`; with code refs they start as \`built\`. Set \`status\` explicitly when that default is wrong.
+- Link a location once, where it explains the most. A relation or flow step needs its own ref only when it shows something its elements' refs do not.
+- Status: \`built\` exists in code, \`planned\` is designed but not implemented, \`deprecated\` is on its way out. Elements you create without code refs start as \`planned\`; with code refs they start as \`built\`, and so do actors, externals and systems, which have no code. Set \`status\` explicitly when that default is wrong.
+
+## Keep code links working
+
+- When you write a ref with a line range, the server seals it: it stores a \`digest\` of the linked lines. You never send or edit the digest.
+- Checks of a sealed ref compare text, not just line numbers: \`moved\` means the same lines now sit elsewhere in the file (\`suggestion\` has the new range); \`changed\` means the linked code itself was edited.
+- After editing code: \`find_by_code\` for the touched files, then \`check_code_links\` with \`repair: true\`. It re-anchors every moved ref on elements, relations and flow steps in one journaled change, and seals refs from before sealing that still check out. Do not recompute line numbers by hand.
+- Changed refs are never repaired for you. Read the code: if the ref is wrong, send the corrected ref (\`removeCodeRefs\` plus \`addCodeRefs\`; a new range is sealed afresh). If it is still right as it is, re-send it unchanged in \`addCodeRefs\` (for a flow step: \`updateSteps\` with \`addCodeRefs\`); that re-seals it.
+- To remove one of several refs to the same file, narrow \`removeCodeRefs\` with \`symbol\` and/or \`startLine\`.
 
 ## Data structures
 
@@ -62,6 +72,6 @@ These are the server's MCP instructions, the same text as \`get_guide\` returns.
 - Modeling stays human-directed. Reflect the code, answer notes and carry out requests; do not restructure or rename on your own initiative.
 - Planned elements and open human notes are design intent. Implement toward them; do not delete or reshape them without being asked. When the code cannot match the plan, add a note (\`addNotes\`) saying why.
 - Open notes from the human are requests. When you have handled one, resolve it with \`resolveNotes\` and, if useful, reply with a note of your own.
-- After changing code: \`find_by_code\` for the touched paths, update the affected elements, set \`status\`, fix code refs, resolve notes you handled.
+- After changing code: \`find_by_code\` for the touched paths, \`check_code_links\` with \`repair: true\`, then update the affected elements, set \`status\`, fix changed code refs, resolve notes you handled.
 - Use \`focus_ui\` to show the human what you are talking about, with a short \`message\`.
 `;

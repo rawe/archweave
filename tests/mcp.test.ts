@@ -204,6 +204,26 @@ describe('find_by_code', () => {
   });
 });
 
+describe('check_code_links', () => {
+  it('lists built elements without code only for kinds that should have code', async () => {
+    const { call, store } = await harness();
+    store.apply({ elements: [{ id: 'planner', kind: 'agent', name: 'Planner', status: 'built' }, { id: 'events', kind: 'queue', name: 'Events', status: 'built' }] }, 'human');
+    const report = await call('check_code_links');
+    expect(report.builtWithoutCode.map((e: any) => e.id).sort()).toEqual(['api', 'api-config', 'invoice', 'order', 'orders-db-adapter', 'web']);
+  });
+});
+
+describe('get_element', () => {
+  it('lists each user of a data structure once, with every way it uses it', async () => {
+    const { call } = await harness();
+    const order = await call('get_element', { id: 'order' });
+    expect(order.usedBy).toEqual([
+      { id: 'web', name: 'Web app', kind: 'app', via: ['carried by web-calls-orders'] },
+      { id: 'orders', name: 'Orders', kind: 'component', via: ['carried by web-calls-orders', 'produces'] },
+    ]);
+  });
+});
+
 describe('guide', () => {
   it('answers the questions agents ran into', async () => {
     const { call, client } = await harness();
@@ -217,5 +237,20 @@ describe('guide', () => {
     expect(guide).toMatch(/free text/);
     expect(guide).toMatch(/more than about a dozen/);
     expect(guide).toMatch(/addCodeRefs/);
+    expect(guide).toMatch(/A `symbol` must literally occur, as an identifier, within `startLine`\.\.`endLine`/);
+    expect(guide).toMatch(/registered by a string name, such as routes .* give the line range without a `symbol`/);
+    expect(guide).toMatch(/`check_code_links` with `repair: true` re-anchors/);
+    expect(guide).toMatch(/re-send it unchanged in `addCodeRefs`/);
+  });
+
+  it('documents repair, the new reasons and the narrower selectors in the tool descriptions', async () => {
+    const { client } = await harness();
+    const { tools } = await client.listTools();
+    const describe = (name: string) => tools.find((t) => t.name === name)!;
+    expect(describe('check_code_links').description).toMatch(/moved.*suggestion[\s\S]*changed[\s\S]*repair: true/);
+    expect(Object.keys((describe('check_code_links').inputSchema as any).properties)).toEqual(['scopeId', 'repair']);
+    expect(describe('find_by_code').description).toMatch(/`check` is "ok", "moved"/);
+    expect(describe('apply_changes').description).toMatch(/\[\{path, symbol\?, startLine\?\}\]/);
+    expect(describe('apply_changes').description).toMatch(/actor, external, system/);
   });
 });

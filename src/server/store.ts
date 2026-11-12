@@ -1,6 +1,7 @@
 import { type Actor, type ChangeResult, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
 import { applyChangeSet, describeChanges, diffModels, parseChangeSet } from './changes.ts';
 import { integrityProblems } from './integrity.ts';
+import type { CodeSealer } from './stale.ts';
 
 export { ChangeError } from './changes.ts';
 
@@ -18,6 +19,8 @@ export interface StoreOptions {
   layout?: unknown;
   journal?: JournalEntry[];
   now?: () => Date;
+  /** Seals code refs written by change sets against the repository. Without it refs are stored unsealed. */
+  sealer?: CodeSealer;
 }
 
 interface UndoStep {
@@ -41,6 +44,7 @@ export class Store {
   private undoStack: UndoStep[] = [];
   private listeners = new Set<(change: StoreChange) => void>();
   private now: () => Date;
+  private sealer?: CodeSealer;
 
   constructor(options: StoreOptions = {}) {
     this.model = parseModel(options.model ?? {});
@@ -48,6 +52,7 @@ export class Store {
     this.entries = (options.journal ?? []).slice(-JOURNAL_CAP);
     this.revision = this.entries.reduce((max, e) => Math.max(max, e.revision), 0);
     this.now = options.now ?? (() => new Date());
+    this.sealer = options.sealer;
   }
 
   snapshot(): Snapshot {
@@ -65,7 +70,7 @@ export class Store {
   /** Validates and applies a change set atomically. Throws ChangeError with an actionable message. */
   apply(input: unknown, actor: Actor): ChangeResult {
     const changes = parseChangeSet(input);
-    const applied = applyChangeSet({ model: this.model, layout: this.layout }, changes, actor, this.now());
+    const applied = applyChangeSet({ model: this.model, layout: this.layout }, changes, actor, this.now(), this.sealer);
     const { created, updated, removed, warnings } = applied;
     if (!applied.modelChanged && !applied.layoutChanged) {
       return { revision: this.revision, created, updated, removed, warnings };
@@ -84,7 +89,7 @@ export class Store {
 
   /** Validates a change set and returns what `apply` would return, without applying it. */
   preview(input: unknown, actor: Actor): ChangeResult {
-    const applied = applyChangeSet({ model: this.model, layout: this.layout }, parseChangeSet(input), actor, this.now());
+    const applied = applyChangeSet({ model: this.model, layout: this.layout }, parseChangeSet(input), actor, this.now(), this.sealer);
     const { created, updated, removed, warnings } = applied;
     return { revision: this.revision + (applied.modelChanged ? 1 : 0), created, updated, removed, warnings };
   }
