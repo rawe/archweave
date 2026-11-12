@@ -2944,9 +2944,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "apply",
-          "startLine": 270,
-          "endLine": 276,
-          "digest": "-P-59-YPkUaO"
+          "startLine": 273,
+          "digest": "Bre-YQ40axNw"
         }
       ]
     },
@@ -3508,10 +3507,10 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 270,
-              "endLine": 276,
+              "symbol": "apply",
+              "startLine": 273,
               "note": "apply_changes handler",
-              "digest": "-P-59-YPkUaO"
+              "digest": "Bre-YQ40axNw"
             }
           ]
         },
@@ -4047,8 +4046,8 @@
             {
               "path": "src/web/inspector/ElementInspector.tsx",
               "symbol": "commit",
-              "startLine": 26,
-              "digest": "JbzAuEmvcma6"
+              "startLine": 27,
+              "digest": "5SPnc0AMSGO-"
             }
           ]
         },
@@ -4163,10 +4162,10 @@
           "codeRefs": [
             {
               "path": "src/web/state/bootstrap.ts",
-              "symbol": "uiStateOf",
-              "startLine": 59,
-              "endLine": 69,
-              "digest": "Nz-Ojlc9GJJ8"
+              "symbol": "reportUi",
+              "startLine": 24,
+              "note": "reports the view when it changes and when the event stream reconnects",
+              "digest": "W8wm55G7qmSL"
             }
           ]
         },
