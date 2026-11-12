@@ -104,8 +104,8 @@
           "path": "src/web/chrome/Palette.tsx",
           "symbol": "Palette",
           "startLine": 28,
-          "endLine": 171,
-          "digest": "F9hhkt3aP3dX"
+          "endLine": 174,
+          "digest": "-uPuLVew8dbT"
         }
       ]
     },
@@ -349,9 +349,8 @@
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
           "startLine": 270,
-          "endLine": 324,
-          "note": "check_code_links registration and handler",
-          "digest": "x7EByk_l9ZNH"
+          "endLine": 330,
+          "digest": "uSAg2swDFxZy"
         }
       ],
       "format": "json (MCP tool result)",
@@ -564,18 +563,18 @@
       "codeRefs": [
         {
           "path": "src/server/repair.ts",
-          "symbol": "repairCodeLinks",
-          "startLine": 52,
-          "endLine": 84,
-          "digest": "CQHpasOGx74h"
+          "symbol": "repairChangeSet",
+          "startLine": 91,
+          "endLine": 122,
+          "note": "One patch per owner: relocated list plus addCodeRefs to seal",
+          "digest": "FE7kyNjPoqPI"
         },
         {
           "path": "src/server/repair.ts",
-          "symbol": "repairChangeSet",
-          "startLine": 90,
-          "endLine": 121,
-          "note": "One patch per owner: relocated list plus addCodeRefs to seal",
-          "digest": "FE7kyNjPoqPI"
+          "symbol": "repairCodeLinks",
+          "startLine": 52,
+          "endLine": 85,
+          "digest": "l5NIeu_0km2r"
         }
       ]
     },
@@ -900,8 +899,8 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 118,
-          "endLine": 138,
+          "startLine": 119,
+          "endLine": 139,
           "note": "GET /api/export",
           "digest": "xZM0deML25NB"
         }
@@ -1269,8 +1268,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "registerTool",
-          "startLine": 343,
-          "endLine": 381,
+          "startLine": 349,
+          "endLine": 387,
           "note": "focus_ui registration and handler",
           "digest": "l0bvSLFVxYsm"
         }
@@ -1313,8 +1312,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "visibleIn",
-          "startLine": 406,
-          "endLine": 423,
+          "startLine": 412,
+          "endLine": 429,
           "digest": "3c0q7AcL94TC"
         },
         {
@@ -1721,8 +1720,8 @@
           "path": "src/server/mcp.ts",
           "symbol": "createMcpServer",
           "startLine": 72,
-          "endLine": 403,
-          "digest": "cRho4RCIKiYB"
+          "endLine": 409,
+          "digest": "vdjjp-JaBHKI"
         }
       ]
     },
@@ -2198,16 +2197,9 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "symbol": "apiRoutes",
-          "startLine": 23,
-          "endLine": 143,
-          "digest": "-UlrrC3ayuhT"
-        },
-        {
-          "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
-          "startLine": 146,
-          "endLine": 148,
+          "startLine": 147,
+          "endLine": 149,
           "digest": "--ZMkrEFJAIj"
         },
         {
@@ -2216,6 +2208,13 @@
           "endLine": 94,
           "note": "GET /api/events SSE stream",
           "digest": "qz5HUbaNB6tN"
+        },
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "apiRoutes",
+          "startLine": 23,
+          "endLine": 144,
+          "digest": "DeCeNacTlcXe"
         }
       ]
     },
@@ -2305,8 +2304,8 @@
         {
           "path": "src/web/api.ts",
           "symbol": "EventHandlers",
-          "startLine": 96,
-          "endLine": 101,
+          "startLine": 100,
+          "endLine": 105,
           "note": "Browser side handlers",
           "digest": "dg7MAgjghC82"
         }
@@ -2405,16 +2404,9 @@
       "codeRefs": [
         {
           "path": "src/web/api.ts",
-          "symbol": "api",
-          "startLine": 73,
-          "endLine": 94,
-          "digest": "Nk3qKdSdhG6f"
-        },
-        {
-          "path": "src/web/api.ts",
           "symbol": "subscribe",
-          "startLine": 104,
-          "endLine": 117,
+          "startLine": 108,
+          "endLine": 121,
           "digest": "KB8zsNzshVqe"
         },
         {
@@ -2423,6 +2415,13 @@
           "startLine": 7,
           "endLine": 94,
           "digest": "I6q_yPR7R3XJ"
+        },
+        {
+          "path": "src/web/api.ts",
+          "symbol": "api",
+          "startLine": 73,
+          "endLine": 98,
+          "digest": "cfJp764KQZhb"
         }
       ]
     },
@@ -2835,7 +2834,7 @@
         {
           "path": "src/server/repair.ts",
           "symbol": "apply",
-          "startLine": 67,
+          "startLine": 68,
           "digest": "xU8TfQECtKcy"
         }
       ]
@@ -3019,9 +3018,9 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "repairCodeLinks",
-          "startLine": 299,
-          "endLine": 309,
-          "digest": "YLkO-hGnttXa"
+          "startLine": 303,
+          "endLine": 313,
+          "digest": "nA1UUDbYbibs"
         }
       ]
     },
@@ -3094,7 +3093,7 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "publish",
-          "startLine": 373,
+          "startLine": 379,
           "digest": "QnX7ev4upoLi"
         }
       ]
@@ -3108,8 +3107,8 @@
         {
           "path": "src/server/mcp.ts",
           "symbol": "visibleIn",
-          "startLine": 406,
-          "endLine": 423,
+          "startLine": 412,
+          "endLine": 429,
           "digest": "3c0q7AcL94TC"
         }
       ]
@@ -3329,9 +3328,8 @@
         {
           "path": "src/server/routes.ts",
           "startLine": 109,
-          "endLine": 116,
-          "note": "POST /api/code/repair",
-          "digest": "Jgod1Jfe5CAv"
+          "endLine": 117,
+          "digest": "Ka7aGf63Xydw"
         }
       ]
     },
@@ -3348,8 +3346,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "exportModel",
-          "startLine": 118,
-          "endLine": 138,
+          "startLine": 119,
+          "endLine": 139,
           "digest": "xZM0deML25NB"
         }
       ]
@@ -3408,8 +3406,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
-          "startLine": 146,
-          "endLine": 148,
+          "startLine": 147,
+          "endLine": 149,
           "digest": "--ZMkrEFJAIj"
         }
       ]
@@ -3565,8 +3563,8 @@
         {
           "path": "src/web/api.ts",
           "symbol": "subscribe",
-          "startLine": 104,
-          "endLine": 117,
+          "startLine": 108,
+          "endLine": 121,
           "digest": "KB8zsNzshVqe"
         }
       ]
@@ -3682,8 +3680,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "broadcastStoreChanges",
-              "startLine": 146,
-              "endLine": 148,
+              "startLine": 147,
+              "endLine": 149,
               "digest": "--ZMkrEFJAIj"
             }
           ]
@@ -3817,8 +3815,8 @@
           "codeRefs": [
             {
               "path": "src/server/mcp.ts",
-              "startLine": 358,
-              "endLine": 380,
+              "startLine": 364,
+              "endLine": 386,
               "note": "focus_ui handler: validates ids, publishes",
               "digest": "6kPHV6bzUKBs"
             }
@@ -4097,8 +4095,8 @@
             {
               "path": "src/web/api.ts",
               "symbol": "exportUrl",
-              "startLine": 89,
-              "endLine": 93,
+              "startLine": 93,
+              "endLine": 97,
               "digest": "h1c0XnBmjRYj"
             }
           ]
@@ -4150,8 +4148,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "exportModel",
-              "startLine": 118,
-              "endLine": 138,
+              "startLine": 119,
+              "endLine": 139,
               "digest": "xZM0deML25NB"
             }
           ]
