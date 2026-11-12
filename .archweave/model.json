@@ -46,16 +46,10 @@
       "parentId": "rest-api",
       "codeRefs": [
         {
-          "path": "src/web/api.ts",
-          "symbol": "request",
-          "startLine": 23,
-          "endLine": 38
-        },
-        {
           "path": "src/server/routes.ts",
           "symbol": "onError",
-          "startLine": 24,
-          "endLine": 29,
+          "startLine": 26,
+          "endLine": 31,
           "note": "Maps errors to status codes"
         }
       ],
@@ -798,15 +792,9 @@
       "parentId": "exporter",
       "codeRefs": [
         {
-          "path": "src/server/export.ts",
-          "symbol": "ExportOptions",
-          "startLine": 8,
-          "endLine": 13
-        },
-        {
           "path": "src/server/routes.ts",
-          "startLine": 103,
-          "endLine": 123,
+          "startLine": 108,
+          "endLine": 128,
           "note": "GET /api/export"
         }
       ],
@@ -1317,6 +1305,50 @@
           "name": "includeData",
           "type": "boolean",
           "optional": true
+        }
+      ]
+    },
+    {
+      "id": "health-check",
+      "kind": "component",
+      "name": "Health check",
+      "summary": "Tells Docker and people whether the server is up and its model is loaded.",
+      "description": "`GET /api/health` returns `{ status: 'ok', version, revision }`: the server version (same as the MCP server reports) and the current model revision.\n\nIt is an `/api` route, registered before the static UI handler, so it answers whether or not the web UI is built. The Host guard still applies; the Docker `HEALTHCHECK` calls `http://127.0.0.1:$PORT/api/health` from inside the container with `node -e fetch(...)`, so the runtime image needs no curl or wget.",
+      "parentId": "archweave-server",
+      "technology": "Hono route, Docker HEALTHCHECK",
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 33,
+          "endLine": 34,
+          "note": "GET /api/health"
+        },
+        {
+          "path": "Dockerfile",
+          "startLine": 33,
+          "endLine": 34,
+          "note": "HEALTHCHECK probing /api/health"
+        },
+        {
+          "path": "src/server/app.ts",
+          "symbol": "VERSION",
+          "startLine": 17,
+          "note": "Version reported by the health check"
+        }
+      ],
+      "notes": [
+        {
+          "id": "note-1",
+          "text": "Add GET /api/health returning status, version and the model revision. Use it for a HEALTHCHECK in the Dockerfile. Must work without the web UI being built.",
+          "author": "human",
+          "createdAt": "2026-11-12T22:18:17.499Z",
+          "resolved": true
+        },
+        {
+          "id": "note-2",
+          "text": "Done: GET /api/health returns { status: 'ok', version, revision } and is served without the web UI built (covered in tests/app.test.ts). The Dockerfile HEALTHCHECK probes it every 30s with node's fetch. Version is the server's VERSION constant (0.1.0), not the ARCHWEAVE_VERSION build arg, matching what the MCP server reports.",
+          "author": "agent",
+          "createdAt": "2026-11-12T22:20:28.368Z"
         }
       ]
     },
@@ -1983,19 +2015,19 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "apiRoutes",
-          "startLine": 20,
-          "endLine": 128
-        },
-        {
-          "path": "src/server/routes.ts",
-          "symbol": "broadcastStoreChanges",
-          "startLine": 131,
+          "startLine": 22,
           "endLine": 133
         },
         {
           "path": "src/server/routes.ts",
-          "startLine": 62,
-          "endLine": 88,
+          "symbol": "broadcastStoreChanges",
+          "startLine": 136,
+          "endLine": 138
+        },
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 67,
+          "endLine": 93,
           "note": "GET /api/events SSE stream"
         }
       ]
@@ -2215,15 +2247,9 @@
       "codeRefs": [
         {
           "path": "src/server/routes.ts",
-          "startLine": 45,
-          "endLine": 51,
+          "startLine": 50,
+          "endLine": 56,
           "note": "GET /api/session"
-        },
-        {
-          "path": "src/web/api.ts",
-          "symbol": "SessionInfo",
-          "startLine": 48,
-          "endLine": 52
         }
       ],
       "format": "json",
@@ -2590,6 +2616,21 @@
       "label": "reads data structures, selects focus"
     },
     {
+      "id": "developer-calls-health-check",
+      "from": "developer",
+      "to": "health-check",
+      "kind": "calls",
+      "label": "checks liveness",
+      "technology": "HTTP GET /api/health",
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "startLine": 34,
+          "note": "GET /api/health"
+        }
+      ]
+    },
+    {
       "id": "developer-uses-coding-agent",
       "from": "developer",
       "to": "coding-agent",
@@ -2651,6 +2692,20 @@
       "to": "ui-state",
       "kind": "references",
       "label": "built from"
+    },
+    {
+      "id": "health-check-reads-model-store",
+      "from": "health-check",
+      "to": "model-store",
+      "kind": "reads",
+      "label": "reads the model revision",
+      "codeRefs": [
+        {
+          "path": "src/server/routes.ts",
+          "symbol": "currentRevision",
+          "startLine": 34
+        }
+      ]
     },
     {
       "id": "inspector-calls-server-sync",
@@ -2966,7 +3021,7 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "check",
-          "startLine": 101
+          "startLine": 106
         }
       ]
     },
@@ -2983,8 +3038,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "exportModel",
-          "startLine": 103,
-          "endLine": 123
+          "startLine": 108,
+          "endLine": 128
         }
       ]
     },
@@ -3004,7 +3059,7 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "apply",
-          "startLine": 33
+          "startLine": 38
         }
       ]
     },
@@ -3021,8 +3076,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "readFile",
-          "startLine": 90,
-          "endLine": 99
+          "startLine": 95,
+          "endLine": 104
         }
       ]
     },
@@ -3040,8 +3095,8 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "broadcastStoreChanges",
-          "startLine": 131,
-          "endLine": 133
+          "startLine": 136,
+          "endLine": 138
         }
       ]
     },
@@ -3058,14 +3113,14 @@
         {
           "path": "src/server/routes.ts",
           "symbol": "setUi",
-          "startLine": 53,
-          "endLine": 60
+          "startLine": 58,
+          "endLine": 65
         },
         {
           "path": "src/server/routes.ts",
           "symbol": "subscribe",
-          "startLine": 62,
-          "endLine": 88
+          "startLine": 67,
+          "endLine": 93
         }
       ]
     },
@@ -3301,8 +3356,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "broadcastStoreChanges",
-              "startLine": 131,
-              "endLine": 133
+              "startLine": 136,
+              "endLine": 138
             }
           ]
         },
@@ -3333,8 +3388,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "writeSSE",
-              "startLine": 62,
-              "endLine": 88
+              "startLine": 67,
+              "endLine": 93
             }
           ]
         },
@@ -3678,8 +3733,8 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "exportModel",
-              "startLine": 103,
-              "endLine": 123
+              "startLine": 108,
+              "endLine": 128
             }
           ]
         }
@@ -3747,7 +3802,7 @@
             {
               "path": "src/server/routes.ts",
               "symbol": "apply",
-              "startLine": 33
+              "startLine": 38
             }
           ]
         },

@@ -75,6 +75,7 @@ All JSON. Errors are `{ "error": string, "details"?: unknown }` with a 4xx or 5x
 
 | Method and path | Purpose |
 | --- | --- |
+| `GET /api/health` | `{ status: 'ok', version, revision }`. Liveness for the Docker `HEALTHCHECK`; works without the web UI built. |
 | `GET /api/snapshot` | `Snapshot` |
 | `POST /api/changes` | Body `ChangeSet`. Applied as actor `human`. Returns `ChangeResult`. |
 | `POST /api/undo` | Undo the last model change. Returns `{ revision }` or 409 when nothing to undo. |

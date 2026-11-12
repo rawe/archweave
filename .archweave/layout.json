@@ -1,0 +1,120 @@
+{
+  "structure:archweave-server": {
+    "code-link-checker": {
+      "x": 660,
+      "y": 698
+    },
+    "coding-agent": {
+      "x": 57,
+      "y": 742
+    },
+    "data-dir": {
+      "x": 1114,
+      "y": 44
+    },
+    "developer": {
+      "x": 77,
+      "y": 263
+    },
+    "exporter": {
+      "x": 660,
+      "y": 541
+    },
+    "health-check": {
+      "x": 434,
+      "y": 197
+    },
+    "mcp-endpoint": {
+      "x": 434,
+      "y": 647
+    },
+    "mcp-shell-client": {
+      "x": 40,
+      "y": 688
+    },
+    "model-store": {
+      "x": 660,
+      "y": 187
+    },
+    "modeled-repo": {
+      "x": 1114,
+      "y": 756
+    },
+    "persistence": {
+      "x": 434,
+      "y": 40
+    },
+    "repo-access": {
+      "x": 886,
+      "y": 638
+    },
+    "rest-api": {
+      "x": 434,
+      "y": 352
+    },
+    "server-host": {
+      "x": 208,
+      "y": 66
+    },
+    "session": {
+      "x": 660,
+      "y": 384
+    },
+    "shared-contract": {
+      "x": 1114,
+      "y": 625
+    },
+    "web-ui": {
+      "x": 1114,
+      "y": 109
+    }
+  },
+  "structure:model-store": {
+    "change-engine": {
+      "x": 40,
+      "y": 40
+    },
+    "integrity-check": {
+      "x": 40,
+      "y": 197
+    },
+    "shared-contract": {
+      "x": 268,
+      "y": 92
+    }
+  },
+  "structure:root": {
+    "archweave-server": {
+      "x": 718,
+      "y": 153
+    },
+    "coding-agent": {
+      "x": 266,
+      "y": 214
+    },
+    "data-dir": {
+      "x": 944,
+      "y": 364
+    },
+    "developer": {
+      "x": 40,
+      "y": 258
+    },
+    "mcp-shell-client": {
+      "x": 492,
+      "y": 214
+    },
+    "modeled-repo": {
+      "x": 944,
+      "y": 204
+    },
+    "shared-contract": {
+      "x": 944,
+      "y": 57
+    },
+    "web-ui": {
+      "x": 492,
+      "y": 40
+    }
+  }
+}

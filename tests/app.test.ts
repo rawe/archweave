@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type ArchWeave, createArchWeave, type Running } from '../src/server/app.ts';
+import { type ArchWeave, createArchWeave, type Running, VERSION } from '../src/server/app.ts';
 import { configFromEnv } from '../src/server/config.ts';
 import { tempDir, tempRepo } from './helpers.ts';
 
@@ -60,6 +60,19 @@ describe('request guard', () => {
 
     expect((await request('POST', '/api/changes', { 'content-type': 'application/json; charset=utf-8' }, change)).status).toBe(200);
     expect((await request('POST', '/api/undo', {})).status).toBe(200);
+  });
+});
+
+describe('health check', () => {
+  it('reports status, version and model revision before the web UI is built', async () => {
+    expect((await request('GET', '/', {})).text).toContain('web UI is not built');
+    const before = await request('GET', '/api/health', {});
+    expect(before.status).toBe(200);
+    expect(JSON.parse(before.text)).toEqual({ status: 'ok', version: VERSION, revision: archweave.store.currentRevision });
+
+    const applied = await request('POST', '/api/changes', { 'content-type': 'application/json' }, JSON.stringify({ elements: [{ id: 'health-probe', kind: 'service', name: 'Probe' }] }));
+    expect(applied.status).toBe(200);
+    expect(JSON.parse((await request('GET', '/api/health', {})).text).revision).toBe(JSON.parse(applied.text).revision);
   });
 });
 

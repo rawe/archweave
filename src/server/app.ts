@@ -58,7 +58,7 @@ export async function createArchWeave(config: Config, tuning: Tuning = {}): Prom
   const app = new Hono();
   app.use('*', hostGuard(config));
   app.use('*', jsonBodyGuard);
-  app.route('/api', apiRoutes({ store, session, repo, stale, hostRepoPath: config.hostRepoPath, keepAliveMs: tuning.keepAliveMs }));
+  app.route('/api', apiRoutes({ store, session, repo, stale, version: VERSION, hostRepoPath: config.hostRepoPath, keepAliveMs: tuning.keepAliveMs }));
   app.all('/mcp', (c) => handleMcpRequest(c.req.raw, { store, session, repo, stale, version: VERSION, uiUrl }));
   serveWeb(app, webDirCandidates(config.webDir));
 

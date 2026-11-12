@@ -12,6 +12,8 @@ export interface ApiDeps {
   session: Session;
   repo: Repo;
   stale: StaleLinks;
+  /** Server version reported by the health check. */
+  version: string;
   hostRepoPath?: string;
   keepAliveMs?: number;
 }
@@ -27,6 +29,9 @@ export function apiRoutes(deps: ApiDeps): Hono {
     console.error(error);
     return c.json({ error: 'Internal server error' }, 500);
   });
+
+  /** Liveness for Docker and people. Answers from the store alone, so it works without the web UI. */
+  api.get('/health', (c) => c.json({ status: 'ok', version: deps.version, revision: store.currentRevision }));
 
   api.get('/snapshot', (c) => c.json(store.snapshot()));
 
