@@ -1,7 +1,7 @@
 /** Connects the store to the server and to the address bar. Called once from main. */
 import type { Perspective, UiState } from '../../shared/model.ts';
 import { api, subscribe } from '../api.ts';
-import { getState, handleFocusRequest, receiveSnapshot, setAgent, setState, useStore, type State } from './store.ts';
+import { dataFocusId, getState, handleFocusRequest, receiveSnapshot, setAgent, setState, useStore, type State } from './store.ts';
 
 export function bootstrap(): () => void {
   const fromHash = parseHash(location.hash);
@@ -47,8 +47,10 @@ export function bootstrap(): () => void {
 
   const unsubscribeEvents = subscribe({
     snapshot: ({ snapshot, entry }) => {
+      const previous = getState().server?.revision;
       receiveSnapshot(snapshot, entry);
-      if (entry || snapshot.revision !== getState().revision) refreshStale();
+      // A disk reload bumps the revision without a journal entry; links may have changed with it.
+      if (entry || snapshot.revision !== previous) refreshStale();
       if (entry?.actor === 'agent') setState((s) => ({ agentEverSeen: true, agent: { ...s.agent, connected: true } }));
     },
     agent: setAgent,
@@ -79,7 +81,7 @@ export function bootstrap(): () => void {
   const onPop = () => {
     const parsed = parseHash(location.hash);
     lastHash = location.hash;
-    if (parsed) setState({ ...parsed, selection: { elementIds: [], relationIds: [] }, stepIndex: null });
+    if (parsed) setState({ selection: { elementIds: [], relationIds: [] }, stepIndex: null, ...parsed });
   };
   window.addEventListener('popstate', onPop);
 
@@ -104,7 +106,9 @@ function uiStateOf(s: State): UiState {
 function hashOf(s: State): string {
   if (s.perspective === 'structure') return s.scopeId ? `#/structure/${s.scopeId}` : '#/structure';
   if (s.perspective === 'flows') return s.flowId ? `#/flows/${s.flowId}` : '#/flows';
-  return '#/data';
+  // The focused structure is part of the address, so Back returns to the previous focus.
+  const focus = dataFocusId(s);
+  return focus ? `#/data/${focus}` : '#/data';
 }
 
 function parseHash(hash: string): Partial<State> | null {
@@ -115,5 +119,6 @@ function parseHash(hash: string): Partial<State> | null {
     perspective: p,
     scopeId: p === 'structure' && id ? decodeURIComponent(id) : undefined,
     flowId: p === 'flows' && id ? decodeURIComponent(id) : undefined,
+    ...(p === 'data' ? { selection: { elementIds: id ? [decodeURIComponent(id)] : [], relationIds: [] } } : {}),
   };
 }

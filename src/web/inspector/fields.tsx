@@ -18,7 +18,7 @@ export function InlineText({
   onFocused,
   allowEmpty = true,
   maxLength,
-  multiline,
+  multiline = true,
 }: {
   value: string;
   onCommit: (value: string) => void;
@@ -30,21 +30,35 @@ export function InlineText({
   onFocused?: () => void;
   allowEmpty?: boolean;
   maxLength?: number;
-  /** Wraps like text and grows with it; Enter still commits. */
+  /** Wraps like text and grows with it (the default, so nothing is ever cut off); Enter still commits. */
   multiline?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const editing = useRef(false);
+  /** True once the human typed; only then does blur commit, so an agent edit made meanwhile survives. */
+  const dirty = useRef(false);
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!multiline || !el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight + 2}px`;
+    fitHeight(el);
   }, [draft, multiline]);
+  // The height depends on the width, which settles after layout (flex rows, the inspector sliding in).
+  useEffect(() => {
+    const el = ref.current;
+    if (!multiline || !el || typeof ResizeObserver === 'undefined') return;
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fitHeight(el);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [multiline]);
 
   useEffect(() => {
-    if (!editing.current) setDraft(value);
+    if (!editing.current || !dirty.current) setDraft(value);
   }, [value]);
 
   useEffect(() => {
@@ -60,8 +74,10 @@ export function InlineText({
 
   const commit = () => {
     editing.current = false;
+    const changed = dirty.current;
+    dirty.current = false;
     const next = draft.trim();
-    if (next === value.trim()) return setDraft(value);
+    if (!changed || next === value.trim()) return setDraft(value);
     if (!next && !allowEmpty) return setDraft(value);
     onCommit(next);
   };
@@ -78,7 +94,10 @@ export function InlineText({
       spellCheck={!mono}
       rows={multiline ? 1 : undefined}
       onFocus={() => (editing.current = true)}
-      onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(multiline ? e.target.value.replace(/\n/g, ' ') : e.target.value)}
+      onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        dirty.current = true;
+        setDraft(multiline ? e.target.value.replace(/\n/g, ' ') : e.target.value);
+      }}
       onBlur={commit}
       onKeyDown={(e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (e.key === 'Enter') {
@@ -88,12 +107,18 @@ export function InlineText({
           e.preventDefault();
           e.stopPropagation();
           editing.current = false;
+          dirty.current = false;
           setDraft(value);
           requestAnimationFrame(() => ref.current?.blur());
         }
       }}
     />
   );
+}
+
+function fitHeight(el: HTMLTextAreaElement | HTMLInputElement) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight + 2}px`;
 }
 
 /** A textarea that grows with its content; commits on blur or Mod+Enter. */
@@ -118,9 +143,10 @@ export function GrowingText({
 }) {
   const [draft, setDraft] = useState(value);
   const editing = useRef(false);
+  const dirty = useRef(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!editing.current) setDraft(value);
+    if (!editing.current || !dirty.current) setDraft(value);
   }, [value]);
   useLayoutEffect(() => {
     const el = ref.current;
@@ -137,7 +163,10 @@ export function GrowingText({
   }, [autoFocus]);
   const commit = () => {
     editing.current = false;
-    if (draft !== value) onCommit(draft);
+    const changed = dirty.current;
+    dirty.current = false;
+    if (changed && draft !== value) onCommit(draft);
+    else setDraft(value);
     onDone?.();
   };
   return (
@@ -150,7 +179,10 @@ export function GrowingText({
       aria-label={label}
       spellCheck={!mono}
       onFocus={() => (editing.current = true)}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => {
+        dirty.current = true;
+        setDraft(e.target.value);
+      }}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -160,6 +192,7 @@ export function GrowingText({
           e.preventDefault();
           e.stopPropagation();
           editing.current = false;
+          dirty.current = false;
           setDraft(value);
           requestAnimationFrame(() => {
             ref.current?.blur();
@@ -168,6 +201,7 @@ export function GrowingText({
           e.preventDefault();
           const el = e.currentTarget;
           const { selectionStart: a, selectionEnd: b } = el;
+          dirty.current = true;
           setDraft(draft.slice(0, a) + '  ' + draft.slice(b));
           requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
         }

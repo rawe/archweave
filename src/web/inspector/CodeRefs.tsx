@@ -9,11 +9,19 @@ import { cx } from '../lib/dom.ts';
 import { dirName, fileName, lineRange } from '../lib/format.ts';
 import { Section } from './fields.tsx';
 
-const REASON: Record<StaleLink['reason'], string> = {
+const REASON: Record<string, string> = {
   'missing-file': 'File no longer exists',
   'line-out-of-range': 'Lines are past the end of the file',
   'symbol-not-found': 'Symbol not found in the file',
+  'symbol-outside-range': 'Symbol is outside the linked lines',
 };
+
+/** Readable text for a stale reason, including reasons this UI does not know yet. */
+export function staleReason(reason: StaleLink['reason'] | string): string {
+  if (REASON[reason]) return REASON[reason]!;
+  const words = String(reason || 'stale link').replace(/[-_]+/g, ' ').trim();
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
 
 function sameRef(a: CodeRef, b: CodeRef) {
   return a.path === b.path && a.symbol === b.symbol && a.startLine === b.startLine && a.endLine === b.endLine;
@@ -64,7 +72,7 @@ export function CodeRefs({ ownerId, refs, onChange }: { ownerId: string; refs: C
                         {ref.startLine ? `L${lineRange(ref.startLine, ref.endLine)}` : ''}
                       </span>
                     )}
-                    {problem && <span className="code-ref-problem">{REASON[problem.reason]}</span>}
+                    {problem && <span className="code-ref-problem">{staleReason(problem.reason)}</span>}
                     {ref.note && !problem && <span className="code-ref-note">{ref.note}</span>}
                   </span>
                 </button>

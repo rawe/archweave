@@ -33,7 +33,8 @@ export function useZoomClass(wrapper: RefObject<HTMLElement | null>): ZoomClass 
 /** Everything on the canvas, framed for an image export. */
 export async function captureFlow<N extends Node, E extends Edge>(rf: ReactFlowInstance<N, E>, wrapper: HTMLElement | null) {
   const viewportEl = wrapper?.querySelector<HTMLElement>('.react-flow__viewport');
-  const nodes = rf.getNodes();
+  // Nodes still waiting for a position are invisible and must not stretch the frame.
+  const nodes = rf.getNodes().filter((n) => !n.hidden && !String(n.className ?? '').includes('is-unplaced'));
   if (!viewportEl || !nodes.length) return null;
   const bounds = rf.getNodesBounds(nodes);
   const pad = 48;
@@ -65,4 +66,28 @@ export function fitOptions(opts: { rail?: boolean; duration?: number } = {}): Fi
     maxZoom: 1.2,
     duration: opts.duration ?? 0,
   };
+}
+
+/**
+ * The part of a canvas wrapper not covered by floating chrome, in wrapper
+ * coordinates: below the top bar, clear of the rail, the inspector (a side
+ * panel on wide screens, a bottom sheet on narrow ones) and the code drawer.
+ */
+export function freeArea(wrapper: HTMLElement | null, withInspector: boolean, margin = 0, rail = false): { left: number; top: number; right: number; bottom: number } {
+  const box = wrapper?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  const wide = window.innerWidth >= 900;
+  const app = document.querySelector<HTMLElement>('.app');
+  const drawer = app ? parseFloat(getComputedStyle(app).getPropertyValue('--drawer-h')) || 0 : 0;
+  let left = rail && wide ? 244 : 16;
+  let right = box.width - 16;
+  let bottom = box.height - 16 - drawer;
+  const top = 72;
+  if (withInspector) {
+    const panel = document.querySelector<HTMLElement>('.inspector:not(.is-closing)');
+    const r = panel?.getBoundingClientRect();
+    if (wide) right = Math.min(right, r ? r.left - box.left - 16 : box.width - 404);
+    else bottom = Math.min(bottom, r ? r.top - box.top - 12 : box.height * 0.42);
+  }
+  if (right - left < 160) left = Math.max(0, right - 160);
+  return { left: left + margin, top: top + margin, right: right - margin, bottom: Math.max(top + 80, bottom - margin) };
 }

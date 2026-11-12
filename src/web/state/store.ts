@@ -51,6 +51,26 @@ export interface Selection {
 const EMPTY_SELECTION: Selection = { elementIds: [], relationIds: [] };
 const EMPTY_MODEL: Model = { version: 1, name: 'Architecture', description: '', elements: [], relations: [], flows: [] };
 const UNSEEN_KEY = 'archweave.unseen';
+const NAMES_ONLY_KEY = 'archweave.namesOnly';
+
+function loadFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Hides summaries on structure nodes, remembered per browser. Positions are laid out for full nodes, so toggling never makes nodes overlap. */
+export function toggleNamesOnly() {
+  const namesOnly = !useStore.getState().namesOnly;
+  useStore.setState({ namesOnly });
+  try {
+    localStorage.setItem(NAMES_ONLY_KEY, namesOnly ? '1' : '0');
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export interface State {
   loaded: boolean;
@@ -89,7 +109,10 @@ export interface State {
   toasts: Toast[];
   humanChanged: boolean;
   dataRailOpen: boolean;
-  showDataUsers: boolean;
+  /** The data rail's filter; it also narrows the catalog. */
+  dataFilter: string;
+  /** View option: structure nodes show names without summaries. */
+  namesOnly: boolean;
 }
 
 export const useStore = create<State>(() => ({
@@ -117,7 +140,8 @@ export const useStore = create<State>(() => ({
   toasts: [],
   humanChanged: false,
   dataRailOpen: typeof window === 'undefined' || window.innerWidth >= 900,
-  showDataUsers: false,
+  dataFilter: '',
+  namesOnly: loadFlag(NAMES_ONLY_KEY),
 }));
 
 const set = useStore.setState;
@@ -131,6 +155,17 @@ function recompute(server: Snapshot | null, pending: Pending[]) {
   let doc = { model: server?.model ?? EMPTY_MODEL, layout: server?.layout ?? {} };
   for (const p of pending) doc = applyLocal(doc, p.cs);
   return { model: doc.model, layout: doc.layout, revision: server?.revision ?? 0 };
+}
+
+/**
+ * Recomputes the local document from the server snapshot plus pending changes
+ * and drops view references (scope, selection, flow) to things that vanished,
+ * which can happen on any recomputation, not only on a new snapshot.
+ */
+function setDocument(server: Snapshot | null, pending: Pending[], extra: Partial<State> = {}) {
+  const before = get().model;
+  set({ ...extra, pending, ...recompute(server, pending) });
+  sanitizeView(before);
 }
 
 function prune(pending: Pending[], serverRevision: number): Pending[] {
@@ -148,26 +183,23 @@ export function receiveSnapshot(snapshot: Snapshot, entry?: JournalEntry) {
     state.pending.map((p) => (p.ackRevision !== undefined ? { ...p, snapshotsSinceAck: p.snapshotsSinceAck + 1 } : p)),
     snapshot.revision,
   );
-  const next: Partial<State> = { server: snapshot, pending, loaded: true, ...recompute(snapshot, pending) };
+  const next: Partial<State> = { server: snapshot, loaded: true };
   if (entry && !state.journal.some((j) => j.revision === entry.revision && j.at === entry.at)) {
     next.journal = [...state.journal, entry].slice(-500);
   }
-  set(next);
-  sanitizeView(state.model);
+  setDocument(snapshot, pending, next);
   if (entry?.actor === 'agent') onAgentEntry(entry);
 }
 
 /** Applies a change locally right away and sends it to the server. */
 export async function commit(cs: ChangeSet): Promise<boolean> {
   const p: Pending = { seq: ++seq, cs, layoutOnly: isLayoutOnly(cs), snapshotsSinceAck: 0 };
-  const pending = [...get().pending, p];
-  set({ pending, ...recompute(get().server, pending), ...(p.layoutOnly ? {} : { humanChanged: true }) });
+  setDocument(get().server, [...get().pending, p], p.layoutOnly ? {} : { humanChanged: true });
   try {
     const result = await api.applyChanges(cs);
     const current = get();
     const acked = current.pending.map((q) => (q.seq === p.seq ? { ...q, ackRevision: result.revision } : q));
-    const pruned = prune(acked, current.server?.revision ?? 0);
-    set({ pending: pruned, ...recompute(current.server, pruned) });
+    setDocument(current.server, prune(acked, current.server?.revision ?? 0));
     if (p.layoutOnly) setTimeout(() => dropPending(p.seq), 3000);
     for (const warning of result.warnings ?? []) toast({ tone: 'info', text: warning });
     return true;
@@ -181,8 +213,7 @@ export async function commit(cs: ChangeSet): Promise<boolean> {
 function dropPending(target: number) {
   const current = get();
   if (!current.pending.some((q) => q.seq === target)) return;
-  const pending = current.pending.filter((q) => q.seq !== target);
-  set({ pending, ...recompute(current.server, pending) });
+  setDocument(current.server, current.pending.filter((q) => q.seq !== target));
 }
 
 export async function undo() {
@@ -348,7 +379,9 @@ export function navigateToRelation(id: string) {
   const from = model.elements.find((e) => e.id === rel.from);
   const to = model.elements.find((e) => e.id === rel.to);
   if (from?.kind === 'data' && to?.kind === 'data') {
-    set((s) => ({ perspective: 'data', selection: { elementIds: [], relationIds: [id] }, revealToken: s.revealToken + 1 }));
+    // The data perspective shows a relation between structures by focusing its source.
+    set((s) => ({ perspective: 'data', selection: { elementIds: [rel.from], relationIds: [] }, revealToken: s.revealToken + 1, stepIndex: null }));
+    markSeen([id]);
     return;
   }
   // Show it at the scope of the source's parent; the projection lifts it if needed.
@@ -423,6 +456,11 @@ function sanitizeView(before: Model) {
   }
   if (s.code?.ownerId && !ids.has(s.code.ownerId) && !relIds.has(s.code.ownerId)) patch.code = { ...s.code, ownerId: undefined };
   if (Object.keys(patch).length) set(patch);
+}
+
+/** The structure the data perspective is focused on: the first selected data element, if any. */
+export function dataFocusId(s: Pick<State, 'selection' | 'model'>): string | undefined {
+  return s.selection.elementIds.find((id) => s.model.elements.some((e) => e.id === id && e.kind === 'data'));
 }
 
 export function openCode(view: CodeView) {

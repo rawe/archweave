@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CircleQuestionMark, Download, FileCode, LayoutGrid, Maximize, Moon, Plus, Rows3, Undo2, Workflow, Network, Braces } from 'lucide-react';
+import { CircleQuestionMark, Download, FileCode, LayoutGrid, Maximize, Moon, Plus, Rows3, Undo2, Workflow, Network, Braces, Text } from 'lucide-react';
 import { fuzzyScore } from '../lib/fuzzy.ts';
 import { cx } from '../lib/dom.ts';
 import { MOD } from '../lib/format.ts';
 import { KindIcon } from '../lib/kinds.tsx';
 import { sendCanvasCommand } from '../lib/commands.ts';
 import { toggleTheme } from '../lib/theme.ts';
-import { getState, navigateToElement, openCode, openFlow, setOverlay, setPerspective, undo, useStore } from '../state/store.ts';
+import { getState, navigateToElement, openCode, openFlow, setOverlay, setPerspective, toggleNamesOnly, undo, useStore } from '../state/store.ts';
 import { scopePath, useIndex } from '../state/selectors.ts';
 import { Keys } from './primitives.tsx';
 
@@ -68,6 +68,7 @@ export function Palette() {
       cmd('flows', 'Go to Flows', <Rows3 {...ICON} />, () => setPerspective('flows'), '3'),
       cmd('new', perspective === 'data' ? 'New data structure' : 'New element', <Plus {...ICON} />, () => setTimeout(() => sendCanvasCommand('compose'), 30), 'N'),
       cmd('tidy', 'Tidy layout', <LayoutGrid {...ICON} />, () => sendCanvasCommand('tidy')),
+      cmd('names-only', useStore.getState().namesOnly ? 'Show summaries on nodes' : 'Names only on nodes', <Text {...ICON} />, toggleNamesOnly),
       cmd('fit', 'Fit to screen', <Maximize {...ICON} />, () => sendCanvasCommand('fit'), '⇧ 1'),
       cmd('export', 'Export…', <Download {...ICON} />, () => setOverlay('export'), `${MOD} E`),
       cmd('theme', 'Toggle theme', <Moon {...ICON} />, toggleTheme, '⇧ T'),

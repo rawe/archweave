@@ -58,9 +58,7 @@
 
 .drawer-path {
   font-size: var(--fs-12);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   flex: 0 1 auto;
   min-width: 80px;
 }

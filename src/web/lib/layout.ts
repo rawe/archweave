@@ -1,7 +1,11 @@
 /**
- * Automatic placement with ELK's layered algorithm. Nodes that already have a
- * position never move; new nodes are laid out with the whole graph and then
- * transplanted next to the placed node they relate to, avoiding overlaps.
+ * Automatic placement for the structure canvas, with ELK's layered algorithm.
+ *
+ * A scope is laid out left to right and compact: the elements inside in a few
+ * tight columns, neighbors on the rim (callers in a column on the left,
+ * callees on the right). Nodes that already have a position never move; new
+ * nodes are laid out with the whole graph and then transplanted next to the
+ * placed node they relate to, avoiding overlaps.
  */
 import type { ELK as ElkApi } from 'elkjs/lib/elk-api.js';
 import type { Position } from '../../shared/model.ts';
@@ -10,6 +14,8 @@ export interface LayoutNode {
   id: string;
   width: number;
   height: number;
+  /** Neighbors sit on the rim: callers left, callees right. */
+  rim?: 'left' | 'right';
 }
 
 export interface LayoutEdge {
@@ -24,33 +30,55 @@ function getElk(): Promise<ElkApi> {
   return elkPromise;
 }
 
+/** Gap between columns; threads curve once inside it. */
+export const COLUMN_GAP = 38;
+const RIM_GAP = 40;
+
 const OPTIONS = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
-  'elk.spacing.nodeNode': '44',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '96',
-  'elk.spacing.componentComponent': '72',
+  'elk.spacing.nodeNode': '26',
+  'elk.layered.spacing.nodeNodeBetweenLayers': String(COLUMN_GAP),
+  'elk.layered.spacing.edgeNodeBetweenLayers': '14',
+  'elk.spacing.edgeNode': '12',
+  'elk.spacing.edgeEdge': '8',
+  'elk.edgeRouting': 'POLYLINE',
+  'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+  'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
   'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   'elk.layered.crossingMinimization.forceNodeModelOrder': 'false',
-  'elk.separateConnectedComponents': 'true',
-  'elk.layered.compaction.connectedComponents': 'true',
-  'elk.aspectRatio': '1.8',
+  'elk.separateConnectedComponents': 'false',
   'elk.padding': '[top=0,left=0,bottom=0,right=0]',
 };
 
-const GAP = 28;
+/**
+ * Where automatic layouts start. Deliberately not (0, 0): layouts written by the
+ * earlier auto-layout were normalized to the origin, which is how
+ * `looksAutoPlaced` tells them apart from layouts a human has arranged.
+ */
+const ORIGIN = { x: 40, y: 40 };
+const GAP = 24;
 
-/** Full layered layout, normalized so the top-left node starts at the origin. */
+/** Full layout of a scope, deterministic for the same nodes and edges. */
 export async function layoutAll(nodes: LayoutNode[], edges: LayoutEdge[]): Promise<Record<string, Position>> {
   if (!nodes.length) return {};
-  const ids = new Set(nodes.map((n) => n.id));
+  const byId = new Map(nodes.map((n) => [n.id, n]));
   const graph = {
     id: 'root',
     layoutOptions: OPTIONS,
-    children: nodes.map((n) => ({ id: n.id, width: n.width, height: n.height })),
+    children: nodes.map((n) => ({
+      id: n.id,
+      width: n.width,
+      height: n.height,
+      layoutOptions: n.rim ? { 'elk.layered.layering.layerConstraint': n.rim === 'left' ? 'FIRST_SEPARATE' : 'LAST_SEPARATE' } : undefined,
+    })),
     edges: edges
-      .filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to)
-      .map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to] })),
+      .filter((e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to)
+      .map((e, i) => {
+        // Rim nodes only make sense with edges pointing away from the left rim and into the right one.
+        const flip = byId.get(e.from)!.rim === 'right' || byId.get(e.to)!.rim === 'left';
+        return { id: `e${i}`, sources: [flip ? e.to : e.from], targets: [flip ? e.from : e.to] };
+      }),
   };
   let result: Awaited<ReturnType<ElkApi['layout']>>;
   try {
@@ -58,15 +86,62 @@ export async function layoutAll(nodes: LayoutNode[], edges: LayoutEdge[]): Promi
   } catch {
     return gridFallback(nodes);
   }
-  const out: Record<string, Position> = {};
+  const placed = new Map<string, Rect>();
+  for (const child of result.children ?? []) {
+    const n = byId.get(child.id)!;
+    placed.set(child.id, { x: child.x ?? 0, y: child.y ?? 0, w: n.width, h: n.height });
+  }
+  tightenRims(nodes, placed);
   let minX = Infinity;
   let minY = Infinity;
-  for (const child of result.children ?? []) {
-    minX = Math.min(minX, child.x ?? 0);
-    minY = Math.min(minY, child.y ?? 0);
+  for (const r of placed.values()) {
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
   }
-  for (const child of result.children ?? []) out[child.id] = { x: Math.round((child.x ?? 0) - minX), y: Math.round((child.y ?? 0) - minY) };
+  const out: Record<string, Position> = {};
+  for (const [id, r] of placed) out[id] = { x: Math.round(r.x - minX + ORIGIN.x), y: Math.round(r.y - minY + ORIGIN.y) };
   return out;
+}
+
+/**
+ * Re-spaces the columns ELK produced to exactly COLUMN_GAP (ELK widens them to
+ * route edges, which our single curves do not need), then snaps the rim
+ * columns close to the inside: left chips right-aligned, right chips left-aligned.
+ */
+function tightenRims(nodes: LayoutNode[], placed: Map<string, Rect>) {
+  const inside = nodes.filter((n) => !n.rim).map((n) => placed.get(n.id)!);
+  if (!inside.length) return;
+  const columns = [...new Set(inside.map((r) => Math.round(r.x)))].sort((a, b) => a - b);
+  let x = columns[0]!;
+  const shifted = new Map<number, number>();
+  for (const col of columns) {
+    shifted.set(col, x);
+    const width = Math.max(...inside.filter((r) => Math.round(r.x) === col).map((r) => r.w));
+    x += width + COLUMN_GAP;
+  }
+  for (const r of inside) r.x = shifted.get(Math.round(r.x))!;
+  const left = Math.min(...inside.map((r) => r.x));
+  const right = Math.max(...inside.map((r) => r.x + r.w));
+  for (const n of nodes) {
+    const r = placed.get(n.id)!;
+    if (n.rim === 'left') r.x = left - RIM_GAP - r.w;
+    else if (n.rim === 'right') r.x = right + RIM_GAP;
+  }
+}
+
+/**
+ * True when a stored scope layout was written by the earlier auto-layout and
+ * never arranged by hand: it starts exactly at the origin and nearly every node
+ * shares its column with another, which hand-dragged nodes practically never do.
+ */
+export function looksAutoPlaced(stored: Record<string, Position> | undefined): boolean {
+  const list = Object.values(stored ?? {});
+  if (list.length < 4) return false;
+  if (Math.min(...list.map((p) => p.x)) !== 0 || Math.min(...list.map((p) => p.y)) !== 0) return false;
+  const columns = new Map<number, number>();
+  for (const p of list) columns.set(p.x, (columns.get(p.x) ?? 0) + 1);
+  const shared = list.filter((p) => columns.get(p.x)! > 1).length;
+  return shared / list.length >= 0.7;
 }
 
 /** Positions for the nodes missing from `fixed`, leaving every fixed node where it is. */
@@ -97,7 +172,7 @@ export async function placeMissing(
       target = { x: anchorPos.x + (at.x - anchorIdeal.x), y: anchorPos.y + (at.y - anchorIdeal.y) };
     } else {
       const bounds = boundsOf(occupied);
-      target = { x: bounds.x + bounds.w + 96, y: bounds.y };
+      target = { x: bounds.x + bounds.w + 72, y: bounds.y };
     }
     const rect = freeSpot({ ...target, w: node.width, h: node.height }, occupied);
     out[node.id] = { x: Math.round(rect.x), y: Math.round(rect.y) };
@@ -130,7 +205,7 @@ function pickAnchor(
     const other = e.from === id ? e.to : e.to === id ? e.from : undefined;
     if (other && other !== id && known(other) && ideal[other]) counts.set(other, (counts.get(other) ?? 0) + 1);
   }
-  if (counts.size) return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+  if (counts.size) return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]![0];
   const at = ideal[id];
   if (!at) return undefined;
   let best: string | undefined;
@@ -154,7 +229,7 @@ function overlaps(a: Rect, b: Rect): boolean {
 export function freeSpot(want: Rect, occupied: Rect[]): Rect {
   if (!occupied.some((o) => overlaps(want, o))) return want;
   const stepX = want.w + GAP;
-  const stepY = Math.max(40, (want.h + GAP) / 2);
+  const stepY = Math.max(36, (want.h + GAP) / 2);
   for (let ring = 1; ring < 40; ring++) {
     const candidates: Rect[] = [];
     for (let dx = -ring; dx <= ring; dx++) {
@@ -180,5 +255,37 @@ function boundsOf(rects: Rect[]): Rect {
 
 function gridFallback(nodes: LayoutNode[]): Record<string, Position> {
   const cols = Math.ceil(Math.sqrt(nodes.length));
-  return Object.fromEntries(nodes.map((n, i) => [n.id, { x: (i % cols) * 280, y: Math.floor(i / cols) * 160 }]));
+  return Object.fromEntries(nodes.map((n, i) => [n.id, { x: ORIGIN.x + (i % cols) * 260, y: ORIGIN.y + Math.floor(i / cols) * 140 }]));
+}
+
+/**
+ * Display positions that never overlap: stored positions are kept, and a node
+ * that would overlap one above it moves down just below it. Needed because
+ * nodes grow (full summaries, longer names) after a human arranged them.
+ */
+export function separate(
+  positions: Record<string, Position>,
+  sizes: ReadonlyMap<string, { width: number; height: number }>,
+  gap = 16,
+): Record<string, Position> {
+  const ids = Object.keys(positions)
+    .filter((id) => sizes.has(id))
+    .sort((a, b) => positions[a]!.y - positions[b]!.y || positions[a]!.x - positions[b]!.x || a.localeCompare(b));
+  const out: Record<string, Position> = { ...positions };
+  const done: Rect[] = [];
+  for (const id of ids) {
+    const size = sizes.get(id)!;
+    const r: Rect = { x: positions[id]!.x, y: positions[id]!.y, w: size.width, h: size.height };
+    for (let guard = 0, moved = true; moved && guard < 500; guard++) {
+      moved = false;
+      for (const o of done)
+        if (r.x < o.x + o.w && r.x + r.w > o.x && r.y < o.y + o.h + gap && r.y + r.h + gap > o.y) {
+          r.y = o.y + o.h + gap;
+          moved = true;
+        }
+    }
+    if (r.y !== positions[id]!.y) out[id] = { x: r.x, y: r.y };
+    done.push(r);
+  }
+  return out;
 }

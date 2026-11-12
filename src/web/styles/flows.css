@@ -134,9 +134,9 @@
   height: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 7px;
-  padding: 0 4px 0 12px;
+  padding: 0 10px 0 11px;
 }
 
 .seq-part-main svg {
@@ -145,22 +145,38 @@
 }
 
 .seq-part-name {
+  min-width: 0;
+  font-size: var(--fs-13);
   font-weight: 560;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.seq-heads {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(var(--canvas) 78%, transparent);
+}
+
+.seq-heads > * {
+  pointer-events: all;
 }
 
 .seq-part-go {
+  position: absolute;
+  top: 4px;
+  right: 4px;
   display: grid;
   place-items: center;
   width: 24px;
   height: 24px;
-  margin-right: 6px;
   border-radius: 6px;
+  background: var(--surface);
   color: var(--ink-3);
   opacity: 0;
-  flex: none;
 }
 
 .seq-part:hover .seq-part-go,
@@ -189,7 +205,6 @@
 
 .seq-num {
   position: absolute;
-  top: calc(50% - 11px);
   display: grid;
   place-items: center;
   width: 22px;
@@ -222,18 +237,15 @@
 
 .seq-label {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: calc(50% + 4px);
-  padding: 2px 4px;
+  padding: 1px 6px;
   border-radius: 5px;
   text-align: center;
   font-size: var(--fs-13);
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 17.2px;
+  overflow-wrap: anywhere;
   color: var(--ink);
+  /* lifelines pass behind wide labels without striking through the text */
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
 }
 
 .seq-label:hover {
@@ -247,14 +259,10 @@
 
 .seq-data {
   position: absolute;
-  top: calc(50% + 6px);
-  left: 16px;
-  right: 16px;
   display: flex;
   justify-content: center;
   gap: 4px;
-  flex-wrap: nowrap;
-  overflow: hidden;
+  flex-wrap: wrap;
 }
 
 .seq-add {
@@ -294,4 +302,13 @@
   width: 220px;
   margin: 0;
   border-color: var(--line);
+}
+
+.seq-data .chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.seq-data .chip-text {
+  min-width: 0;
 }

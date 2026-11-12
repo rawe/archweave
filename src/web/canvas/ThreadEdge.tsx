@@ -1,9 +1,10 @@
 import { memo } from 'react';
-import { EdgeLabelRenderer, getBezierPath, useInternalNode, type Edge, type EdgeProps, type InternalNode } from '@xyflow/react';
+import { EdgeLabelRenderer, useInternalNode, type Edge, type EdgeProps, type InternalNode } from '@xyflow/react';
 import type { Relation } from '../../shared/model.ts';
 import { Tip } from '../chrome/primitives.tsx';
 import { cx } from '../lib/dom.ts';
-import { arrowHead, floatingAnchors, sideNormal, type Rect } from '../lib/geometry.ts';
+import { arrowHead, floatingAnchors, type Rect } from '../lib/geometry.ts';
+import { curve, type Route } from '../lib/ports.ts';
 import { RELATION_VERB } from '../lib/kinds.tsx';
 
 export interface ThreadData extends Record<string, unknown> {
@@ -15,8 +16,8 @@ export interface ThreadData extends Record<string, unknown> {
   planned: boolean;
   carries: { id: string; name: string }[];
   showLabel: boolean;
-  /** Sideways shift when a thread runs the other way between the same pair. */
-  shift: number;
+  /** Attachment points from port assignment; without it the thread runs between the centers. */
+  route?: Route;
   onSelect?: (id: string) => void;
 }
 
@@ -42,24 +43,21 @@ function ThreadEdgeImpl({ id, source, target, data, selected }: EdgeProps<Thread
   const t = useInternalNode(target);
   if (!s || !t || !data || !s.measured.width || !t.measured.width) return null;
 
-  const { source: a, target: b } = floatingAnchors(rectOf(s), rectOf(t), data.shift);
-  const head = arrowHead(b);
-  const start = { x: a.x + sideNormal(a.side).x * 1, y: a.y + sideNormal(a.side).y * 1 };
-  const [path, labelX, labelY] = getBezierPath({
-    sourceX: start.x,
-    sourceY: start.y,
-    sourcePosition: a.side,
-    targetX: head.base.x,
-    targetY: head.base.y,
-    targetPosition: b.side,
-    curvature: 0.3,
-  });
+  const { source: a, target: b } = data.route ?? floatingAnchors(rectOf(s), rectOf(t));
+  const head = arrowHead(b, 6, 5);
+  const { path, mid } = curve(a, { ...head.base, side: b.side });
+  const labelX = mid.x;
+  const labelY = mid.y;
 
   const count = data.relations.length;
   const label = threadLabel(data.relations);
   const lit = selected || data.focus;
-  const showText = (data.showLabel || lit || data.hover) && !!label;
-  const hasMarker = data.carries.length > 0 || count > 1;
+  // A label wider than its thread would sit on top of the nodes; such labels wait for hover.
+  const fits = Math.hypot(b.x - a.x, b.y - a.y) >= Math.min(label.length * 6.4, 200) + 40;
+  const showText = !!label && (data.hover || ((data.showLabel || lit) && fits));
+  // At rest a merged thread shows only its data diamond; the count appears on focus, hover or close zoom.
+  const showCount = count > 1 && (lit || data.hover || data.showLabel);
+  const hasMarker = data.carries.length > 0 || showCount;
   const cls = cx(
     'thread',
     data.planned && 'is-planned',
@@ -90,7 +88,7 @@ function ThreadEdgeImpl({ id, source, target, data, selected }: EdgeProps<Thread
               </Tip>
             )}
             {showText && <span className="thread-text">{label}</span>}
-            {count > 1 && (
+            {showCount && (
               <span className="thread-count" title={`${count} relations`}>
                 {count}
               </span>

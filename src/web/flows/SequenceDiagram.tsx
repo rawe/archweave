@@ -9,12 +9,62 @@ import { scopePath, useIndex } from '../state/selectors.ts';
 import { registerCanvasTarget } from '../lib/canvasTarget.ts';
 import { cx, prefersReducedMotion } from '../lib/dom.ts';
 import { KindIcon } from '../lib/kinds.tsx';
+import { canvasMeasure, lineCount, SANS, useFontsReady } from '../lib/text.ts';
 
-const COL_W = 176;
-const HEAD_H = 64;
-const ROW_H = 64;
-const TOP = 28;
+const COL_W = 168;
+const TOP = 16;
 const SIDE = 40;
+/** Step labels may be wider than a short arrow; they wrap over as many lines as they need. */
+const LABEL_MIN = 272;
+const PART_W = COL_W - 20;
+const LABEL_LINE = 17.2;
+const CHIP_H = 20;
+
+interface Row {
+  top: number;
+  h: number;
+  /** Absolute y of the arrow. */
+  arrowY: number;
+  left: number;
+  w: number;
+  labelLeft: number;
+  labelW: number;
+  align: 'start' | 'end' | 'center';
+  self: boolean;
+}
+
+/** Rows sized from their text: the wrapped label above the arrow, the data chips below it. */
+function layoutRows(flow: Flow, col: (id: string) => number, bodyTop: number, dataName: (id: string) => string): Row[] {
+  let top = bodyTop;
+  return flow.steps.map((s) => {
+    const x1 = col(s.from);
+    const x2 = col(s.to);
+    const self = s.from === s.to;
+    const left = self ? x1 + 8 : Math.min(x1, x2);
+    const w = self ? COL_W - 24 : Math.abs(x2 - x1);
+    // Short arrows center their label; long ones keep it at the sender, next to the step number.
+    const long = !self && w > LABEL_MIN * 1.6;
+    const labelW = long ? LABEL_MIN * 1.4 : Math.max(w - 32, LABEL_MIN);
+    const align = long ? (x2 >= x1 ? 'start' : 'end') : 'center';
+    const labelLeft = align === 'start' ? 18 : align === 'end' ? w - labelW - 18 : (Math.max(w, 120) - labelW) / 2;
+    const lines = lineCount(s.label, `400 13px ${SANS}`, labelW - 12);
+    const arrowRel = 10 + Math.ceil(lines * LABEL_LINE) + 2 + 9;
+    let chipRows = 0;
+    let used = 0;
+    for (const id of s.dataIds) {
+      const cw = Math.min(labelW, canvasMeasure.width(dataName(id), `400 11.5px ${SANS}`) + 32);
+      if (!chipRows || used + 4 + cw > labelW) {
+        chipRows++;
+        used = cw;
+      } else used += 4 + cw;
+    }
+    const chipsH = chipRows ? chipRows * CHIP_H + (chipRows - 1) * 4 : 0;
+    const h = Math.max(64, arrowRel + (self ? 16 : 0) + (chipsH ? 6 + chipsH : 0) + 16);
+    const row: Row = { top, h, arrowY: top + arrowRel, left, w, labelLeft, labelW, align, self };
+    top += h;
+    return row;
+  });
+}
 
 export function SequenceDiagram({ flow }: { flow: Flow }) {
   const index = useIndex();
@@ -24,16 +74,32 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
   const diagram = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number; startY: number } | null>(null);
+  /** Set when a drag moved a step, so the click that ends the gesture does not select by the old index. */
+  const moved = useRef(false);
 
   const participants = useMemo(() => {
     const ids: string[] = [];
     for (const s of flow.steps) for (const id of [s.from, s.to]) if (!ids.includes(id)) ids.push(id);
     return ids;
   }, [flow.steps]);
+  const fonts = useFontsReady();
   const col = (id: string) => SIDE + participants.indexOf(id) * COL_W + COL_W / 2;
   const width = Math.max(SIDE * 2 + participants.length * COL_W, 520);
-  const bodyTop = TOP + HEAD_H + 24;
-  const height = bodyTop + flow.steps.length * ROW_H + 84;
+  // Participant boxes are as tall as the longest name needs.
+  const headBox = useMemo(() => {
+    const lines = Math.max(1, ...participants.map((id) => lineCount(index.byId.get(id)?.name ?? id, `560 13px ${SANS}`, PART_W - 2 - 11 - 14 - 7 - 10)));
+    return Math.max(52, 18 + Math.ceil(lines * 16.25));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants, index, fonts]);
+  const headH = TOP + headBox + 8;
+  const bodyTop = headH + 20;
+  const rows = useMemo(
+    () => layoutRows(flow, col, bodyTop, (id) => index.byId.get(id)?.name ?? id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [flow, participants, bodyTop, index, fonts],
+  );
+  const bodyBottom = rows.length ? rows[rows.length - 1]!.top + rows[rows.length - 1]!.h : bodyTop;
+  const height = bodyBottom + 84;
   const active = stepIndex;
 
   useEffect(() => {
@@ -49,7 +115,7 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
     const step = flow.steps[active];
     if (!step) return;
     const box = scroller.current;
-    const y = bodyTop + active * ROW_H;
+    const y = rows[active]?.top ?? bodyTop;
     const xs = [col(step.from), col(step.to)];
     const left = Math.min(...xs) - 60;
     const right = Math.max(...xs) + 60;
@@ -64,10 +130,15 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
   }, [active, bodyTop]);
 
   const targetIndex = (clientY: number) => {
-    if (!drag) return 0;
-    const delta = Math.round((clientY - drag.startY) / ROW_H);
-    return Math.max(0, Math.min(flow.steps.length - 1, drag.from + delta));
+    if (!drag || !diagram.current) return 0;
+    const y = clientY - diagram.current.getBoundingClientRect().top;
+    let to = 0;
+    rows.forEach((r, i) => {
+      if (y >= r.top) to = i;
+    });
+    return Math.max(0, Math.min(flow.steps.length - 1, to));
   };
+  const dropY = drag && drag.to !== drag.from ? (drag.to > drag.from ? rows[drag.to]!.top + rows[drag.to]!.h : rows[drag.to]!.top) : null;
 
   return (
     <div className="seq-scroll" ref={scroller}>
@@ -79,6 +150,7 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
         onPointerUp={() => {
           if (!drag) return;
           if (drag.to !== drag.from) {
+            moved.current = true;
             const steps = [...flow.steps];
             const [s] = steps.splice(drag.from, 1);
             steps.splice(drag.to, 0, s!);
@@ -91,76 +163,80 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
           if (e.target === e.currentTarget) setState({ stepIndex: null, selection: { elementIds: [], relationIds: [] } });
         }}
       >
+        {/* Participants stay in view while a long flow scrolls. */}
+        <div className="seq-heads" style={{ height: headH, width }}>
+          {participants.map((id) => {
+            const el = index.byId.get(id);
+            return (
+              <div
+                key={id}
+                className={cx('seq-part', selected.includes(id) && 'is-selected', el?.status === 'planned' && 'is-planned')}
+                style={{ left: col(id) - PART_W / 2, top: TOP, width: PART_W, height: headBox }}
+                title={el?.name ?? id}
+              >
+                <button type="button" className="seq-part-main" onClick={() => select({ elementIds: [id] })} onDoubleClick={() => navigateToElement(id)}>
+                  {el && <KindIcon kind={el.kind} size={14} />}
+                  <span className="seq-part-name">{el?.name ?? id}</span>
+                  {unseen[id] && <span className="dot-agent" />}
+                </button>
+                <Tip label="Show in Structure" side="top">
+                  <button type="button" className="seq-part-go" aria-label={`Show ${el?.name ?? id} in Structure`} onClick={() => navigateToElement(id)}>
+                    <ArrowUpRight size={13} strokeWidth={1.8} />
+                  </button>
+                </Tip>
+              </div>
+            );
+          })}
+        </div>
+
         <svg className="seq-svg" width={width} height={height} aria-hidden>
           {participants.map((id) => (
-            <line key={id} x1={col(id)} x2={col(id)} y1={TOP + HEAD_H} y2={height - 40} className="seq-lifeline" />
+            <line key={id} x1={col(id)} x2={col(id)} y1={headH} y2={height - 40} className="seq-lifeline" />
           ))}
           {flow.steps.map((s, i) => (
-            <StepArrow key={i} step={s} i={i} x1={col(s.from)} x2={col(s.to)} y={bodyTop + i * ROW_H + ROW_H / 2} state={stepState(i, active, drag)} />
+            <StepArrow key={i} step={s} i={i} x1={col(s.from)} x2={col(s.to)} y={rows[i]!.arrowY} state={stepState(i, active, drag)} />
           ))}
-          {drag && drag.to !== drag.from && (
-            <line x1={SIDE} x2={width - SIDE} y1={bodyTop + (drag.to > drag.from ? drag.to + 1 : drag.to) * ROW_H} y2={bodyTop + (drag.to > drag.from ? drag.to + 1 : drag.to) * ROW_H} className="seq-drop" />
-          )}
+          {dropY !== null && <line x1={SIDE} x2={width - SIDE} y1={dropY} y2={dropY} className="seq-drop" />}
         </svg>
 
-        {participants.map((id) => {
-          const el = index.byId.get(id);
-          return (
-            <div
-              key={id}
-              className={cx('seq-part', selected.includes(id) && 'is-selected', el?.status === 'planned' && 'is-planned')}
-              style={{ left: col(id) - (COL_W - 28) / 2, top: TOP, width: COL_W - 28, height: HEAD_H - 16 }}
-            >
-              <button type="button" className="seq-part-main" onClick={() => select({ elementIds: [id] })} onDoubleClick={() => navigateToElement(id)}>
-                {el && <KindIcon kind={el.kind} size={14} />}
-                <span className="seq-part-name">{el?.name ?? id}</span>
-                {unseen[id] && <span className="dot-agent" />}
-              </button>
-              <Tip label="Show in Structure" side="top">
-                <button type="button" className="seq-part-go" aria-label={`Show ${el?.name ?? id} in Structure`} onClick={() => navigateToElement(id)}>
-                  <ArrowUpRight size={13} strokeWidth={1.8} />
-                </button>
-              </Tip>
-            </div>
-          );
-        })}
-
         {flow.steps.map((s, i) => {
+          const { left, w, labelLeft, labelW, align, top, h, arrowY, self } = rows[i]!;
           const x1 = col(s.from);
           const x2 = col(s.to);
-          const self = s.from === s.to;
-          const left = self ? x1 + 8 : Math.min(x1, x2);
-          const w = self ? COL_W - 24 : Math.abs(x2 - x1);
-          const y = bodyTop + i * ROW_H;
+          const arrow = arrowY - top;
           return (
             <div
               key={i}
               className={cx('seq-step', stepState(i, active, drag), drag?.from === i && 'is-dragging')}
-              style={{ left, top: y, width: Math.max(w, 120), height: ROW_H }}
+              style={{ left, top, width: Math.max(w, 120), height: h }}
             >
               <button
                 type="button"
                 className="seq-num"
-                style={{ left: self || x2 >= x1 ? -11 : w - 11 }}
+                style={{ left: self || x2 >= x1 ? -11 : w - 11, top: arrow - 11 }}
                 aria-label={`Step ${i + 1}. Drag to reorder`}
                 onPointerDown={(e) => {
+                  moved.current = false;
                   e.currentTarget.setPointerCapture(e.pointerId);
                   setDrag({ from: i, to: i, startY: e.clientY });
                 }}
                 onPointerMove={(e) => drag && setDrag({ ...drag, to: targetIndex(e.clientY) })}
-                onClick={() => setState({ stepIndex: i, selection: { elementIds: [], relationIds: [] } })}
+                onClick={() => {
+                  if (moved.current) return void (moved.current = false);
+                  setState({ stepIndex: i, selection: { elementIds: [], relationIds: [] } });
+                }}
               >
                 {i + 1}
               </button>
-              <button type="button" className="seq-label" onClick={() => setState({ stepIndex: i, selection: { elementIds: [], relationIds: [] } })}>
+              <button type="button" className="seq-label" style={{ left: labelLeft, width: labelW, top: 10, textAlign: align === 'center' ? 'center' : align === 'start' ? 'left' : 'right' }} title={s.label} onClick={() => setState({ stepIndex: i, selection: { elementIds: [], relationIds: [] } })}>
                 {s.label}
               </button>
               {s.dataIds.length > 0 && (
-                <div className="seq-data">
+                <div className="seq-data" style={{ left: labelLeft, width: labelW, top: arrow + (self ? 22 : 6), justifyContent: align === 'center' ? 'center' : `flex-${align}` }}>
                   {s.dataIds.map((d) => (
-                    <button key={d} type="button" className="chip chip-data is-small" onClick={() => navigateToElement(d)}>
+                    <button key={d} type="button" className="chip chip-data is-small" title={index.byId.get(d)?.name ?? d} onClick={() => navigateToElement(d)}>
                       <KindIcon kind="data" size={11} />
-                      {index.byId.get(d)?.name ?? d}
+                      <span className="chip-text">{index.byId.get(d)?.name ?? d}</span>
                     </button>
                   ))}
                 </div>
@@ -169,7 +245,7 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
           );
         })}
 
-        <AddStep flow={flow} participants={participants} top={bodyTop + flow.steps.length * ROW_H + 18} left={SIDE} />
+        <AddStep flow={flow} participants={participants} top={bodyBottom + 18} left={SIDE} />
       </div>
     </div>
   );

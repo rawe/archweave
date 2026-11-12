@@ -22,7 +22,7 @@ export function Notes({ el }: { el: Element }) {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
-    void commit({ summary: `Noted on ${el.name}: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}`, elements: [{ id: el.id, addNotes: [text] }] });
+    void commit({ summary: text.length <= 150 ? `Noted on ${el.name}: ${text}` : `Added a note to ${el.name}`, elements: [{ id: el.id, addNotes: [text] }] });
   };
   return (
     <Section label="Notes" className="notes">

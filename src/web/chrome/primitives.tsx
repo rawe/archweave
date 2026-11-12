@@ -133,6 +133,7 @@ export function IconButton({
   buttonRef?: RefObject<HTMLButtonElement | null>;
   'aria-expanded'?: boolean;
   'aria-haspopup'?: 'menu' | 'dialog' | 'listbox' | true;
+  'aria-pressed'?: boolean;
 }) {
   return (
     <Tip label={label} keys={keys} side={side}>

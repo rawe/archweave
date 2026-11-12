@@ -116,7 +116,7 @@ function FieldRow({
   const [grabbed, setGrabbed] = useState(false);
   return (
     <li
-      className={cx('field-row', dragging && 'is-dragging', dropBefore && 'drop-before', dropAfter && 'drop-after')}
+      className={cx('field-row', dragging && 'is-dragging', dropBefore && 'drop-before', dropAfter && 'drop-after', (field.type.length > 22 || field.name.length > 24) && 'is-stacked')}
       draggable={grabbed}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';

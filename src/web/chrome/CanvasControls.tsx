@@ -1,15 +1,28 @@
-import { Maximize, Minus, Plus, Undo2 } from 'lucide-react';
+import { Maximize, Minus, Plus, Text, Undo2 } from 'lucide-react';
 import { useViewport } from '@xyflow/react';
-import { undo, useStore } from '../state/store.ts';
+import { toggleNamesOnly, undo, useStore } from '../state/store.ts';
 import { sendCanvasCommand } from '../lib/commands.ts';
 import { MOD } from '../lib/format.ts';
 import { IconButton, Tip } from './primitives.tsx';
 
-export function CanvasControls({ zoomable }: { zoomable: boolean }) {
+export function CanvasControls({ zoomable, viewOptions }: { zoomable: boolean; viewOptions?: boolean }) {
   const humanChanged = useStore((s) => s.humanChanged);
+  const namesOnly = useStore((s) => s.namesOnly);
   return (
     <div className="chrome chrome-bottom-left">
       {zoomable && <ZoomControls />}
+      {viewOptions && (
+        <div className="chrome-group">
+          <IconButton
+            icon={Text}
+            label={namesOnly ? 'Show summaries' : 'Names only'}
+            side="top"
+            active={namesOnly}
+            aria-pressed={namesOnly}
+            onClick={toggleNamesOnly}
+          />
+        </div>
+      )}
       {humanChanged && (
         <div className="chrome-group">
           <IconButton icon={Undo2} label="Undo" keys={`${MOD} Z`} side="top" onClick={() => void undo()} />

@@ -65,7 +65,7 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   transition:
     border-color 120ms,
     background-color 120ms;
@@ -380,15 +380,15 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  height: 30px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 5px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--surface);
   font-weight: 560;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .endpoint svg {
@@ -489,20 +489,16 @@
 }
 
 .rel-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: none;
-  max-width: 62%;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .rel-verb {
   color: var(--ink-3);
   font-size: var(--fs-12);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .rel-verb.is-lead {
@@ -574,12 +570,8 @@
 
 .code-ref-path {
   font-size: var(--fs-12);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl;
+  overflow-wrap: anywhere;
   text-align: left;
-  unicode-bidi: plaintext;
 }
 
 .code-ref-dir {
@@ -627,10 +619,10 @@
   align-items: center;
   gap: 5px;
   height: 100%;
-  padding: 0 4px 0 8px;
+  padding: 3px 4px 3px 8px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .chip-x {
@@ -646,8 +638,8 @@
 }
 
 .chip.is-small {
-  height: 20px;
-  padding: 0 6px;
+  min-height: 20px;
+  padding: 2px 6px;
   font-size: 11.5px;
 }
 
@@ -744,7 +736,8 @@
 .field-row {
   position: relative;
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 2px;
   min-height: 30px;
   margin: 0 -8px;
@@ -782,6 +775,7 @@
 .field-grip {
   display: grid;
   place-items: center;
+  align-self: stretch;
   width: 16px;
   color: var(--ink-3);
   cursor: grab;
@@ -795,12 +789,19 @@
 }
 
 .field-name {
-  flex: 1 1 40%;
+  flex: 1.15 1 0;
   min-width: 0;
 }
 
+/* long types get a line of their own under the name instead of a narrow column */
+.field-row.is-stacked .field-type {
+  order: 10;
+  flex-basis: calc(100% - 52px);
+  margin-left: 18px;
+}
+
 .field-type {
-  flex: 1 1 36%;
+  flex: 1 1 0;
   min-width: 0;
   color: var(--ink-2);
 }
@@ -829,16 +830,14 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  max-width: 34%;
-  height: 22px;
-  padding: 0 6px;
+  max-width: 40%;
+  min-height: 22px;
+  padding: 2px 6px;
   border-radius: 6px;
   background: var(--surface-2);
   border: 1px solid var(--line);
   font-size: var(--fs-12);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   flex: none;
 }
 
@@ -902,11 +901,10 @@
 }
 
 .foot-id {
+  min-width: 0;
   color: var(--ink-3);
   font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /* narrow screens: bottom sheet */
@@ -966,4 +964,16 @@
 
 .rel-via {
   color: var(--ink-3);
+}
+
+/* phones: the perspective switch and zoom controls live at the bottom; the sheet floats above them */
+@media (max-width: 760px) {
+  .inspector {
+    left: var(--gutter);
+    right: var(--gutter);
+    bottom: calc(var(--drawer-h) + var(--gutter) + 48px);
+    max-height: min(54vh, calc(100% - var(--top-h) - var(--drawer-h) - 64px));
+    border-radius: 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  }
 }

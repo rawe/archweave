@@ -115,11 +115,14 @@
   border-radius: 6px;
   color: var(--ink-2);
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-  line-height: 28px;
+  min-height: 28px;
+  max-width: 260px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  height: auto;
+  line-height: 18px;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 button.crumb:hover {
@@ -374,11 +377,7 @@ button.crumb:hover {
 }
 
 .toast-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
 }
 
 .toast-action {
@@ -558,11 +557,10 @@ button.toast-body:hover .toast-action {
 }
 
 .palette-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 60%;
+  overflow-wrap: anywhere;
 }
 
 .palette-label.mono {
@@ -576,9 +574,7 @@ button.toast-body:hover .toast-action {
   min-width: 0;
   color: var(--ink-3);
   font-size: var(--fs-12);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .palette-label.mono + .palette-detail {
@@ -752,7 +748,14 @@ button.toast-body:hover .toast-action {
   }
   .chrome-center {
     top: auto;
+    left: auto;
+    right: var(--gutter);
+    transform: none;
     bottom: calc(var(--gutter) + var(--drawer-h));
+  }
+  /* pinch zooms on phones; only Fit stays, so the bottom row has room for the switch */
+  .chrome-group.zoom > :not(:last-child) {
+    display: none;
   }
   .chrome-left {
     max-width: calc(100% - 200px);

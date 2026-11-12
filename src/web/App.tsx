@@ -13,7 +13,7 @@ import { ExportDialog } from './chrome/ExportDialog.tsx';
 import { HelpSheet } from './chrome/HelpSheet.tsx';
 import { ConfirmHost } from './chrome/Confirm.tsx';
 import { useShortcuts } from './chrome/useShortcuts.ts';
-import { useStore } from './state/store.ts';
+import { dataFocusId, useStore } from './state/store.ts';
 import { cx } from './lib/dom.ts';
 
 export function App() {
@@ -24,10 +24,12 @@ export function App() {
   const empty = useStore((s) => s.loaded && s.model.elements.length === 0 && s.model.flows.length === 0);
   const overlay = useStore((s) => s.overlay);
   const codeOpen = useStore((s) => !!s.code);
+  const namesOnly = useStore((s) => s.namesOnly);
+  const dataFocus = useStore((s) => (s.perspective === 'data' ? dataFocusId(s) : undefined));
 
   return (
     <ReactFlowProvider>
-      <div className={cx('app', `perspective-${perspective}`, codeOpen && 'has-code')}>
+      <div className={cx('app', `perspective-${perspective}`, codeOpen && 'has-code', namesOnly && 'names-only')}>
         <main className="stage" aria-label={`${perspective} perspective`}>
           {loaded && perspective === 'structure' && <StructureCanvas key="structure" />}
           {loaded && perspective === 'data' && <DataView />}
@@ -36,7 +38,7 @@ export function App() {
           {empty && perspective === 'structure' && <EmptyState />}
         </main>
         <TopBar />
-        <CanvasControls zoomable={perspective !== 'flows'} />
+        <CanvasControls zoomable={perspective === 'structure' || (perspective === 'data' && !!dataFocus)} viewOptions={perspective === 'structure'} />
         <Inspector />
         <CodeDrawer />
         <Toasts />

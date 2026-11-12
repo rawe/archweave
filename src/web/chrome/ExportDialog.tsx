@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toPng, toSvg } from 'html-to-image';
+import { inlineSvgPaint } from '../lib/exportPaint.ts';
 import { slugify, type Perspective } from '../../shared/model.ts';
 import { api } from '../api.ts';
 import { getCanvasTarget } from '../lib/canvasTarget.ts';
@@ -35,6 +36,7 @@ export function ExportDialog() {
   const run = async () => {
     if (image) {
       setBusy(true);
+      let restorePaint: (() => void) | undefined;
       try {
         const captured = await getCanvasTarget()?.capture();
         if (!captured) {
@@ -43,6 +45,7 @@ export function ExportDialog() {
         }
         const background = getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim();
         document.documentElement.classList.add('is-exporting');
+        restorePaint = inlineSvgPaint(captured.node);
         const options = {
           width: captured.width,
           height: captured.height,
@@ -57,6 +60,7 @@ export function ExportDialog() {
       } catch (e) {
         toast({ tone: 'error', text: `Image export failed: ${e instanceof Error ? e.message : String(e)}` });
       } finally {
+        restorePaint?.();
         document.documentElement.classList.remove('is-exporting');
         setBusy(false);
       }
