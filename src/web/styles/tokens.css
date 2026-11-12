@@ -1,0 +1,96 @@
+:root {
+  --canvas: #edf0f3;
+  --surface: #ffffff;
+  --surface-2: #f5f7f9;
+  --line: #d3d9e0;
+  --ink: #17202b;
+  --ink-2: #5b6878;
+  --ink-3: #8e99a6;
+  --human: #2456e6;
+  --agent: #d99a0b;
+  --warn: #c2410c;
+
+  --thread: color-mix(in srgb, var(--line) 52%, var(--ink-3));
+  --line-strong: color-mix(in srgb, var(--line) 55%, var(--ink-3));
+  --human-soft: color-mix(in srgb, var(--human) 11%, transparent);
+  --human-ring: color-mix(in srgb, var(--human) 26%, transparent);
+  --agent-soft: color-mix(in srgb, var(--agent) 22%, transparent);
+  --warn-soft: color-mix(in srgb, var(--warn) 10%, transparent);
+  --dot: color-mix(in srgb, var(--ink-3) 42%, transparent);
+  --planned-fill: color-mix(in srgb, var(--surface) 62%, var(--canvas));
+  --neighbor-fill: color-mix(in srgb, var(--surface) 45%, var(--canvas));
+  --scrim: rgba(23, 32, 43, 0.22);
+  --tip-bg: #17202b;
+  --tip-ink: #f3f5f8;
+
+  --shadow-float: 0 1px 2px rgba(23, 32, 43, 0.06), 0 4px 18px rgba(23, 32, 43, 0.07);
+  --shadow-pop: 0 2px 6px rgba(23, 32, 43, 0.08), 0 18px 48px rgba(23, 32, 43, 0.16);
+
+  --font-sans: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-15: 15px;
+  --fs-18: 18px;
+  --fs-24: 24px;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --t-focus: 160ms;
+  --drawer-h: 0px;
+  --gutter: 12px;
+  --top-h: 64px;
+
+  /* syntax */
+  --syn-keyword: #7b3fb8;
+  --syn-string: #2b7a4b;
+  --syn-number: #a2522a;
+  --syn-type: #0f7480;
+  --syn-title: #17202b;
+  --syn-attr: #8a4a8e;
+  --syn-comment: #8e99a6;
+  --syn-meta: #6b6f2a;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --canvas: #12161c;
+  --surface: #1b212a;
+  --surface-2: #232a35;
+  --line: #313a47;
+  --ink: #e8ecf1;
+  --ink-2: #98a4b3;
+  --ink-3: #66717f;
+  --human: #6e96ff;
+  --agent: #f2bc3d;
+  --warn: #f08a5d;
+
+  --thread: color-mix(in srgb, var(--line) 45%, var(--ink-3));
+  --line-strong: color-mix(in srgb, var(--line) 50%, var(--ink-3));
+  --human-soft: color-mix(in srgb, var(--human) 16%, transparent);
+  --human-ring: color-mix(in srgb, var(--human) 32%, transparent);
+  --agent-soft: color-mix(in srgb, var(--agent) 24%, transparent);
+  --dot: color-mix(in srgb, var(--ink-3) 40%, transparent);
+  --planned-fill: color-mix(in srgb, var(--surface) 55%, var(--canvas));
+  --neighbor-fill: color-mix(in srgb, var(--surface) 50%, var(--canvas));
+  --scrim: rgba(4, 6, 9, 0.5);
+  --tip-bg: #e8ecf1;
+  --tip-ink: #12161c;
+
+  --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 22px rgba(0, 0, 0, 0.32);
+  --shadow-pop: 0 2px 8px rgba(0, 0, 0, 0.4), 0 22px 56px rgba(0, 0, 0, 0.5);
+
+  --syn-keyword: #c3a6ff;
+  --syn-string: #8fcf9f;
+  --syn-number: #f0a982;
+  --syn-type: #6cc8cf;
+  --syn-title: #e8ecf1;
+  --syn-attr: #e3a6e6;
+  --syn-comment: #6c7785;
+  --syn-meta: #c9cc85;
+
+  color-scheme: dark;
+}

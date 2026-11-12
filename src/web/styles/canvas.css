@@ -1,0 +1,752 @@
+.canvas {
+  position: absolute;
+  inset: 0;
+  --zoom: 1;
+}
+
+.canvas .react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-background-pattern-dots-color-default: var(--dot);
+  --xy-selection-background-color: var(--human-soft);
+  --xy-selection-border: 1px solid var(--human-ring);
+  background: var(--canvas);
+}
+
+.canvas-dots {
+  transition: opacity 240ms;
+}
+
+.zoom-far .canvas-dots {
+  opacity: 0.25;
+}
+
+.canvas .react-flow__attribution {
+  background: transparent;
+  font-size: 10px;
+  opacity: 0.4;
+  padding: 2px 6px;
+  bottom: calc(var(--drawer-h) + 0px);
+}
+
+.canvas .react-flow__attribution a {
+  color: var(--ink-3);
+  text-decoration: none;
+}
+
+.react-flow__pane {
+  cursor: default;
+}
+
+.react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+.react-flow__node:focus-visible {
+  outline: none;
+}
+
+.react-flow__node:focus-visible > .node,
+.react-flow__node:focus-visible > .card {
+  box-shadow:
+    0 0 0 2px var(--canvas),
+    0 0 0 4px var(--human);
+}
+
+.is-tidying .react-flow__node {
+  transition: transform 420ms var(--ease);
+}
+
+.is-entering .react-flow__viewport {
+  opacity: 0.35;
+}
+
+.react-flow__viewport {
+  transition: opacity 360ms var(--ease);
+}
+
+/* ── Element node ── */
+
+.node {
+  position: relative;
+  width: 220px;
+  padding: 10px 12px 11px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  transition:
+    opacity var(--t-focus) var(--ease),
+    border-color var(--t-focus),
+    box-shadow var(--t-focus),
+    background-color var(--t-focus);
+}
+
+.react-flow__node:hover > .node:not(.is-selected):not(.is-leaving) {
+  border-color: var(--line-strong);
+}
+
+.node-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.node-icon {
+  display: grid;
+  place-items: center;
+  height: 18px;
+  color: var(--ink-2);
+  flex: none;
+}
+
+.node-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-13);
+  font-weight: 560;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  letter-spacing: -0.003em;
+}
+
+.node-summary {
+  margin-top: 4px;
+  padding-left: 22px;
+  color: var(--ink-2);
+  font-size: var(--fs-12);
+  line-height: 1.42;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.node-mark {
+  display: grid;
+  place-items: center;
+  height: 18px;
+  color: var(--ink-3);
+  flex: none;
+}
+
+.node-stale {
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.node-unseen {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--agent);
+  border: 2px solid var(--canvas);
+}
+
+.node-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px var(--agent),
+    0 0 0 6px var(--agent-soft);
+  animation: agent-ring 6s var(--ease) forwards;
+}
+
+@keyframes agent-ring {
+  0% {
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* children: a card peeking out underneath */
+.node-stack {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: -5px;
+  height: 10px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--surface-2);
+  z-index: -1;
+  transition: opacity var(--t-focus);
+}
+
+.node-open {
+  position: absolute;
+  right: 8px;
+  bottom: -11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 140ms,
+    transform 140ms var(--ease);
+  box-shadow: var(--shadow-float);
+}
+
+.react-flow__node:hover .node-open,
+.node.is-selected .node-open {
+  opacity: 1;
+  transform: none;
+}
+
+.node-open:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+/* selection and focus */
+.node.is-selected {
+  border-color: var(--human);
+  box-shadow: 0 0 0 3px var(--human-soft);
+}
+
+.node.is-dim,
+.card.is-dim {
+  opacity: 0.35;
+}
+
+.node.is-related {
+  border-color: var(--line-strong);
+}
+
+.node.is-drop-target {
+  border-color: var(--human);
+  background: color-mix(in srgb, var(--human) 6%, var(--surface));
+  box-shadow: 0 0 0 5px var(--human-soft);
+}
+
+.node.is-connect-target:hover {
+  border-color: var(--human);
+  box-shadow: 0 0 0 4px var(--human-soft);
+}
+
+.node.is-leaving,
+.card.is-leaving {
+  animation: leave 800ms var(--ease) forwards;
+  pointer-events: none;
+}
+
+@keyframes leave {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* status */
+.node.status-planned,
+.card.status-planned {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--planned-fill);
+}
+
+.node.status-planned.is-selected,
+.card.status-planned.is-selected {
+  border-color: var(--human);
+}
+
+.node.status-deprecated .node-name,
+.card.status-deprecated .node-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-3);
+}
+
+.node.status-deprecated:not(.is-selected),
+.card.status-deprecated:not(.is-selected) {
+  opacity: 0.62;
+}
+
+.node.status-deprecated.is-dim {
+  opacity: 0.25;
+}
+
+/* kind silhouettes */
+.node.kind-store {
+  border-radius: 50% 50% var(--radius) var(--radius) / 12px 12px var(--radius) var(--radius);
+  padding-top: 14px;
+}
+
+.node.kind-store::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  height: 14px;
+  border-radius: 50%;
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.node.kind-store.status-planned::after {
+  border-bottom-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.node.kind-queue {
+  border-radius: 999px;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.node.kind-queue .node-summary {
+  -webkit-line-clamp: 1;
+}
+
+.node.kind-actor .node-icon {
+  width: 22px;
+  height: 22px;
+  margin: -2px 0 -2px -3px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.node.kind-external::before {
+  --c: var(--ink-3);
+  --l: 9px;
+  content: '';
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--c), var(--c)) top left / var(--l) 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 1px var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / var(--l) 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 1px var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / var(--l) 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 1px var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / var(--l) 1px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 1px var(--l) no-repeat;
+  opacity: 0.8;
+}
+
+.node.kind-system {
+  border-width: 1.5px;
+}
+
+.node.kind-agent .node-icon {
+  color: var(--ink);
+}
+
+/* neighbors: quieter context outside the scope */
+.node.is-neighbor {
+  width: 184px;
+  padding: 7px 10px;
+  background: var(--neighbor-fill);
+  border-color: color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.node.is-neighbor .node-name {
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--ink-2);
+  line-height: 18px;
+}
+
+.node.is-neighbor .node-icon {
+  color: var(--ink-3);
+}
+
+.node.is-neighbor.is-related .node-name,
+.node.is-neighbor.is-selected .node-name {
+  color: var(--ink);
+}
+
+/* semantic zoom */
+.zoom-far .node-summary,
+.zoom-far .node-open,
+.zoom-far .node-mark {
+  display: none;
+}
+
+.zoom-far .node-name,
+.zoom-far .card .node-name {
+  font-size: calc(13px * min(2.3, max(1, 0.62 / var(--zoom))));
+  line-height: 1.2;
+}
+
+.zoom-far .node-icon {
+  display: none;
+}
+
+/* handles */
+.react-flow__handle.handle-anchor {
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+.react-flow__handle.handle-in {
+  opacity: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
+  border-radius: inherit;
+  border: 0;
+  pointer-events: none;
+}
+
+.react-flow__handle.handle-in.is-live {
+  pointer-events: all;
+}
+
+.react-flow__handle.handle-out {
+  width: 9px;
+  height: 9px;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--human);
+  background: var(--surface);
+  opacity: 0;
+  transition:
+    opacity 120ms,
+    transform 120ms;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+.react-flow__node:hover .handle-out,
+.react-flow__handle.handle-out.connectingfrom {
+  opacity: 1;
+}
+
+.react-flow__handle.handle-out:hover {
+  background: var(--human);
+}
+
+.react-flow__connection-path {
+  stroke: var(--human);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.react-flow__nodesselection-rect {
+  border: 1px dashed var(--human-ring);
+  background: transparent;
+  border-radius: 12px;
+}
+
+.react-flow__selection {
+  border-radius: 4px;
+}
+
+/* ── Threads ── */
+
+.thread-line {
+  fill: none;
+  stroke: var(--thread);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  transition:
+    stroke var(--t-focus),
+    stroke-width var(--t-focus),
+    opacity var(--t-focus);
+}
+
+.thread-head {
+  fill: var(--thread);
+  transition:
+    fill var(--t-focus),
+    opacity var(--t-focus);
+}
+
+.thread-origin {
+  fill: var(--surface);
+  stroke: var(--thread);
+  stroke-width: 1.25;
+  transition: stroke var(--t-focus);
+}
+
+.thread-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}
+
+.thread {
+  transition: opacity var(--t-focus) var(--ease);
+}
+
+.thread.is-planned .thread-line {
+  stroke-dasharray: 4 4;
+}
+
+.thread.is-hover .thread-line {
+  stroke: var(--ink-3);
+}
+
+.thread.is-hover .thread-head {
+  fill: var(--ink-3);
+}
+
+.thread.is-lit .thread-line {
+  stroke: var(--human);
+  stroke-width: 1.5;
+}
+
+.thread.is-lit .thread-head {
+  fill: var(--human);
+}
+
+.thread.is-lit .thread-origin {
+  stroke: var(--human);
+}
+
+.thread.is-selected .thread-line {
+  stroke-width: 2.25;
+}
+
+.thread.is-dim {
+  opacity: 0.35;
+}
+
+.thread-fresh {
+  fill: none;
+  stroke: var(--agent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  pointer-events: none;
+  animation: agent-ring 6s var(--ease) forwards;
+}
+
+.react-flow__edge.is-user-thread .thread-line {
+  stroke-dasharray: 2 4;
+}
+
+.thread-label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  font-size: var(--fs-12);
+  pointer-events: all;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    opacity var(--t-focus),
+    color var(--t-focus),
+    border-color var(--t-focus);
+}
+
+.thread-label.has-text {
+  padding: 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.thread-label.is-dim {
+  opacity: 0.35;
+}
+
+.thread-label.is-lit {
+  color: var(--ink);
+}
+
+.thread-label.is-lit.has-text {
+  border-color: var(--human-ring);
+}
+
+.thread-diamond {
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  border: 1.25px solid var(--ink-3);
+  background: var(--surface);
+  border-radius: 1.5px;
+  flex: none;
+}
+
+.thread-label.is-lit .thread-diamond {
+  border-color: var(--human);
+  background: var(--human-soft);
+}
+
+.thread-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.thread-label.is-lit .thread-count {
+  border-color: var(--human);
+  color: var(--human);
+}
+
+.zoom-far .thread-label {
+  display: none;
+}
+
+/* ── Composer, menus, empty scope ── */
+
+.composer {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 5px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--human);
+  box-shadow:
+    0 0 0 4px var(--human-soft),
+    var(--shadow-pop);
+  transform: translate(-16px, -50%);
+  animation: pop-in 140ms var(--ease);
+}
+
+.composer-kind {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.composer input {
+  width: 230px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  font-size: var(--fs-15);
+  font-weight: 500;
+  outline: none;
+}
+
+.composer-hint {
+  display: flex;
+  align-items: center;
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+  padding-right: 4px;
+}
+
+.composer-hint .keys {
+  margin-left: 6px;
+}
+
+.canvas-empty-scope {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--ink-2);
+  pointer-events: none;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.canvas-empty-scope p {
+  font-size: var(--fs-15);
+  max-width: 420px;
+}
+
+.canvas-empty-scope .btn {
+  pointer-events: all;
+}
+
+.canvas-toggle {
+  position: absolute;
+  z-index: 35;
+  top: calc(var(--top-h) + 5px);
+  left: calc(var(--gutter) + 52px);
+  transition: left 200ms var(--ease);
+}
+
+.canvas-toggle.with-rail {
+  left: calc(var(--gutter) * 2 + 220px);
+}
+
+.canvas-toggle .pill {
+  box-shadow: var(--shadow-float);
+  border-color: transparent;
+}
+
+.canvas-toggle .pill.is-active {
+  border-color: var(--line-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-ring,
+  .thread-fresh {
+    animation: none;
+    opacity: 1;
+  }
+  .node.is-leaving,
+  .card.is-leaving {
+    display: none;
+  }
+}
+
+.is-exporting .node-open,
+.is-exporting .react-flow__handle {
+  display: none;
+}
+
+.node.kind-store.is-neighbor {
+  padding-top: 11px;
+}
+
+.node-unseen.is-inside {
+  background: var(--surface);
+  border: 2px solid var(--agent);
+  width: 9px;
+  height: 9px;
+}
