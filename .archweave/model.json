@@ -380,6 +380,23 @@
       ]
     },
     {
+      "id": "claude-code-plugins",
+      "kind": "app",
+      "name": "Claude Code plugins",
+      "summary": "Plugin marketplace that teaches a coding agent to set up ArchWeave and keep its model in step with the code.",
+      "description": "The repository root is the `archweave` marketplace; users add it with `/plugin marketplace add` and install plugins from `plugins/`. Each plugin is versioned in its own `plugin.json` and released with a `<name>--v<version>` tag. The skills hold procedures only; how to structure a model stays in the server's modeling guide.",
+      "technology": "Claude Code plugin marketplace",
+      "codeRefs": [
+        {
+          "path": ".claude-plugin/marketplace.json"
+        },
+        {
+          "path": "plugins/README.md",
+          "note": "Layout, development and release"
+        }
+      ]
+    },
+    {
       "id": "client-state",
       "kind": "component",
       "name": "Client state",
@@ -1912,6 +1929,23 @@
       ]
     },
     {
+      "id": "modeling-plugin",
+      "kind": "component",
+      "name": "Modeling plugin",
+      "summary": "Workflows for building the model from the code and syncing it after code changes.",
+      "description": "Skill `model-codebase`: survey, top level first, then components, data, flows and a link check. Skill `sync-model`: finds paths changed since the model was last committed (renames listed on both sides), repairs and fixes code links, models architectural changes. Depends on the setup plugin.",
+      "parentId": "claude-code-plugins",
+      "technology": "Claude Code skills",
+      "codeRefs": [
+        {
+          "path": "plugins/archweave/skills/model-codebase/SKILL.md"
+        },
+        {
+          "path": "plugins/archweave/skills/sync-model/SKILL.md"
+        }
+      ]
+    },
+    {
       "id": "note",
       "kind": "data",
       "name": "Note",
@@ -2377,6 +2411,27 @@
       ]
     },
     {
+      "id": "setup-plugin",
+      "kind": "component",
+      "name": "Setup plugin",
+      "summary": "Runs ArchWeave next to a repository from the published image and connects the agent to it.",
+      "description": "Skill `setup`: writes a Compose file from its template (pinned image version, free host port, separate Compose project when the repository has its own), matches the file owner on Linux, waits for `/api/health`, checks the MCP handshake and registers the server in `.mcp.json`. Configuration and troubleshooting references load on demand.",
+      "parentId": "claude-code-plugins",
+      "technology": "Claude Code skill",
+      "codeRefs": [
+        {
+          "path": "plugins/archweave-setup/skills/setup/SKILL.md"
+        },
+        {
+          "path": "plugins/archweave-setup/skills/setup/docker-compose.yml",
+          "note": "Template the skill fills in"
+        },
+        {
+          "path": "plugins/archweave-setup/skills/setup/reference"
+        }
+      ]
+    },
+    {
       "id": "shared-contract",
       "kind": "module",
       "name": "Shared contract",
@@ -2768,6 +2823,18 @@
       "from": "coding-agent",
       "to": "modeled-repo",
       "label": "reads and changes code"
+    },
+    {
+      "id": "coding-agent-uses-modeling-plugin",
+      "from": "coding-agent",
+      "to": "modeling-plugin",
+      "label": "follows modeling workflows from"
+    },
+    {
+      "id": "coding-agent-uses-setup-plugin",
+      "from": "coding-agent",
+      "to": "setup-plugin",
+      "label": "sets up ArchWeave with"
     },
     {
       "id": "data-perspective-uses-client-state",
