@@ -4,6 +4,26 @@ A shared architecture workspace for a developer and a coding agent. The develope
 
 The model lives in your repository as plain JSON (`.archweave/model.json` and `.archweave/layout.json`), so it is versioned and reviewed like code.
 
+## Quick start with Claude Code
+
+This repository is a Claude Code plugin marketplace. In the repository you want to model, start Claude Code and run:
+
+```text
+/plugin marketplace add rawe/archweave
+/plugin install archweave@archweave
+/archweave-setup:setup
+```
+
+The setup skill writes a Compose file for the published image, picks a free port, starts ArchWeave, checks that it is healthy and registers its MCP server in `.mcp.json`. Then start a new session and run `/archweave:model-codebase`.
+
+| Plugin | Skill | What it does |
+| --- | --- | --- |
+| `archweave-setup` | `/archweave-setup:setup [version]` | Sets up ArchWeave in the current repository, or changes, upgrades and troubleshoots an existing setup. |
+| `archweave` | `/archweave:model-codebase [part]` | Builds the model from the code: top level first, then components, data structures, flows and code links. |
+| | `/archweave:sync-model [revision or paths]` | Brings the model up to date after code changes: re-anchors and fixes code links, models what changed. |
+
+Installing `archweave` installs `archweave-setup` with it. Claude also uses the skills without the slash command when a request matches, such as "set up ArchWeave here" or "update the architecture model". Maintaining the plugins: [`plugins/README.md`](plugins/README.md).
+
 ## Run it with Docker
 
 Until the image is published, build it once from an ArchWeave checkout. This tags it as `ghcr.io/rawe/archweave:0.1.0` and `:latest` in your local Docker daemon, the same name the compose file pulls:

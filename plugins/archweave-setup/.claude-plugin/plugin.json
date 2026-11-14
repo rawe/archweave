@@ -1,0 +1,10 @@
+{
+  "name": "archweave-setup",
+  "displayName": "ArchWeave Setup",
+  "version": "0.1.0",
+  "description": "Runs ArchWeave in a repository: Docker Compose file from the GitHub Container Registry image, configuration, MCP connection and health check.",
+  "author": {
+    "name": "ArchWeave"
+  },
+  "keywords": ["archweave", "architecture", "docker", "mcp", "setup"]
+}

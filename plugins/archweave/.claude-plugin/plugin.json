@@ -1,0 +1,11 @@
+{
+  "name": "archweave",
+  "displayName": "ArchWeave",
+  "version": "0.1.0",
+  "description": "Workflows for the ArchWeave MCP server: model a codebase from scratch and sync the model after code changes.",
+  "author": {
+    "name": "ArchWeave"
+  },
+  "keywords": ["archweave", "architecture", "mcp", "modeling", "documentation"],
+  "dependencies": ["archweave-setup"]
+}

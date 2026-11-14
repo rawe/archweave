@@ -1,0 +1,20 @@
+# ArchWeave: a shared architecture workspace for this repository.
+#   Start:  docker compose up -d            (with -f <this file> if it is not docker-compose.yml)
+#   UI:     http://localhost:4317
+#   MCP:    http://localhost:4317/mcp       (registered for Claude Code in .mcp.json)
+# The model is stored in .archweave/; commit it with the code.
+services:
+  archweave:
+    image: ${ARCHWEAVE_IMAGE:-ghcr.io/rawe/archweave:VERSION}
+    # Files in .archweave/ are written as this user; on Linux it must match yours (`id -u`, `id -g`).
+    user: "${ARCHWEAVE_UID:-1000}:${ARCHWEAVE_GID:-1000}"
+    ports:
+      # Loopback only: ArchWeave has no login. The left port is the one the UI and .mcp.json use.
+      - "127.0.0.1:4317:4317"
+    volumes:
+      - ./:/repo
+    environment:
+      ARCHWEAVE_DATA_DIR: /repo/.archweave
+      # Lets the UI build "open in editor" links to files on your machine.
+      ARCHWEAVE_HOST_REPO_PATH: ${PWD}
+    restart: unless-stopped

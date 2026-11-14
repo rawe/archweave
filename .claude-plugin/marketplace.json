@@ -1,0 +1,19 @@
+{
+  "name": "archweave",
+  "description": "Claude Code plugins for ArchWeave: set it up next to a repository and keep its architecture model in step with the code.",
+  "owner": {
+    "name": "ArchWeave"
+  },
+  "plugins": [
+    {
+      "name": "archweave-setup",
+      "source": "./plugins/archweave-setup",
+      "description": "Runs ArchWeave in a repository: Docker Compose file from the GitHub Container Registry image, configuration, MCP connection and health check."
+    },
+    {
+      "name": "archweave",
+      "source": "./plugins/archweave",
+      "description": "Workflows for the ArchWeave MCP server: model a codebase from scratch and sync the model after code changes."
+    }
+  ]
+}
