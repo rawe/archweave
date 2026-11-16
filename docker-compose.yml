@@ -1,16 +1,17 @@
-# Copy this file next to the code you want to model and run `docker compose up -d`.
-# Then open http://localhost:4317 and connect your coding agent to http://localhost:4317/mcp.
+# ArchWeave: put this file in the root of the repository you want to model,
+# run `docker compose up -d` there and open http://localhost:4317.
 services:
   archweave:
-    image: ${ARCHWEAVE_IMAGE:-ghcr.io/rawe/archweave:latest}
-    # Files in .archweave/ are written as this user; match your own (`id -u`, `id -g`).
-    user: "${ARCHWEAVE_UID:-1000}:${ARCHWEAVE_GID:-1000}"
+    # To pin a release, replace "latest" with a version from
+    # https://github.com/rawe/archweave/pkgs/container/archweave (e.g. 0.1.0).
+    image: ghcr.io/rawe/archweave:latest
+    # Linux only: uncomment and use your own ids (`id -u`, `id -g`) if they are not 1000.
+    # user: "1000:1000"
     ports:
       - "127.0.0.1:4317:4317"
     volumes:
       - ./:/repo
     environment:
       ARCHWEAVE_DATA_DIR: /repo/.archweave
-      # Lets the UI build "open in editor" links to files on your machine.
-      ARCHWEAVE_HOST_REPO_PATH: ${PWD}
+      ARCHWEAVE_HOST_REPO_PATH: ${PWD}  # enables "open in editor" links
     restart: unless-stopped

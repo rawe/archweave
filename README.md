@@ -4,31 +4,19 @@ A shared architecture workspace for a developer and a coding agent. The develope
 
 The model lives in your repository as plain JSON (`.archweave/model.json` and `.archweave/layout.json`), so it is versioned and reviewed like code.
 
-## Use it in your project
+## Quick start
 
-ArchWeave ships as a multi-arch image (`linux/amd64`, `linux/arm64`): `ghcr.io/rawe/archweave`. Nothing to build.
+ArchWeave ships as a ready-made image for Intel and Apple Silicon. Nothing to build.
 
-1. Add this `docker-compose.yml` to the root of the repository you want to model:
-
-   ```yaml
-   services:
-     archweave:
-       image: ghcr.io/rawe/archweave:0.1.0
-       user: "${ARCHWEAVE_UID:-1000}:${ARCHWEAVE_GID:-1000}"
-       ports:
-         - "127.0.0.1:4317:4317"
-       volumes:
-         - ./:/repo
-       environment:
-         ARCHWEAVE_DATA_DIR: /repo/.archweave
-         ARCHWEAVE_HOST_REPO_PATH: ${PWD}
-       restart: unless-stopped
-   ```
-
-2. Start it: `docker compose up -d`
+1. Copy [`docker-compose.yml`](docker-compose.yml) into the root of the repository you want to model.
+2. Run `docker compose up -d` there.
 3. Open <http://localhost:4317> and connect your coding agent (see below).
 
-The repository is mounted at `/repo` and the model is written to `.archweave/` in it; commit that folder. Files are written as `1000:1000`; if your ids differ (`id -u`, `id -g`), set `ARCHWEAVE_UID` and `ARCHWEAVE_GID`, for example in a `.env` file next to the compose file. Use `:latest` instead of a version to always get the newest release (`docker compose pull` to update).
+ArchWeave stores the model in `.archweave/` inside your repository; commit it.
+
+### Running on Linux
+
+The container writes `.archweave/` as user `1000`. On macOS and Windows, Docker Desktop maps file ownership to your user, so nothing to do. On Linux, check `id -u`: if it is not `1000`, uncomment the `user:` line in `docker-compose.yml` and put in your ids from `id -u` and `id -g`. Otherwise ArchWeave cannot write to your repository.
 
 ## Run it with Node
 
