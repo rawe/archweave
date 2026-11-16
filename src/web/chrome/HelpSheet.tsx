@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { MOD } from '../lib/format.ts';
+import { ALT, MOD } from '../lib/format.ts';
 import { setOverlay } from '../state/store.ts';
 import { FIRST_PROMPT } from './EmptyState.tsx';
 import { IconButton, Keys } from './primitives.tsx';
@@ -11,6 +11,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     items: [
       [`${MOD} K`, 'Search and commands'],
       ['1 2 3 4', 'Structure, Data, Flows, Diagrams'],
+      [`${ALT} ← ${ALT} →`, 'Back and Forward through views and selections'],
       [`${MOD} Z`, 'Undo'],
       [`${MOD} E`, 'Export'],
       ['⇧ T', 'Toggle theme'],

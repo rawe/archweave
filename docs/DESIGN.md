@@ -227,7 +227,7 @@ Agent activity: elements the agent created or changed get a saffron ring that fa
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ◈ shop › Order service › Checkout [Structure Data Flows Diagrams] ⌕  ● ⤓ ◐ ? │
+│ ← → ◈ shop › Orders › Checkout  [Structure Data Flows Diagrams]  ⌕  ● ⤓ ◐ ?  │
 │                                                                ┌───────────┐ │
 │                                                                │ Inspector │ │
 │                     canvas                                     │ (only on  │ │
@@ -237,7 +237,8 @@ Agent activity: elements the agent created or changed get a saffron ring that fa
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Top left:** the mark and a breadcrumb of the current scope (or the open flow or diagram). Each crumb is clickable. The model name is the root crumb.
+- **Top left:** Back and Forward, then the mark and a breadcrumb of the current scope (or the open flow or diagram). Each crumb is clickable. The model name is the root crumb.
+- **Back and Forward** move through the views and selections the human went through, never through changes (that is undo). The address holds the view (perspective, scope, flow, open diagram, focused data structure); each history entry holds the selection (elements, relations, diagram shapes and lines, the flow step), so Back restores both. A new view and a deliberate jump (following a link, a relation row, an activity entry, a linked shape, a palette result, the agent's `focus_ui`) add an entry; selecting on the canvas only updates the current one. Alt+← / Alt+→ and the browser's own buttons do the same. The buttons stay in place, quiet when there is nowhere to go; they know that from the entry's position and the furthest position reachable, both kept in each entry's history state, so a reload keeps them right. A restored selection drops what no longer exists.
 - **Top center:** the perspective switch, a four-segment control: Structure, Data, Flows, Diagrams. Keys `1`, `2`, `3`, `4`.
 - **Top right:** search (`⌘K`), agent presence, export, theme, help. Icon buttons with tooltips.
 - **Bottom left:** zoom out, zoom level, zoom in, fit. Undo appears here after a change.
@@ -273,7 +274,7 @@ The place to find and discuss data structures. A real codebase has dozens of the
 - Left column: the structures that reference it, with the thread starting at their referencing field row.
 - Neighbor cards show their name, the rows involved in the link, and a quiet "n more fields" line; they are one hop only.
 - Below the center card: the elements that produce, consume, read or write it, as small quiet nodes grouped by verb. Clicking one jumps to it in the Structure perspective.
-- Clicking a neighbor card moves the focus to it with a short transition. Browser Back returns to the previous focus. `Esc` returns to the catalog.
+- Clicking a neighbor card moves the focus to it with a short transition. Back (the app's button, Alt+←, or the browser's) returns to the previous focus. `Esc` returns to the catalog.
 
 Shared by both states:
 - A slim list rail on the left (the only persistent side element, 220 px, collapsible) lists all structures grouped by owner, with a filter field. The filter also narrows the catalog. Selecting an entry focuses that structure. This is what makes any structure reachable in one step.

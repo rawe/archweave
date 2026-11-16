@@ -2,11 +2,26 @@
 import type { Perspective, UiState } from '../../shared/model.ts';
 import { api, subscribe } from '../api.ts';
 import { refreshStale } from './codeLinks.ts';
+import { NavHistory, restorable, type NavSelection } from './navHistory.ts';
 import { dataFocusId, getState, handleFocusRequest, receiveSnapshot, setAgent, setState, useStore, type State } from './store.ts';
 
 export function bootstrap(): () => void {
   const fromHash = parseHash(location.hash);
   if (fromHash) setState(fromHash);
+  const nav = new NavHistory(history, location.hash);
+  // A reload keeps the selection of the entry; the first snapshot drops what no longer exists.
+  const saved = nav.restored;
+  if (saved)
+    setState({
+      selection: { elementIds: saved.elementIds, relationIds: saved.relationIds, ...(saved.edgeKey ? { edgeKey: saved.edgeKey } : {}) },
+      selectedShapeIds: saved.shapeIds,
+      stepIndex: saved.step ?? null,
+    });
+  const syncNav = () => {
+    const { navIndex, navMax } = getState();
+    if (navIndex !== nav.index || navMax !== nav.max) setState({ navIndex: nav.index, navMax: nav.max });
+  };
+  syncNav();
 
   void api
     .snapshot()
@@ -85,18 +100,51 @@ export function bootstrap(): () => void {
     uiTimer = setTimeout(() => void api.putUi(ui).catch(() => undefined), 150);
   });
 
-  // Keep perspective, scope and flow in the address bar so Back drills out.
+  // Keep the view in the address bar and the selection in the history entry, so Back returns to both.
+  // A new view or a deliberate jump is a new entry; a selection change within the view rewrites the current one.
   let lastHash = location.hash;
+  let lastJump = getState().navToken;
   const unsubscribeHash = useStore.subscribe((s) => {
+    if (!s.loaded) return;
     const hash = hashOf(s);
-    if (hash === lastHash || !s.loaded) return;
-    lastHash = hash;
-    history.pushState(null, '', hash);
+    const jump = s.navToken !== lastJump;
+    lastJump = s.navToken;
+    if (hash !== lastHash && (!parseHash(lastHash) || (!jump && opensFirst(lastHash, hash)))) {
+      // The page was opened without a view in its address, or Flows or Diagrams opened their first item by
+      // themselves: that view takes over the entry, so Back does not land on a view that moves on again.
+      lastHash = hash;
+      nav.replace(navSelection(s), hash);
+    } else if (hash !== lastHash || jump) {
+      lastHash = hash;
+      nav.push(hash, navSelection(s));
+      syncNav();
+    } else nav.replace(navSelection(s));
   });
-  const onPop = () => {
+  const onPop = (event: PopStateEvent) => {
+    const entry = nav.pop(event.state, location.hash);
     const parsed = parseHash(location.hash);
-    lastHash = location.hash;
-    if (parsed) setState({ selection: { elementIds: [], relationIds: [] }, selectedShapeIds: [], stepIndex: null, ...parsed });
+    if (!parsed) return syncNav();
+    const s = getState();
+    const view = { ...s, ...parsed } as State;
+    const kept = entry ? restorable(entry, s.model, view) : undefined;
+    const patch: Partial<State> = {
+      selection: { elementIds: [], relationIds: [] },
+      selectedShapeIds: [],
+      stepIndex: null,
+      ...parsed,
+      ...(kept
+        ? {
+            selection: { elementIds: kept.elementIds, relationIds: kept.relationIds, ...(kept.edgeKey ? { edgeKey: kept.edgeKey } : {}) },
+            selectedShapeIds: kept.shapeIds,
+            stepIndex: kept.stepIndex,
+          }
+        : {}),
+      navIndex: nav.index,
+      navMax: nav.max,
+    };
+    // What this sets is the entry just shown: it must not count as a new view.
+    lastHash = hashOf({ ...s, ...patch } as State);
+    setState(patch);
   };
   window.addEventListener('popstate', onPop);
 
@@ -119,6 +167,21 @@ function uiStateOf(s: State): UiState {
     selectedElementIds: s.selection.elementIds,
     selectedRelationIds: s.selection.relationIds,
     selectedShapeIds: s.perspective === 'diagrams' ? s.selectedShapeIds : [],
+  };
+}
+
+/** `to` is `from`, an empty Flows or Diagrams view, with the item that view opens on its own. */
+function opensFirst(from: string, to: string): boolean {
+  return /^#\/(flows|diagrams)$/.test(from) && to.startsWith(`${from}/`);
+}
+
+function navSelection(s: State): NavSelection {
+  return {
+    elementIds: s.selection.elementIds,
+    relationIds: s.selection.relationIds,
+    shapeIds: s.selectedShapeIds,
+    ...(s.selection.edgeKey ? { edgeKey: s.selection.edgeKey } : {}),
+    ...(s.stepIndex !== null ? { step: s.stepIndex } : {}),
   };
 }
 

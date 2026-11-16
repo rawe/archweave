@@ -100,6 +100,11 @@ export interface State {
   selectedShapeIds: string[];
   /** Bumped to ask the active canvas to center on the selection. */
   revealToken: number;
+  /** Bumped by a deliberate jump (a link followed, the agent showing something): it gets its own Back entry. */
+  navToken: number;
+  /** Position in the app's own history and the last position Forward reaches (see state/navHistory.ts). */
+  navIndex: number;
+  navMax: number;
   /** A relation whose label field the inspector should focus once, right after connecting. */
   labelFocusFor?: string;
 
@@ -139,6 +144,9 @@ export const useStore = create<State>(() => ({
   selection: EMPTY_SELECTION,
   selectedShapeIds: [],
   revealToken: 0,
+  navToken: 0,
+  navIndex: 0,
+  navMax: 0,
   fresh: {},
   unseen: loadUnseen(),
   leaving: {},
@@ -366,6 +374,7 @@ export function openDiagram(diagramId: string | undefined, selectIds: string[] =
     selection: EMPTY_SELECTION,
     stepIndex: null,
     revealToken: s.revealToken + (selectIds.length ? 1 : 0),
+    navToken: s.navToken + (selectIds.length ? 1 : 0),
   }));
   if (diagramId) markSeen([`diagram:${diagramId}`]);
 }
@@ -409,7 +418,7 @@ export function navigateToElement(id: string, extra: string[] = []) {
   const el = model.elements.find((e) => e.id === id);
   if (!el) return;
   if (el.kind === 'data') {
-    set((s) => ({ perspective: 'data', selection: { elementIds: [id, ...extra], relationIds: [] }, revealToken: s.revealToken + 1, stepIndex: null }));
+    set((s) => ({ perspective: 'data', selection: { elementIds: [id, ...extra], relationIds: [] }, revealToken: s.revealToken + 1, navToken: s.navToken + 1, stepIndex: null }));
   } else {
     const parent = el.parentId && model.elements.some((e) => e.id === el.parentId) ? el.parentId : undefined;
     set((s) => ({
@@ -417,6 +426,7 @@ export function navigateToElement(id: string, extra: string[] = []) {
       scopeId: parent,
       selection: { elementIds: [id, ...extra], relationIds: [] },
       revealToken: s.revealToken + 1,
+      navToken: s.navToken + 1,
       stepIndex: null,
     }));
   }
@@ -431,7 +441,7 @@ export function navigateToRelation(id: string) {
   const to = model.elements.find((e) => e.id === rel.to);
   if (from?.kind === 'data' && to?.kind === 'data') {
     // The data perspective shows a relation between structures by focusing its source.
-    set((s) => ({ perspective: 'data', selection: { elementIds: [rel.from], relationIds: [] }, revealToken: s.revealToken + 1, stepIndex: null }));
+    set((s) => ({ perspective: 'data', selection: { elementIds: [rel.from], relationIds: [] }, revealToken: s.revealToken + 1, navToken: s.navToken + 1, stepIndex: null }));
     markSeen([id]);
     return;
   }
@@ -442,6 +452,7 @@ export function navigateToRelation(id: string) {
     scopeId: anchor?.parentId,
     selection: { elementIds: [], relationIds: [id] },
     revealToken: s.revealToken + 1,
+    navToken: s.navToken + 1,
     stepIndex: null,
   }));
   markSeen([id]);
@@ -477,9 +488,17 @@ export function handleFocusRequest(req: FocusRequest) {
   if (diagram) {
     const known = new Set([...diagram.shapes, ...diagram.connectors].map((s) => s.id));
     const shapeIds = (req.shapeIds ?? []).filter((id) => known.has(id));
-    openDiagram(diagram.id);
-    // Always a reveal: the canvas fits the highlighted shapes, or the whole diagram.
-    set((s) => ({ selectedShapeIds: shapeIds, revealToken: s.revealToken + 1 }));
+    // Always a reveal: the canvas fits the highlighted shapes, or the whole diagram. One deliberate jump, one Back entry.
+    set((s) => ({
+      perspective: 'diagrams',
+      diagramId: diagram.id,
+      selectedShapeIds: shapeIds,
+      selection: EMPTY_SELECTION,
+      stepIndex: null,
+      revealToken: s.revealToken + 1,
+      navToken: s.navToken + 1,
+    }));
+    markSeen([`diagram:${diagram.id}`]);
     const now = Date.now();
     set((s) => ({ fresh: { ...s.fresh, ...Object.fromEntries(shapeIds.map((id) => [`${diagram.id}/${id}`, now])) } }));
     toast({ tone: 'agent', text: req.message || 'The agent is showing you this' });
@@ -487,6 +506,7 @@ export function handleFocusRequest(req: FocusRequest) {
   }
   if (req.perspective === 'flows' || (req.flowId && !req.perspective)) {
     openFlow(req.flowId ?? get().flowId);
+    set((s) => ({ navToken: s.navToken + 1 }));
   } else if (req.perspective || req.scopeId !== undefined) {
     const perspective = req.perspective ?? 'structure';
     set((s) => ({
@@ -494,6 +514,7 @@ export function handleFocusRequest(req: FocusRequest) {
       scopeId: perspective === 'structure' ? (req.scopeId ?? undefined) : s.scopeId,
       selection: { elementIds: ids, relationIds: [] },
       revealToken: s.revealToken + 1,
+      navToken: s.navToken + 1,
       stepIndex: null,
     }));
   } else if (ids.length) {
@@ -536,6 +557,15 @@ function sanitizeView(before: Model) {
 /** The structure the data perspective is focused on: the first selected data element, if any. */
 export function dataFocusId(s: Pick<State, 'selection' | 'model'>): string | undefined {
   return s.selection.elementIds.find((id) => s.model.elements.some((e) => e.id === id && e.kind === 'data'));
+}
+
+/** Back and Forward through the app's own history; the browser's buttons do the same. */
+export function goBack() {
+  if (get().navIndex > 0) history.back();
+}
+
+export function goForward() {
+  if (get().navIndex < get().navMax) history.forward();
 }
 
 export function openCode(view: CodeView) {

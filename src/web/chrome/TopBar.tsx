@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
-import { ChevronRight, CircleQuestionMark, Download, Moon, Search, Sun } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, CircleQuestionMark, Download, Moon, Search, Sun } from 'lucide-react';
 import type { Perspective } from '../../shared/model.ts';
 import { ancestorsOf, indexById } from '../../shared/projection.ts';
 import { renameModel } from '../state/actions.ts';
-import { enterScope, openDiagram, openFlow, setOverlay, setPerspective, useStore } from '../state/store.ts';
+import { enterScope, goBack, goForward, openDiagram, openFlow, setOverlay, setPerspective, useStore } from '../state/store.ts';
 import { cx } from '../lib/dom.ts';
-import { MOD } from '../lib/format.ts';
+import { ALT, MOD } from '../lib/format.ts';
 import { toggleTheme, useTheme } from '../lib/theme.ts';
 import { IconButton, Tip } from './primitives.tsx';
 import { ActivityPopover, PresenceButton } from './Activity.tsx';
@@ -33,6 +33,7 @@ export function TopBar() {
   return (
     <>
       <div className="chrome chrome-left">
+        <BackForward />
         <Breadcrumb />
       </div>
       <div className="chrome chrome-center">
@@ -52,6 +53,18 @@ export function TopBar() {
       </div>
       {overlay === 'activity' && <ActivityPopover anchor={presenceRef} />}
     </>
+  );
+}
+
+/** The app's own Back and Forward: views and selections the human moved through, never undo. */
+function BackForward() {
+  const canBack = useStore((s) => s.navIndex > 0);
+  const canForward = useStore((s) => s.navIndex < s.navMax);
+  return (
+    <div className="chrome-group nav-arrows">
+      <IconButton icon={ArrowLeft} label="Back" keys={`${ALT} ←`} disabled={!canBack} onClick={goBack} />
+      <IconButton icon={ArrowRight} label="Forward" keys={`${ALT} →`} disabled={!canForward} onClick={goForward} />
+    </div>
   );
 }
 

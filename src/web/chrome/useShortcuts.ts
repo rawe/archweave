@@ -4,6 +4,8 @@ import {
   clearSelection,
   closeCode,
   getState,
+  goBack,
+  goForward,
   scopeOut,
   setOverlay,
   setPerspective,
@@ -21,8 +23,17 @@ export function useShortcuts() {
     // The state as it was when the key went down. A focused canvas node handles Escape itself
     // (it deselects) before the event reaches the window; Escape must not then also drill out.
     let atKeyDown = getState();
-    const onKeyCapture = () => {
+    const onKeyCapture = (e: KeyboardEvent) => {
       atKeyDown = getState();
+      // Alt+arrows go Back and Forward; taken before a focused canvas node would move with them.
+      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const s = getState();
+        if (isTypingTarget(e.target) || document.querySelector('[aria-modal="true"]') || (s.overlay && s.overlay !== 'activity')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'ArrowLeft') goBack();
+        else goForward();
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
