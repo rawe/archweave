@@ -47,7 +47,8 @@ describe('diagramLints', () => {
   });
 
   it('reports a line running through a shape that is not one of its ends', () => {
-    const lints = lint((d) => ({ ...d, connectors: [...d.connectors, { id: 'a-svc', from: 'a', to: 'svc' }] }));
+    // Elbows detour around shapes; a straight line cannot.
+    const lints = lint((d) => ({ ...d, connectors: [...d.connectors, { id: 'a-svc', from: 'a', to: 'svc', route: 'straight' }] }));
     expect(lints).toEqual([expect.objectContaining({ code: 'crosses-shape', ids: ['a-svc', 'b'] })]);
     expect(lints[0]!.message).toMatch(/runs through or along `b`/);
   });
@@ -55,7 +56,7 @@ describe('diagramLints', () => {
   it('reports a line running along the edge of a shape, not one passing at a distance', () => {
     const along = (top: number) =>
       diagramLints(
-        Diagram.parse({ id: 'd', name: 'D', direction: 'right', shapes: [box('p', 0, 0), box('q', 480, 0), box('r', 200, top)], connectors: [{ id: 'p-q', from: 'p', to: 'q' }] }),
+        Diagram.parse({ id: 'd', name: 'D', direction: 'right', shapes: [box('p', 0, 0), box('q', 480, 0), box('r', 200, top)], connectors: [{ id: 'p-q', from: 'p', to: 'q', route: 'straight' }] }),
         MODEL,
       );
     expect(along(26)).toEqual([expect.objectContaining({ code: 'crosses-shape', ids: ['p-q', 'r'] })]);
@@ -63,7 +64,16 @@ describe('diagramLints', () => {
   });
 
   it('reports a label covering another label, a shape or a line, but not the trunk of its own fan', () => {
-    const covered = lint((d) => ({ ...d, shapes: [...d.shapes, box('c', 24, 280), box('d', 80, 180, { w: 40, h: 24 })], connectors: [...d.connectors, { id: 'a-c', from: 'a', to: 'c', label: 'a label wide enough to reach' }] }));
+    // A short straight line beside a tall shape: every place along it for the label is covered.
+    const covered = diagramLints(
+      Diagram.parse({
+        id: 'd',
+        name: 'D',
+        shapes: [box('p', 0, 0), box('q', 0, 160), box('d', 80, 52, { h: 72 })],
+        connectors: [{ id: 'a-c', from: 'p', to: 'q', label: 'a label wide enough to reach', route: 'straight' }],
+      }),
+      MODEL,
+    );
     expect(covered).toContainEqual(expect.objectContaining({ code: 'label-overlap', ids: ['a-c', 'd'] }));
     expect(covered.find((l) => l.code === 'label-overlap')!.message).toMatch(/The label of connector `a-c` covers `d`/);
     const labels = lint((d) => ({

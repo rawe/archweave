@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "archweave": {
+      "type": "http",
+      "url": "http://localhost:4317/mcp"
+    }
+  }
+}

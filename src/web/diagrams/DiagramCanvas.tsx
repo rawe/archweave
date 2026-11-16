@@ -170,7 +170,7 @@ export function DiagramCanvas({ diagram }: { diagram: Diagram }) {
 
   // One routing pass over the live rectangles, so lines follow while shapes are dragged, resized or typed into.
   const routes = useMemo(() => {
-    const rects = nodes.map((n) => ({ id: n.id, kind: n.data.shape.kind, x: n.position.x, y: n.position.y, w: n.data.shape.w, h: n.data.shape.h }));
+    const rects = nodes.map((n) => ({ id: n.id, kind: n.data.shape.kind, parent: n.data.shape.parent, x: n.position.x, y: n.position.y, w: n.data.shape.w, h: n.data.shape.h }));
     const label = editing?.target === 'connector' ? editing : null;
     const connectors = edges.map((e) => (label && e.id === label.id ? { ...e.data!.connector, label: label.draft } : e.data!.connector));
     return routeConnectors(rects, connectors, { direction: diagram.direction });

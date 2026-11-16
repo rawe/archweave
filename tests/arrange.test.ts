@@ -96,6 +96,15 @@ describe('arranging a new diagram', () => {
     }
   });
 
+  it('picks the direction of a new seeded diagram that leaves it open, and keeps one that was given', async () => {
+    const seed = ['shop', 'api', 'db', 'events', 'customer', 'stripe', 'fraud'];
+    const open = await prepareChanges(MODEL, { diagrams: [{ id: 'd', name: 'D', seed }] });
+    expect(['down', 'right']).toContain(open.diagrams![0]!.direction);
+    expect(await prepareChanges(MODEL, { diagrams: [{ id: 'd', name: 'D', seed }] })).toEqual(open);
+    const given = await prepareChanges(MODEL, { diagrams: [{ id: 'd', name: 'D', seed, direction: 'right' }] });
+    expect(given.diagrams![0]!.direction).toBe('right');
+  });
+
   it('leaves room for long labels on lines fanning out of one shape', async () => {
     for (const direction of ['down', 'right'] as const) {
       const { diagram } = await draw(new Store({ model: MODEL }), {
@@ -312,7 +321,7 @@ describe('arrangeDiagram', () => {
       ],
       connectors: [{ id: 'ab', from: 'a', to: 'b', label: '' }],
     };
-    expect([...(await arrangeDiagram(diagram, MODEL, ['b'])).keys()]).toEqual(['b']);
+    expect([...(await arrangeDiagram(diagram, MODEL, ['b'])).boxes.keys()]).toEqual(['b']);
   });
 });
 

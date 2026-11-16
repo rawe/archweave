@@ -7,7 +7,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api.js';
 import { minHeightAt } from '../shared/diagram/layout.ts';
 import { shapeLabel } from '../shared/diagram/links.ts';
-import { lineProblems } from '../shared/diagram/lints.ts';
+import { type LineProblem, lineProblems } from '../shared/diagram/lints.ts';
 import { applyDiagramPatch, type LinkTargets } from '../shared/diagram/patch.ts';
 import { routeConnectors } from '../shared/diagram/route.ts';
 import { seedPatch } from '../shared/diagram/seed.ts';
@@ -38,7 +38,9 @@ const GROUP_PAD = 24;
 const TITLE_GAP = 16;
 /** How far `clearLines` moves a shape sideways at most, and how many routings it may spend. */
 const MAX_SHIFT = 256;
-const CLEAR_BUDGET = 400;
+const CLEAR_BUDGET = 200;
+/** How many of the cheapest candidate layouts get the repair pass before the cheapest is taken. */
+const REPAIRED = 3;
 
 let elk: InstanceType<typeof ELK> | undefined;
 
@@ -91,10 +93,12 @@ async function preparePatch(existing: Diagram | undefined, patch: DiagramPatch, 
   if (!applied.diagram) return { patch };
   const all = arrange === 'all';
   if (!all && !applied.unplaced.length) return { patch: seed || arrange ? base : patch, diagram: applied.diagram };
+  // A new seeded diagram whose author left the direction open is drawn in whichever reads better.
+  const free = !existing && !!seed?.length && patch.direction === undefined;
   // Should ELK fail on some graph, the store's fallback row is better than refusing the change.
-  const boxes = await arrangeDiagram(applied.diagram, targets, all ? 'all' : applied.unplaced).catch(() => undefined);
-  if (!boxes) return { patch: base, diagram: applied.diagram };
-  const placed = withBoxes(base, boxes, applied.diagram);
+  const arranged = await arrangeDiagram(applied.diagram, targets, all ? 'all' : applied.unplaced, free).catch(() => undefined);
+  if (!arranged) return { patch: base, diagram: applied.diagram };
+  const placed = { ...withBoxes(base, arranged.boxes, applied.diagram), ...(free ? { direction: arranged.direction } : {}) };
   return { patch: placed, diagram: applyDiagramPatch(existing, placed, ctx).diagram };
 }
 
@@ -102,17 +106,19 @@ async function preparePatch(existing: Diagram | undefined, patch: DiagramPatch, 
  * New positions for the shapes of a diagram: with `'all'` every shape, laid out afresh (non-group shapes keep
  * their size, groups are sized to what they hold); with a list of shape ids only those, around the rest,
  * which stays where it is except that a group grows to hold a new shape and pushes aside what it would cover.
- * Returns the shapes whose geometry changes.
+ * With `chooseDirection`, a diagram laid out afresh is tried in both directions and the better kept.
+ * Returns the shapes whose geometry changes, and the direction they were placed in.
  */
-export async function arrangeDiagram(diagram: Diagram, targets: LinkTargets, place: 'all' | string[]): Promise<Map<string, Box>> {
+export async function arrangeDiagram(diagram: Diagram, targets: LinkTargets, place: 'all' | string[], chooseDirection = false): Promise<{ boxes: Map<string, Box>; direction: Direction }> {
   const shapes = new Map(diagram.shapes.map((s) => [s.id, s]));
   const pending = new Set(place === 'all' ? shapes.keys() : place);
   const fixed = [...shapes.values()].filter((s) => !pending.has(s.id));
   if (!fixed.length) {
-    const block = await layoutBlock([...shapes.values()], diagram.connectors, diagram.direction, targets);
-    return new Map([...block.boxes].map(([id, box]) => [id, { ...box, x: box.x + ORIGIN, y: box.y + ORIGIN }]));
+    const directions: Direction[] = chooseDirection ? ['down', 'right'] : [diagram.direction];
+    const block = await layoutBlock([...shapes.values()], diagram.connectors, directions, targets);
+    return { boxes: new Map([...block.boxes].map(([id, box]) => [id, { ...box, x: box.x + ORIGIN, y: box.y + ORIGIN }])), direction: block.direction };
   }
-  return new Placer(shapes, diagram.connectors, diagram.direction, targets, pending).run();
+  return { boxes: await new Placer(shapes, diagram.connectors, diagram.direction, targets, pending).run(), direction: diagram.direction };
 }
 
 /** Gives every id-less shape entry of a patch an id made as the store makes it, so positions can be written back to it. */
@@ -172,8 +178,19 @@ const VARIANTS: Record<string, string>[] = ['NETWORK_SIMPLEX', 'BRANDES_KOEPF', 
     'elk.layered.layering.strategy': layering,
   })),
 );
-/** What one line problem left in a layout costs against its size (width plus height, in units). */
-const PROBLEM_COST = 1200;
+/**
+ * How candidate layouts are weighed, in units of connector length: a lint-worthy line problem, a bend, two
+ * lines crossing, and each unit of width plus height.
+ */
+const PROBLEM_COST = 1500;
+/**
+ * How much room labels get: `tight` only between layers, `roomy` more air and room beside, `labels` gives
+ * ELK the label boxes so it reserves a place for each.
+ */
+const ROOM = ['tight', 'roomy', 'labels'] as const;
+const BEND_COST = 48;
+const CROSSING_COST = 160;
+const SIZE_COST = 0.5;
 
 /**
  * Lays out shapes with ELK's layered algorithm in the reading direction: groups (among `shapes`) are frames
@@ -181,7 +198,7 @@ const PROBLEM_COST = 1200;
  * with the fewest line problems (see `clearLines`) and then the smallest size is taken. Deterministic.
  * Non-group shapes keep their size; a group with nothing inside keeps its size too.
  */
-async function layoutBlock(shapes: DiagramShape[], connectors: DiagramConnector[], direction: Direction, targets: LinkTargets): Promise<Block> {
+async function layoutBlock(shapes: DiagramShape[], connectors: DiagramConnector[], directions: Direction[], targets: LinkTargets): Promise<Block & { direction: Direction }> {
   const members = new Map(shapes.map((s) => [s.id, s]));
   const children = new Map<string | undefined, DiagramShape[]>();
   for (const s of shapes) {
@@ -193,60 +210,124 @@ async function layoutBlock(shapes: DiagramShape[], connectors: DiagramConnector[
     return false;
   };
   const drawn = connectors.filter((c) => members.has(c.from) && members.has(c.to) && c.from !== c.to && !within(c.from, c.to) && !within(c.to, c.from));
-  const spacing = {
-    'elk.direction': direction === 'right' ? 'RIGHT' : 'DOWN',
-    ...labelSpacing(drawn, direction),
-    'elk.spacing.edgeNode': '24',
-    'elk.layered.spacing.edgeNodeBetweenLayers': '24',
-    'elk.spacing.edgeEdge': '16',
-    'elk.spacing.componentComponent': String(LAYER_GAP),
-  };
-  const node = (s: DiagramShape): ElkNode => {
-    const inside = children.get(s.id);
-    if (s.kind !== 'group' || !inside) return { id: s.id, width: s.w, height: s.h };
-    const title = groupTitle(s, targets);
+  const labels = new Map(drawn.flatMap((c) => (c.label.trim() ? [[c.id, labelSize(c.label)] as const] : [])));
+  const edges = (withLabels: boolean): ElkExtendedEdge[] =>
+    drawn.map((c) => {
+      const size = withLabels ? labels.get(c.id) : undefined;
+      return { id: `edge:${c.id}`, sources: [c.from], targets: [c.to], ...(size ? { labels: [{ id: `label:${c.id}`, text: c.label, width: size.w, height: size.h }] } : {}) };
+    });
+  const graph = (spacing: Record<string, string>, variant: Record<string, string>, withEdges: boolean, withLabels: boolean): ElkNode => {
+    const node = (s: DiagramShape): ElkNode => {
+      const inside = children.get(s.id);
+      if (s.kind !== 'group' || !inside) return { id: s.id, width: s.w, height: s.h };
+      const title = groupTitle(s, targets);
+      return {
+        id: s.id,
+        children: inside.map(node),
+        layoutOptions: {
+          ...spacing,
+          'elk.padding': `[top=${title.band},left=${GROUP_PAD},bottom=${GROUP_PAD},right=${GROUP_PAD}]`,
+          'elk.nodeSize.constraints': 'MINIMUM_SIZE',
+          'elk.nodeSize.minimum': `(${title.w}, ${title.band + GROUP_PAD})`,
+        },
+      };
+    };
     return {
-      id: s.id,
-      children: inside.map(node),
+      id: 'root',
       layoutOptions: {
         ...spacing,
-        'elk.padding': `[top=${title.band},left=${GROUP_PAD},bottom=${GROUP_PAD},right=${GROUP_PAD}]`,
-        'elk.nodeSize.constraints': 'MINIMUM_SIZE',
-        'elk.nodeSize.minimum': `(${title.w}, ${title.band + GROUP_PAD})`,
+        ...variant,
+        'elk.algorithm': 'layered',
+        'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+        'elk.edgeRouting': 'ORTHOGONAL',
+        // Only here: on a group without edges inside, ELK 0.12 fails with it.
+        'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+        'elk.padding': '[top=0,left=0,bottom=0,right=0]',
       },
+      children: (children.get(undefined) ?? []).map(node),
+      edges: withEdges ? edges(withLabels) : [],
     };
   };
-  const edges: ElkExtendedEdge[] = drawn.map((c) => ({ id: `edge:${c.id}`, sources: [c.from], targets: [c.to] }));
-  const graph = (variant: Record<string, string>, withEdges: boolean): ElkNode => ({
-    id: 'root',
-    layoutOptions: {
-      ...spacing,
-      ...variant,
-      'elk.algorithm': 'layered',
-      'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      // Only here: on a group without edges inside, ELK 0.12 fails with it.
-      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-      'elk.padding': '[top=0,left=0,bottom=0,right=0]',
-    },
-    children: (children.get(undefined) ?? []).map(node),
-    edges: withEdges ? edges : [],
-  });
   elk ??= new ELK();
-  let best: (Block & { cost: number }) | undefined;
-  for (const variant of drawn.length ? VARIANTS : VARIANTS.slice(0, 1)) {
-    // ELK refuses some graphs (edges into a group from inside it, for one); the shapes are then laid out without edges.
-    const result = await elk.layout(graph(variant, true)).catch(() => elk!.layout(graph(variant, false)));
-    const boxes = gridded(result, members);
-    const left = clearLines(boxes, members, drawn, direction, targets);
-    const bounds = union([...boxes.values()])!;
-    const cost = left * PROBLEM_COST + bounds.w + bounds.h;
-    if (best && cost >= best.cost) continue;
-    for (const [id, b] of boxes) boxes.set(id, { ...b, x: b.x - bounds.x, y: b.y - bounds.y });
-    best = { boxes, w: bounds.w, h: bounds.h, cost };
-    if (!left) break;
+  const candidates: { boxes: Map<string, Box>; direction: Direction; cost: number; problems: LineProblem[] }[] = [];
+  const seen = new Set<string>();
+  for (const direction of directions) {
+    for (const room of drawn.length ? ROOM : ROOM.slice(0, 1)) {
+      const spacing = {
+        'elk.direction': direction === 'right' ? 'RIGHT' : 'DOWN',
+        // With the label boxes ELK reserves their room itself.
+        ...(room === 'labels'
+          ? { 'elk.spacing.nodeNode': String(NODE_GAP / 2), 'elk.layered.spacing.nodeNodeBetweenLayers': String(GRID * 3), 'elk.edgeLabels.placement': 'CENTER', 'elk.spacing.edgeLabel': '4' }
+          : labelSpacing(drawn, direction, room === 'roomy')),
+        'elk.spacing.edgeNode': '24',
+        'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+        'elk.spacing.edgeEdge': '16',
+        'elk.spacing.componentComponent': String(LAYER_GAP),
+      };
+      for (const variant of drawn.length ? VARIANTS : VARIANTS.slice(0, 1)) {
+        // ELK refuses some graphs (edges into a group from inside it, for one); the shapes are then laid out without edges.
+        const result = await elk.layout(graph(spacing, variant, true, room === 'labels')).catch(() => elk!.layout(graph(spacing, variant, false, false)));
+        const boxes = gridded(result, members);
+        const key = `${direction} ${JSON.stringify([...boxes])}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({ boxes, direction, ...layoutCost(boxes, members, drawn, direction) });
+      }
+    }
   }
-  return { boxes: best!.boxes, w: best!.w, h: best!.h };
+  // Ties keep the earlier candidate: the order of the loops above decides, so the result is deterministic.
+  const ranked = candidates.map((c, i) => ({ ...c, i })).sort((a, b) => a.cost - b.cost || a.i - b.i);
+  for (const c of ranked.slice(0, REPAIRED)) {
+    if (!c.problems.length) continue;
+    clearLines(c.boxes, members, drawn, c.direction, targets);
+    Object.assign(c, layoutCost(c.boxes, members, drawn, c.direction));
+  }
+  const { boxes, direction } = ranked.slice(0, REPAIRED).reduce((a, b) => (b.cost < a.cost ? b : a));
+  const bounds = union([...boxes.values()])!;
+  for (const [id, b] of boxes) boxes.set(id, { ...b, x: b.x - bounds.x, y: b.y - bounds.y });
+  return { boxes, w: bounds.w, h: bounds.h, direction };
+}
+
+/**
+ * What a reader pays for a layout, with lines routed as the renderer routes them: line problems a lint
+ * would report, then the length of the lines, their bends, lines crossing lines, and the size of the whole.
+ */
+function layoutCost(boxes: Map<string, Box>, members: Map<string, DiagramShape>, connectors: DiagramConnector[], direction: Direction): { cost: number; problems: LineProblem[] } {
+  const shapes = [...boxes].map(([id, b]) => ({ ...b, id, kind: members.get(id)!.kind, parent: members.get(id)!.parent }));
+  const routes = routeConnectors(shapes, connectors, { direction });
+  const problems = lineProblems(shapes, connectors, direction, routes);
+  const paths = connectors.flatMap((c) => {
+    const points = routes.get(c.id)?.points;
+    return points ? [{ c, points }] : [];
+  });
+  let length = 0;
+  let bends = 0;
+  for (const { c, points } of paths) {
+    length += points.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - points[i]!.x) + Math.abs(p.y - points[i]!.y), 0);
+    if ((c.route ?? 'elbow') === 'elbow') bends += Math.max(0, points.length - 2);
+  }
+  let crossings = 0;
+  paths.forEach((a, i) => {
+    for (const b of paths.slice(i + 1)) crossings += linesCross(a.points, b.points);
+  });
+  const bounds = union([...boxes.values()])!;
+  return { cost: problems.length * PROBLEM_COST + length + bends * BEND_COST + crossings * CROSSING_COST + (bounds.w + bounds.h) * SIZE_COST, problems };
+}
+
+/** How many times two polylines cross each other (touching ends do not count). */
+function linesCross(a: { x: number; y: number }[], b: { x: number; y: number }[]): number {
+  let count = 0;
+  for (let i = 1; i < a.length; i++) {
+    for (let j = 1; j < b.length; j++) {
+      const [p, q, r, s] = [a[i - 1]!, a[i]!, b[j - 1]!, b[j]!];
+      const d = (q.x - p.x) * (s.y - r.y) - (q.y - p.y) * (s.x - r.x);
+      if (Math.abs(d) < 1e-9) continue;
+      const t = ((r.x - p.x) * (s.y - r.y) - (r.y - p.y) * (s.x - r.x)) / d;
+      const u = ((r.x - p.x) * (q.y - p.y) - (r.y - p.y) * (q.x - p.x)) / d;
+      if (t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99) count++;
+    }
+  }
+  return count;
 }
 
 /** ELK's result as absolute boxes from (0, 0) on the grid; groups grown outward to the grid, other shapes at their own size. */
@@ -274,15 +355,15 @@ function gridded(result: ElkNode, members: Map<string, DiagramShape>): Map<strin
  * Lines are drawn with the renderer's own routes, not ELK's, so a line that skips a layer can run through a
  * shape, and labels can land on shapes, labels or lines. Moves the shapes concerned (the shape in the way,
  * the ends of a line whose label is in the way, the groups holding them, each with its content) across the
- * reading direction, then along it, the least distance that lowers the number of such problems. A move
- * never makes a shape overlap another; a group grows to hold a child moved out of its frame. Returns how
- * many problems are left.
+ * reading direction, then along it, the least distance that lowers the number of such problems without
+ * making the layout cost more overall (see `layoutCost`), so a fix never buys a sprawl. A move never makes a
+ * shape overlap another; a group grows to hold a child moved out of its frame.
  */
-function clearLines(boxes: Map<string, Box>, members: Map<string, DiagramShape>, connectors: DiagramConnector[], direction: Direction, targets: LinkTargets): number {
+function clearLines(boxes: Map<string, Box>, members: Map<string, DiagramShape>, connectors: DiagramConnector[], direction: Direction, targets: LinkTargets): void {
   const across = direction === 'right' ? 'y' : 'x';
   const along = across === 'x' ? 'y' : 'x';
   const byId = new Map(connectors.map((c) => [c.id, c]));
-  const problems = () => lineProblems([...boxes].map(([id, b]) => ({ ...b, id, kind: members.get(id)!.kind })), connectors, direction);
+  const judge = () => layoutCost(boxes, members, connectors, direction);
   const ancestors = (id: string) => {
     const out: string[] = [];
     for (let p = members.get(id)!.parent; p && members.has(p) && !out.includes(p); p = members.get(p)!.parent) out.push(p);
@@ -312,9 +393,9 @@ function clearLines(boxes: Map<string, Box>, members: Map<string, DiagramShape>,
   };
 
   let budget = CLEAR_BUDGET;
-  let current = problems();
-  while (current.length && budget > 0) {
-    const suspects = current.flatMap((p) => (p.kind === 'crosses' ? [p.other] : p.kind === 'label-shape' ? [p.other, ...ends(p.connector)] : [...ends(p.connector), ...ends(p.other)]));
+  let current = judge();
+  while (current.problems.length && budget > 0) {
+    const suspects = current.problems.flatMap((p) => (p.kind === 'crosses' ? [p.other] : p.kind === 'label-shape' ? [p.other, ...ends(p.connector)] : [...ends(p.connector), ...ends(p.other)]));
     const tried = new Set(suspects.flatMap((id) => [id, ...ancestors(id)]));
     let better: typeof current | undefined;
     for (const target of tried) {
@@ -327,8 +408,8 @@ function clearLines(boxes: Map<string, Box>, members: Map<string, DiagramShape>,
         const before = new Map(boxes);
         if (!move(target, by)) continue;
         budget--;
-        const after = problems();
-        if (after.length < current.length) {
+        const after = judge();
+        if (after.problems.length < current.problems.length && after.cost < current.cost) {
           better = after;
           break;
         }
@@ -336,22 +417,22 @@ function clearLines(boxes: Map<string, Box>, members: Map<string, DiagramShape>,
       }
       if (better) break;
     }
-    if (!better) return current.length;
+    if (!better) return;
     current = better;
   }
-  return current.length;
 }
 
 /**
  * Spacing that leaves room for connector labels as the renderer places them: between layers for the tallest
- * label (reading down) or the widest (reading right), and between neighbours in a layer so the labels of
- * lines fanning out to them stand side by side.
+ * label (reading down) or the widest (reading right). `roomy` adds air, and room between neighbours in a
+ * layer so the labels of lines fanning out to them can stand side by side.
  */
-function labelSpacing(connectors: DiagramConnector[], direction: Direction): Record<string, string> {
+function labelSpacing(connectors: DiagramConnector[], direction: Direction, roomy: boolean): Record<string, string> {
   const sizes = connectors.flatMap((c) => (c.label.trim() ? [labelSize(c.label)] : []));
   const widest = Math.max(0, ...sizes.map((s) => s.w));
   const tallest = Math.max(0, ...sizes.map((s) => s.h));
-  const [between, beside] = direction === 'right' ? [widest + 2 * CLEARANCE, tallest + NODE_GAP / 2] : [tallest + 2 * CLEARANCE, widest * 0.6];
+  const air = roomy ? CLEARANCE : CLEARANCE / 2;
+  const [between, beside] = direction === 'right' ? [widest + 2 * air, tallest + NODE_GAP / 2] : [tallest + 2 * air, roomy ? widest * 0.6 : 0];
   return {
     'elk.spacing.nodeNode': String(snap(Math.max(NODE_GAP, beside))),
     'elk.layered.spacing.nodeNodeBetweenLayers': String(snap(Math.max(LAYER_GAP, between))),
@@ -407,7 +488,7 @@ class Placer {
     const blocks = new Map<string[], Block>();
     for (const cluster of clusters) {
       const members = cluster.map((id) => this.shapes.get(id)!);
-      blocks.set(cluster, await layoutBlock(members, this.connectors, this.direction, this.targets));
+      blocks.set(cluster, await layoutBlock(members, this.connectors, [this.direction], this.targets));
     }
     const left = [...clusters];
     while (left.length) {
@@ -533,7 +614,7 @@ class Placer {
 
   /** How many line problems (see `lineProblems`) involving the block there would be with the block at `spot`. */
   private problemsAt(block: Block, spot: Box): number {
-    const shapes = [...this.at, ...[...block.boxes].map(([id, b]) => [id, { ...b, x: b.x + spot.x, y: b.y + spot.y }] as const)].map(([id, b]) => ({ ...b, id, kind: this.shapes.get(id)!.kind }));
+    const shapes = [...this.at, ...[...block.boxes].map(([id, b]) => [id, { ...b, x: b.x + spot.x, y: b.y + spot.y }] as const)].map(([id, b]) => ({ ...b, id, kind: this.shapes.get(id)!.kind, parent: this.shapes.get(id)!.parent }));
     const placed = new Set(shapes.map((s) => s.id));
     const lines = new Map(this.connectors.filter((c) => placed.has(c.from) && placed.has(c.to)).map((c) => [c.id, c]));
     const involved = (id: string) => block.boxes.has(id) || (lines.has(id) && (block.boxes.has(lines.get(id)!.from) || block.boxes.has(lines.get(id)!.to)));

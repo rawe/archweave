@@ -9,7 +9,7 @@ import { grownToFit } from './fit.ts';
 import { distance, type Point, type Rect } from './geometry.ts';
 import { shapeLabel } from './links.ts';
 import type { LinkTargets } from './patch.ts';
-import { routeConnectors } from './route.ts';
+import { type ConnectorGeometry, routeConnectors } from './route.ts';
 
 export interface DiagramLint {
   code: 'overlap' | 'outside-group' | 'crosses-shape' | 'lines-overlap' | 'label-overlap' | 'text-overflow' | 'duplicate-connector' | 'empty-shape' | 'too-many-shapes';
@@ -98,14 +98,15 @@ export interface LineProblem {
  * along a shape other than their own ends, labels covering a shape, another label or another line, and
  * lines running on top of each other (pairs of connectors once). Lines leaving or reaching the same shape may
  * share their way, and a label may sit on that shared trunk: that is a fan, read as one line.
- * Group frames are left out: lines and labels lie across groups all the time.
+ * Group frames are left out: lines and labels lie across groups all the time. `routes` saves routing again
+ * when the caller has routed these shapes and connectors already.
  */
 export function lineProblems(
-  shapes: Pick<DiagramShape, 'id' | 'kind' | 'x' | 'y' | 'w' | 'h'>[],
+  shapes: (Pick<DiagramShape, 'id' | 'kind' | 'x' | 'y' | 'w' | 'h'> & Pick<Partial<DiagramShape>, 'parent'>)[],
   connectors: Pick<DiagramConnector, 'id' | 'from' | 'to' | 'route' | 'fromSide' | 'toSide' | 'label' | 'ends'>[],
   direction: Diagram['direction'],
+  routes: Map<string, ConnectorGeometry> = routeConnectors(shapes, connectors, { direction }),
 ): LineProblem[] {
-  const routes = routeConnectors(shapes, connectors, { direction });
   const solid = shapes.filter((s) => s.kind !== 'group');
   const out: LineProblem[] = [];
   for (const c of connectors) {

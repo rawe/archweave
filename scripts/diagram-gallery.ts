@@ -167,7 +167,75 @@ function textStress(): Diagram {
   return Diagram.parse({ id: 'text', name: 'Text stress', shapes });
 }
 
-const diagrams = [kindsAndOutlines(), tonesAndFills(), ...CONNECTOR_ROUTES.map(architecture), connectorStress(), textStress()];
+function obstacles(): Diagram {
+  const b = (id: string, x: number, y: number, text: string, extra: Partial<ShapeInput> = {}): ShapeInput => shape(id, 'box', x, y, text, { w: 120, h: 48, ...extra });
+  const shapes: ShapeInput[] = [
+    shape('t1', 'text', 0, -40, 'A box between two connected shapes', { w: 320, h: 24 }),
+    b('a1', 0, 0, 'From'),
+    b('x1', 200, 0, 'In the way', { tone: 'amber', fill: 'tint' }),
+    b('b1', 400, 0, 'To'),
+
+    shape('t2', 'text', 640, -40, 'Around a foreign group', { w: 320, h: 24 }),
+    b('a2', 640, 40, 'From'),
+    shape('g2', 'group', 824, 0, 'Not its group', { w: 216, h: 128 }),
+    b('i2', 872, 48, 'Inside', { parent: 'g2' }),
+    b('b2', 1104, 40, 'To'),
+
+    shape('t3', 'text', 0, 160, 'Out of its group, around a neighbour', { w: 320, h: 24 }),
+    shape('g3', 'group', 0, 200, 'Its group', { w: 200, h: 136 }),
+    b('a3', 40, 256, 'From', { parent: 'g3' }),
+    b('x3', 264, 256, 'Neighbour', { tone: 'amber', fill: 'tint' }),
+    b('b3', 448, 256, 'To'),
+
+    shape('t4', 'text', 640, 160, 'Parallel detours', { w: 320, h: 24 }),
+    ...[0, 1, 2].flatMap((i) => [b(`a4${i}`, 640, 216 + i * 72, `From ${i + 1}`), b(`b4${i}`, 1104, 216 + i * 72, `To ${i + 1}`)]),
+    b('x4', 872, 200, 'Wall', { w: 120, h: 224, tone: 'amber', fill: 'tint' }),
+
+    shape('t5', 'text', 0, 488, 'Eight shapes, twelve connectors', { w: 320, h: 24 }),
+    b('d1', 0, 536, 'Gateway'),
+    b('d2', 216, 536, 'Orders'),
+    b('d3', 432, 536, 'Billing'),
+    b('d4', 0, 664, 'Auth'),
+    b('d5', 216, 664, 'Catalog'),
+    b('d6', 432, 664, 'Ledger', { kind: 'cylinder', h: 64 }),
+    b('d7', 108, 792, 'Events', { kind: 'pill' }),
+    b('d8', 324, 792, 'Mailer'),
+
+    shape('t6', 'text', 640, 488, 'Pinned sides with an obstacle', { w: 320, h: 24 }),
+    b('a6', 640, 536, 'Pinned bottom'),
+    b('x6', 656, 640, 'In the way', { tone: 'amber', fill: 'tint' }),
+    b('b6', 640, 744, 'Pinned top'),
+    b('a7', 872, 536, 'Pinned right'),
+    b('x7', 1040, 600, 'In the way', { tone: 'amber', fill: 'tint' }),
+    b('b7', 1000, 744, 'Pinned right'),
+    shape('n7', 'note', 872, 648, 'Notes are\nin the way too', { w: 120 }),
+    b('c7', 872, 760, 'Below'),
+  ];
+  const connectors: ConnectorInput[] = [
+    line('a1', 'b1', 'around'),
+    line('a2', 'b2', 'past the group'),
+    line('a3', 'b3', 'leaves'),
+    ...[0, 1, 2].map((i) => line(`a4${i}`, `b4${i}`)),
+    line('d1', 'd2'),
+    line('d2', 'd3'),
+    line('d1', 'd3', 'skips'),
+    line('d1', 'd4'),
+    line('d2', 'd5'),
+    line('d3', 'd6'),
+    line('d1', 'd7'),
+    line('d4', 'd7'),
+    line('d5', 'd7'),
+    line('d2', 'd8', 'notifies'),
+    line('d7', 'd8'),
+    line('d4', 'd6', 'audits', { line: 'dashed' }),
+    line('a6', 'b6', '', { fromSide: 'bottom', toSide: 'top' }),
+    line('a7', 'b7', '', { fromSide: 'right', toSide: 'right' }),
+    line('a7', 'c7'),
+  ];
+  return Diagram.parse({ id: 'obstacles', name: 'Obstacles', shapes, connectors });
+}
+
+const diagrams = [kindsAndOutlines(), tonesAndFills(), ...CONNECTOR_ROUTES.map(architecture), connectorStress(), textStress(), obstacles()];
 const model = Model.parse({ diagrams });
 const out = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.work/gallery');
 fs.mkdirSync(out, { recursive: true });
