@@ -137,9 +137,10 @@ describe('ArchWeave end to end', () => {
   it('offers the tools and the guide', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['apply_changes', 'check_code_links', 'export', 'find_by_code', 'focus_ui', 'get_changes', 'get_context', 'get_element', 'get_guide', 'get_model', 'search'].sort(),
+      ['apply_changes', 'check_code_links', 'export', 'find_by_code', 'focus_ui', 'get_changes', 'get_context', 'get_element', 'get_guide', 'get_model', 'render_diagram', 'search'].sort(),
     );
-    expect(client.getInstructions()).toContain('Model in levels');
+    expect(client.getInstructions()).toContain('get_guide');
+    expect(await call('get_guide')).toContain('Model in levels');
     expect(await call('get_guide')).toContain('find_by_code');
   });
 
@@ -247,7 +248,7 @@ describe('ArchWeave end to end', () => {
     const outline = await call('get_model', {});
     expect(outline.elements.map((e: any) => e.id)).toEqual(['web', 'api']);
     expect(outline.elements[1].children.map((e: any) => e.id)).toEqual(['orders', 'billing']);
-    expect(outline.counts).toEqual({ elements: 5, byKind: { app: 1, service: 1, component: 2, data: 1 }, relations: 2, flows: 1 });
+    expect(outline.counts).toEqual({ elements: 5, byKind: { app: 1, service: 1, component: 2, data: 1 }, relations: 2, flows: 1, diagrams: 0 });
     expect(outline.relations.map((r: any) => r.id)).toEqual(['web-calls-orders', 'orders-calls-billing']);
     expect((await call('get_model', { depth: 1 })).relations).toEqual([{ from: 'web', to: 'api', count: 1, relationIds: ['web-calls-orders'], kinds: ['calls'] }]);
     const flow = await call('get_element', { id: 'place-order' });

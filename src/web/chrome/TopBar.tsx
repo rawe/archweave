@@ -3,7 +3,7 @@ import { ChevronRight, CircleQuestionMark, Download, Moon, Search, Sun } from 'l
 import type { Perspective } from '../../shared/model.ts';
 import { ancestorsOf, indexById } from '../../shared/projection.ts';
 import { renameModel } from '../state/actions.ts';
-import { enterScope, openFlow, setOverlay, setPerspective, useStore } from '../state/store.ts';
+import { enterScope, openDiagram, openFlow, setOverlay, setPerspective, useStore } from '../state/store.ts';
 import { cx } from '../lib/dom.ts';
 import { MOD } from '../lib/format.ts';
 import { toggleTheme, useTheme } from '../lib/theme.ts';
@@ -23,6 +23,7 @@ const PERSPECTIVES: { id: Perspective; label: string; key: string }[] = [
   { id: 'structure', label: 'Structure', key: '1' },
   { id: 'data', label: 'Data', key: '2' },
   { id: 'flows', label: 'Flows', key: '3' },
+  { id: 'diagrams', label: 'Diagrams', key: '4' },
 ];
 
 export function TopBar() {
@@ -80,14 +81,16 @@ function Breadcrumb() {
   const perspective = useStore((s) => s.perspective);
   const scopeId = useStore((s) => s.scopeId);
   const flowId = useStore((s) => s.flowId);
+  const diagramId = useStore((s) => s.diagramId);
   const repo = useStore((s) => s.repo);
   const [editing, setEditing] = useState(false);
   const byId = indexById(model.elements);
   const scope = scopeId ? byId.get(scopeId) : undefined;
   const crumbs = perspective === 'structure' && scope ? [...ancestorsOf(scope.id, byId), scope] : [];
   const flow = perspective === 'flows' ? model.flows.find((f) => f.id === flowId) : undefined;
+  const diagram = perspective === 'diagrams' ? model.diagrams.find((d) => d.id === diagramId) : undefined;
   const rootName = model.name && model.name !== 'Architecture' ? model.name : repo.name || model.name;
-  const atRoot = perspective === 'structure' ? !scopeId : perspective === 'flows' ? !flow : true;
+  const atRoot = perspective === 'structure' ? !scopeId : perspective === 'flows' ? !flow : perspective === 'diagrams' ? !diagram : true;
 
   return (
     <nav className="breadcrumb" aria-label="Scope">
@@ -112,7 +115,7 @@ function Breadcrumb() {
         <button
           type="button"
           className={cx('crumb', 'crumb-root', atRoot && 'is-current')}
-          onClick={() => (perspective === 'flows' ? openFlow(undefined) : enterScope(undefined))}
+          onClick={() => (perspective === 'flows' ? openFlow(undefined) : perspective === 'diagrams' ? openDiagram(diagramId) : enterScope(undefined))}
           onDoubleClick={() => setEditing(true)}
           title={atRoot ? 'Double-click to rename' : undefined}
         >
@@ -132,10 +135,10 @@ function Breadcrumb() {
           </button>
         </span>
       ))}
-      {flow && (
+      {(flow ?? diagram) && (
         <span className="crumb-step">
           <ChevronRight size={13} strokeWidth={1.6} className="crumb-sep" aria-hidden />
-          <span className="crumb is-current">{flow.name}</span>
+          <span className="crumb is-current">{(flow ?? diagram)!.name}</span>
         </span>
       )}
     </nav>

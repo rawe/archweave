@@ -1,7 +1,8 @@
 /**
  * The ArchWeave architecture model: the single contract shared by the server,
  * the web UI and the MCP tools. Everything is one graph of elements and
- * relations; perspectives (structure, data, flows) are lenses onto that graph.
+ * relations; the structure, data and flows perspectives are lenses onto that graph.
+ * Diagrams are authored drawings beside it: they may point at the graph, they never add to it.
  */
 import { z } from 'zod';
 
@@ -147,6 +148,116 @@ export const Flow = z.object({
 });
 export type Flow = z.infer<typeof Flow>;
 
+// ─── Diagrams ───────────────────────────────────────────────────────────────
+// A diagram is a drawing someone made: shapes, connectors and their styling are the
+// content. A shape may link to a model item, which makes it a reference, never a
+// second definition; a connector is a drawn line and never a relation.
+
+export const SHAPE_KINDS = [
+  'box', // rounded rectangle, the default
+  'pill', // fully rounded: start and end points, queues, small labels
+  'cylinder', // stores
+  'diamond', // decisions
+  'actor', // a person
+  'note', // an annotation with a folded corner
+  'text', // free text without an outline
+  'group', // a titled frame that contains other shapes
+] as const;
+export const ShapeKind = z.enum(SHAPE_KINDS);
+export type ShapeKind = z.infer<typeof ShapeKind>;
+
+export const OUTLINES = ['solid', 'dashed', 'dotted', 'none'] as const;
+export const Outline = z.enum(OUTLINES);
+export type Outline = z.infer<typeof Outline>;
+
+export const LINE_STYLES = ['solid', 'dashed', 'dotted'] as const;
+export const LineStyle = z.enum(LINE_STYLES);
+export type LineStyle = z.infer<typeof LineStyle>;
+
+/** The whole colour vocabulary of a diagram. The renderer owns the actual colours, per theme. */
+export const TONES = ['neutral', 'blue', 'teal', 'green', 'amber', 'red', 'violet'] as const;
+export const Tone = z.enum(TONES);
+export type Tone = z.infer<typeof Tone>;
+
+/** none = see-through, plain = the surface colour, tint = a soft wash of the tone, solid = the tone itself with light text. */
+export const FILLS = ['none', 'plain', 'tint', 'solid'] as const;
+export const Fill = z.enum(FILLS);
+export type Fill = z.infer<typeof Fill>;
+
+export const TEXT_SIZES = ['s', 'm', 'l'] as const;
+export const TextSize = z.enum(TEXT_SIZES);
+export type TextSize = z.infer<typeof TextSize>;
+
+export const SIDES = ['top', 'right', 'bottom', 'left'] as const;
+export const Side = z.enum(SIDES);
+export type Side = z.infer<typeof Side>;
+
+/** What a shape stands for in the model. */
+export const ModelLink = z.object({ type: z.enum(['element', 'flow', 'diagram']), id: Id });
+export type ModelLink = z.infer<typeof ModelLink>;
+
+/**
+ * Style properties left out take the default of the shape's kind (see `shapeStyle` in shared/diagram),
+ * so a diagram file only records what its author chose.
+ */
+export const DiagramShape = z.object({
+  /** Unique within the diagram, among shapes and connectors together. */
+  id: Id,
+  kind: ShapeKind.default('box'),
+  /** The label. Line breaks are kept. A linked shape with no text shows the linked item's current name. */
+  text: z.string().max(400).default(''),
+  /** A second, quieter block of text under the label. */
+  detail: z.string().max(600).optional(),
+  link: ModelLink.optional(),
+  /** The group this shape sits in. Moving a group moves what is inside. */
+  parent: Id.optional(),
+  /** Top-left corner and size in diagram units (pixels at 100%). Always absolute, also inside a group. */
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+  outline: Outline.optional(),
+  tone: Tone.optional(),
+  fill: Fill.optional(),
+  size: TextSize.optional(),
+});
+export type DiagramShape = z.infer<typeof DiagramShape>;
+
+export const CONNECTOR_ENDS = ['arrow', 'both', 'none'] as const;
+export const CONNECTOR_ROUTES = ['elbow', 'straight', 'curve'] as const;
+
+/** A drawn line between two shapes. It stays attached when they move. */
+export const DiagramConnector = z.object({
+  id: Id,
+  from: Id,
+  to: Id,
+  label: z.string().max(120).default(''),
+  line: LineStyle.optional(), // default solid
+  /** arrow = a head at `to`; both = heads at both ends; none = a plain line. Default arrow. */
+  ends: z.enum(CONNECTOR_ENDS).optional(),
+  /** elbow = right angles with rounded corners (default), straight, or curve. */
+  route: z.enum(CONNECTOR_ROUTES).optional(),
+  tone: Tone.optional(),
+  /** Pins the side of the shape the line leaves from or arrives at. Unset: the renderer picks the facing sides. */
+  fromSide: Side.optional(),
+  toSide: Side.optional(),
+});
+export type DiagramConnector = z.infer<typeof DiagramConnector>;
+
+export const DIAGRAM_DIRECTIONS = ['down', 'right'] as const;
+
+export const Diagram = z.object({
+  id: Id,
+  name: z.string().min(1).max(120),
+  summary: z.string().max(280).default(''),
+  /** The reading direction automatic arrangement follows. */
+  direction: z.enum(DIAGRAM_DIRECTIONS).default('down'),
+  /** In drawing order: later shapes lie on top. Groups are always drawn behind what they contain. */
+  shapes: z.array(DiagramShape).default([]),
+  connectors: z.array(DiagramConnector).default([]),
+});
+export type Diagram = z.infer<typeof Diagram>;
+
 export const Model = z.object({
   version: z.literal(1).default(1),
   name: z.string().default('Architecture'),
@@ -154,6 +265,8 @@ export const Model = z.object({
   elements: z.array(Element).default([]),
   relations: z.array(Relation).default([]),
   flows: z.array(Flow).default([]),
+  /** Stored one file per diagram, beside model.json (see Persistence in docs/DESIGN.md). */
+  diagrams: z.array(Diagram).default([]),
 });
 export type Model = z.infer<typeof Model>;
 
@@ -239,6 +352,74 @@ export const FlowPatch = z.object(patchShape(Flow.shape)).extend({
 });
 export type FlowPatch = z.infer<typeof FlowPatch>;
 
+/**
+ * Upserts a shape by id: with an existing id only the given properties change; otherwise the shape is created.
+ * A new shape needs nothing: without `w`/`h` it is sized to fit its text, without `x`/`y` it is placed
+ * automatically. `null` clears an optional property back to its default.
+ */
+export const ShapePatch = z.object({
+  id: Id.optional(),
+  kind: ShapeKind.optional(),
+  text: z.string().max(400).optional(),
+  detail: z.string().max(600).nullable().optional(),
+  link: ModelLink.nullable().optional(),
+  parent: Id.nullable().optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  w: z.number().positive().optional(),
+  h: z.number().positive().optional(),
+  outline: Outline.nullable().optional(),
+  tone: Tone.nullable().optional(),
+  fill: Fill.nullable().optional(),
+  size: TextSize.nullable().optional(),
+});
+export type ShapePatch = z.infer<typeof ShapePatch>;
+
+/** Upserts a connector by id. A new connector needs `from` and `to`. `null` clears an optional property. */
+export const ConnectorPatch = z.object({
+  id: Id.optional(),
+  from: Id.optional(),
+  to: Id.optional(),
+  label: z.string().max(120).optional(),
+  line: LineStyle.nullable().optional(),
+  ends: z.enum(CONNECTOR_ENDS).nullable().optional(),
+  route: z.enum(CONNECTOR_ROUTES).nullable().optional(),
+  tone: Tone.nullable().optional(),
+  fromSide: Side.nullable().optional(),
+  toSide: Side.nullable().optional(),
+});
+export type ConnectorPatch = z.infer<typeof ConnectorPatch>;
+
+/**
+ * Order within one patch: `shapes` / `connectors` (full lists, replacing the stored ones) first, then
+ * `removeShapes` and `removeConnectors`, then `setShapes` and `setConnectors`.
+ * Removing a shape removes the connectors attached to it; what was inside a removed group moves out to the group's own parent.
+ */
+export const DiagramPatch = z.object({
+  id: Id.optional(),
+  name: z.string().min(1).max(120).optional(),
+  summary: z.string().max(280).optional(),
+  direction: z.enum(DIAGRAM_DIRECTIONS).optional(),
+  shapes: z.array(ShapePatch).optional(),
+  connectors: z.array(ConnectorPatch).optional(),
+  setShapes: z.array(ShapePatch).optional(),
+  removeShapes: z.array(Id).optional(),
+  setConnectors: z.array(ConnectorPatch).optional(),
+  removeConnectors: z.array(Id).optional(),
+  /**
+   * Asks the server to arrange the diagram before applying: "new" (the default) places only shapes that have no
+   * position yet and leaves the rest where they are; "all" arranges every shape afresh. Not stored.
+   */
+  arrange: z.enum(['new', 'all']).optional(),
+  /**
+   * Seeds the diagram from the model, on the server before applying: a linked shape for each of these elements
+   * that is not on the diagram yet, and a connector for each pair of shapes that relations connect and no
+   * connector does yet. A relation of something not drawn is lifted to its nearest drawn ancestor. Not stored.
+   */
+  seed: z.array(Id).optional(),
+});
+export type DiagramPatch = z.infer<typeof DiagramPatch>;
+
 export const ChangeSet = z.object({
   /** One line for the activity feed: "Split billing out of order-service". */
   summary: z.string().max(200).optional(),
@@ -251,12 +432,17 @@ export const ChangeSet = z.object({
   elements: z.array(ElementPatch).optional(),
   relations: z.array(RelationPatch).optional(),
   flows: z.array(FlowPatch).optional(),
-  /** Removing an element also removes its descendants, attached relations and flow steps. */
+  diagrams: z.array(DiagramPatch).optional(),
+  /**
+   * Removing an element also removes its descendants, attached relations and flow steps.
+   * Diagram shapes that linked to something removed stay, as plain shapes keeping the name they showed.
+   */
   remove: z
     .object({
       elements: z.array(Id).optional(),
       relations: z.array(Id).optional(),
       flows: z.array(Id).optional(),
+      diagrams: z.array(Id).optional(),
     })
     .optional(),
   /** Partial layout update: canvas key → element id → position (null clears). */
@@ -264,11 +450,19 @@ export const ChangeSet = z.object({
 });
 export type ChangeSet = z.infer<typeof ChangeSet>;
 
+/** Ids per collection. */
+export interface IdLists {
+  elements: string[];
+  relations: string[];
+  flows: string[];
+  diagrams: string[];
+}
+
 export interface ChangeResult {
   revision: number;
-  created: { elements: string[]; relations: string[]; flows: string[] };
-  updated: { elements: string[]; relations: string[]; flows: string[] };
-  removed: { elements: string[]; relations: string[]; flows: string[] };
+  created: IdLists;
+  updated: IdLists;
+  removed: IdLists;
   warnings: string[];
 }
 
@@ -288,7 +482,7 @@ export interface JournalEntry {
 
 // ─── Session ────────────────────────────────────────────────────────────────
 
-export const PERSPECTIVES = ['structure', 'data', 'flows'] as const;
+export const PERSPECTIVES = ['structure', 'data', 'flows', 'diagrams'] as const;
 export const Perspective = z.enum(PERSPECTIVES);
 export type Perspective = z.infer<typeof Perspective>;
 
@@ -298,8 +492,12 @@ export const UiState = z.object({
   /** Structure perspective: the element whose inside is shown; absent at the top level. */
   scopeId: Id.optional(),
   flowId: Id.optional(),
+  /** Diagrams perspective: the diagram that is open. */
+  diagramId: Id.optional(),
   selectedElementIds: z.array(Id).default([]),
   selectedRelationIds: z.array(Id).default([]),
+  /** Diagrams perspective: selected shapes and connectors of the open diagram. */
+  selectedShapeIds: z.array(Id).default([]),
 });
 export type UiState = z.infer<typeof UiState>;
 
@@ -314,6 +512,9 @@ export interface FocusRequest {
   perspective?: Perspective;
   scopeId?: string | null;
   flowId?: string;
+  diagramId?: string;
+  /** Shapes and connectors of `diagramId` to highlight. */
+  shapeIds?: string[];
   elementIds: string[];
   message?: string;
 }

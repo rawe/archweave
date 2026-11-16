@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import { Layout, Model } from '../shared/model.ts';
+import { Diagram, Layout, Model } from '../shared/model.ts';
 
 /**
  * The on-disk form of the model: arrays of identified entries sorted by id, keys
  * in schema order, default-valued fields omitted. Keeps Git diffs small.
+ * Diagrams are not part of it: each has its own file (see `canonicalDiagram`).
  */
 export function canonicalModel(model: Model): Record<string, unknown> {
   const sorted = {
@@ -12,17 +13,28 @@ export function canonicalModel(model: Model): Record<string, unknown> {
     relations: sortById(model.relations),
     flows: sortById(model.flows),
   };
-  const out = strip(Model, sorted) as Record<string, unknown>;
+  const { diagrams: _files, ...out } = strip(Model, sorted) as Record<string, unknown>;
   return { version: 1, ...out };
 }
 
-/** The model with every default filled in and arrays sorted by id, for exports that should be explicit. */
+/**
+ * The on-disk form of one diagram: no `id` (the file name is the id), keys in schema order, default-valued
+ * fields omitted, geometry rounded to one decimal. Shapes and connectors stay in stored order: it is the drawing order.
+ */
+export function canonicalDiagram(diagram: Diagram): Record<string, unknown> {
+  const shapes = diagram.shapes.map((s) => ({ ...s, x: round(s.x), y: round(s.y), w: round(s.w), h: round(s.h) }));
+  const { id: _fileName, ...out } = strip(Diagram, { ...diagram, shapes }) as Record<string, unknown>;
+  return { version: 1, ...out };
+}
+
+/** The model with every default filled in and arrays sorted by id (shapes and connectors in drawing order), for exports that should be explicit. */
 export function explicitModel(model: Model): Model {
   return Model.parse({
     ...model,
     elements: sortById(model.elements),
     relations: sortById(model.relations),
     flows: sortById(model.flows),
+    diagrams: sortById(model.diagrams),
   });
 }
 

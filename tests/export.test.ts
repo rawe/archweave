@@ -169,3 +169,12 @@ describe('exportModel', () => {
     expect(() => exportModel(model, {}, { format: 'markdown', scopeId: 'nope' })).toThrow(/unknown scope/);
   });
 });
+
+describe('markdown export of diagrams', () => {
+  it('lists the diagrams by name and summary, without pictures', () => {
+    const model = Model.parse({ name: 'Shop', diagrams: [{ id: 'checkout', name: 'Checkout', summary: 'How an order is paid.' }, { id: 'deploy', name: 'Deployment' }] });
+    const { content } = exportModel(model, {}, { format: 'markdown' });
+    expect(content).toContain('## Diagrams\n\n- **Checkout**: How an order is paid.\n- **Deployment**');
+    expect(exportModel(model, {}, { format: 'mermaid' }).content).not.toContain('Checkout');
+  });
+});

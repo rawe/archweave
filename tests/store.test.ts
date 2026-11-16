@@ -103,7 +103,7 @@ describe('Store.apply', () => {
       { elements: [{ id: 'stripe', kind: 'external', name: 'Stripe' }], relations: [{ from: 'billing', to: 'stripe', kind: 'calls' }] },
       'agent',
     );
-    expect(result.created).toEqual({ elements: ['stripe'], relations: ['billing-calls-stripe'], flows: [] });
+    expect(result.created).toEqual({ elements: ['stripe'], relations: ['billing-calls-stripe'], flows: [], diagrams: [] });
   });
 
   it('rejects unknown relation endpoints with a suggestion and applies nothing', () => {
@@ -174,7 +174,7 @@ describe('Store.apply', () => {
     expect(model.relations.find((r) => r.id === 'web-calls-checkout')!.dataIds).toEqual([]);
     expect(model.flows[0]!.steps[0]!.dataIds).toEqual([]);
     expect(element(store, 'line')!.fields).toEqual([{ name: 'order', type: '' }]);
-    expect(result.updated).toEqual({ elements: ['line'], relations: ['web-calls-checkout'], flows: ['place-order'] });
+    expect(result.updated).toEqual({ elements: ['line'], relations: ['web-calls-checkout'], flows: ['place-order'], diagrams: [] });
     expect(result.warnings.join('\n')).toMatch(/relation `web-calls-checkout`: dropped data id `order`/);
     expect(result.warnings.join('\n')).toMatch(/element `line` field `order`: dropped ref `order`/);
   });
@@ -599,5 +599,193 @@ describe('Store journal coalescing', () => {
     store.apply({ summary: 'Link', relations: [{ id: 'web-uses-order', from: 'web', to: 'order', kind: 'reads' }] }, 'agent');
     store.apply({ relations: [{ id: 'web-uses-order', label: 'shows', technology: 'HTTP' }] }, 'human');
     expect(store.journal().at(-1)?.summary).toBe('Edited Web → Order: label, technology');
+  });
+});
+
+describe('Store diagrams', () => {
+  const at = (id: string, x: number, y: number, more: object = {}) => ({ id, x, y, w: 120, h: 48, ...more });
+
+  /** The shop with a diagram that links to an element, a nested element, a flow and another diagram. */
+  function drawn(now: () => Date = fixedNow) {
+    const logs: string[] = [];
+    const store = new Store({ now, model: shop().snapshot().model, log: (m) => logs.push(m) });
+    store.apply(
+      {
+        summary: 'Draw',
+        diagrams: [
+          { id: 'detail', name: 'Detail' },
+          {
+            name: 'Checkout overview',
+            shapes: [
+              at('zone', 0, 0, { kind: 'group', text: 'Backend', w: 400, h: 200 }),
+              at('api', 16, 40, { link: { type: 'element', id: 'api' }, parent: 'zone' }),
+              at('pricing', 200, 40, { text: 'Prices', link: { type: 'element', id: 'pricing' }, parent: 'zone' }),
+              at('flow', 0, 240, { kind: 'pill', link: { type: 'flow', id: 'place-order' } }),
+              at('more', 200, 240, { link: { type: 'diagram', id: 'detail' } }),
+            ],
+            connectors: [{ from: 'api', to: 'pricing', label: 'asks' }],
+          },
+        ],
+      },
+      'agent',
+    );
+    return { store, logs };
+  }
+  const diagram = (store: Store, id = 'checkout-overview') => store.snapshot().model.diagrams.find((d) => d.id === id)!;
+  const shape = (store: Store, id: string) => diagram(store).shapes.find((s) => s.id === id)!;
+
+  it('creates diagrams with ids from their names and journals them', () => {
+    const store = shop();
+    const result = store.apply({ diagrams: [{ name: 'Checkout overview', setShapes: [{ text: 'Start', kind: 'pill' }] }, { name: 'Checkout overview' }] }, 'human');
+    expect(result.created).toEqual({ elements: [], relations: [], flows: [], diagrams: ['checkout-overview', 'checkout-overview-2'] });
+    expect(store.journal().at(-1)?.summary).toBe('Added 2 diagrams');
+    expect(diagram(store).shapes.map((s) => [s.id, s.kind, s.x, s.y])).toEqual([['start', 'pill', 0, 0]]);
+    store.apply({ remove: { diagrams: ['checkout-overview-2'] }, diagrams: [{ name: 'Other' }] }, 'human');
+    expect(store.journal().at(-1)?.summary).toBe('Added 1 diagram; removed 1 diagram');
+  });
+
+  it('does nothing for a diagram patch that changes nothing', () => {
+    const { store } = drawn();
+    const revision = store.currentRevision;
+    const result = store.apply({ diagrams: [{ id: 'checkout-overview', name: 'Checkout overview', setShapes: [{ id: 'api', x: 16 }] }] }, 'human');
+    expect(result.updated.diagrams).toEqual([]);
+    expect(store.currentRevision).toBe(revision);
+  });
+
+  it('merges quick diagram edits into one journal entry and undoes them one by one', () => {
+    let t = Date.parse('2026-01-02T03:04:05Z');
+    const { store } = drawn(() => new Date(t));
+    const before = store.journal().length;
+    store.apply({ diagrams: [{ id: 'checkout-overview', setShapes: [{ id: 'api', x: 24, y: 48 }] }] }, 'human');
+    t += 5_000;
+    store.apply({ diagrams: [{ id: 'checkout-overview', setConnectors: [{ id: 'api-to-pricing', line: 'dashed' }] }] }, 'human');
+    const entries = store.journal().slice(before);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ summary: 'Edited Checkout overview: shapes, connectors', firstRevision: 2, revision: 3, updated: { diagrams: ['checkout-overview'] } });
+
+    store.undo();
+    expect(diagram(store).connectors[0]!.line).toBeUndefined();
+    expect(shape(store, 'api')).toMatchObject({ x: 24, y: 48 });
+    store.undo();
+    expect(shape(store, 'api')).toMatchObject({ x: 16, y: 40 });
+    store.undo();
+    expect(store.snapshot().model.diagrams).toEqual([]);
+    expect(store.journal().at(-1)).toMatchObject({ removed: { diagrams: ['detail', 'checkout-overview'] } });
+  });
+
+  it('applies nothing of a diagram change built from another revision', () => {
+    const { store } = drawn();
+    const revision = store.currentRevision;
+    const move = { diagrams: [{ id: 'checkout-overview', setShapes: [{ id: 'api', x: 99 }] }] };
+    expect(() => store.apply({ expectedRevision: revision - 1, ...move }, 'human')).toThrow(RevisionConflict);
+    expect(shape(store, 'api').x).toBe(16);
+    expect(store.apply({ expectedRevision: revision, ...move }, 'human').revision).toBe(revision + 1);
+  });
+
+  it('rejects a change set with a bad diagram patch as a whole', () => {
+    const { store } = drawn();
+    const before = store.snapshot();
+    const fails = (changes: object, message: RegExp) => expect(() => store.apply(changes, 'agent')).toThrow(message);
+    fails({ elements: [{ id: 'web', summary: 'x' }], diagrams: [{ id: 'checkout-overview', setConnectors: [{ from: 'api', to: 'prices' }] }] }, /diagram `checkout-overview` connector `api-to-prices`: unknown shape `prices` in `to`\. Did you mean `pricing`\?/);
+    fails({ diagrams: [{ id: 'checkout-overvew', summary: 'x' }] }, /diagram `checkout-overvew`: there is no diagram `checkout-overvew`\. To create it, give `name`\. Did you mean `checkout-overview`\?/);
+    fails({ diagrams: [{ summary: 'x' }] }, /diagrams\[0\]: a new diagram needs `name`\./);
+    fails({ remove: { diagrams: ['details'] } }, /remove\.diagrams: unknown diagram `details`\. Did you mean `detail`\?/);
+    fails({ remove: { diagrams: ['detail'] }, diagrams: [{ id: 'detail', summary: 'x' }] }, /diagram `detail` is both removed and changed/);
+    fails({ remove: { elements: ['web'] }, diagrams: [{ id: 'detail', setShapes: [{ link: { type: 'element', id: 'web' } }] }] }, /link: unknown element `web`/);
+    fails({ diagrams: [{ id: 'detail', setShapes: [{ text: 'x'.repeat(401) }] }] }, /diagrams\[0\] \("detail"\)\.setShapes\[0\]\.text/);
+    expect(store.snapshot().model).toBe(before.model);
+    expect(store.currentRevision).toBe(before.revision);
+  });
+
+  it('lets one change set create an element, a flow and a diagram that links to them', () => {
+    const { store } = drawn();
+    store.apply(
+      {
+        elements: [{ id: 'mailer', kind: 'service', name: 'Mailer' }],
+        flows: [{ id: 'notify', name: 'Notify' }],
+        diagrams: [{ id: 'detail', setShapes: [{ link: { type: 'element', id: 'mailer' } }, { link: { type: 'flow', id: 'notify' } }, { link: { type: 'diagram', id: 'checkout-overview' } }] }],
+      },
+      'agent',
+    );
+    expect(diagram(store, 'detail').shapes.map((s) => s.id)).toEqual(['mailer', 'notify', 'checkout-overview']);
+  });
+
+  it('keeps shapes that linked to something removed, as plain shapes with the name they showed', () => {
+    const { store } = drawn();
+    const result = store.apply({ elements: [{ id: 'api', name: 'Renamed in the same change set' }], remove: { elements: ['checkout'], flows: ['place-order'], diagrams: ['detail'] } }, 'human');
+    expect(result.removed.elements).toEqual(['checkout', 'pricing']);
+    expect(result.updated.diagrams).toEqual(['checkout-overview']);
+    expect(result.warnings).toEqual([
+      'diagram `checkout-overview` shape `pricing`: unlinked from removed element `pricing`, it keeps the name it showed.',
+      'diagram `checkout-overview` shape `flow`: unlinked from removed flow `place-order`, it keeps the name it showed.',
+      'diagram `checkout-overview` shape `more`: unlinked from removed diagram `detail`, it keeps the name it showed.',
+    ]);
+    expect(diagram(store).shapes.map((s) => [s.id, s.text, s.link?.id])).toEqual([
+      ['zone', 'Backend', undefined],
+      ['api', '', 'api'],
+      ['pricing', 'Prices', undefined],
+      ['flow', 'Place order', undefined],
+      ['more', 'Detail', undefined],
+    ]);
+    expect(diagram(store).connectors).toHaveLength(1);
+    store.undo();
+    expect(shape(store, 'flow')).toMatchObject({ text: '', link: { type: 'flow', id: 'place-order' } });
+  });
+
+  it('repairs diagrams taken over from outside instead of refusing them, and says what it did', () => {
+    const logs: string[] = [];
+    const store = new Store({
+      log: (m) => logs.push(m),
+      model: { elements: [{ id: 'a', kind: 'service', name: 'A' }], diagrams: [{ id: 'imported', name: 'Imported' }, { id: 'map', name: 'Shadowed by the file' }] },
+      diagrams: [
+        { id: 'map', name: 'Map', shapes: [at('a', 0, 0, { link: { type: 'element', id: 'a' } }), at('b', 0, 0, { parent: 'a', link: { type: 'element', id: 'gone' } })], connectors: [{ id: 'c', from: 'a', to: 'zz' }] },
+        { id: 'map', name: 'Twice' },
+        { id: 'broken', shapes: 'none' },
+        'nonsense',
+      ],
+    });
+    expect(store.snapshot().model.diagrams.map((d) => [d.id, d.name])).toEqual([['map', 'Map'], ['imported', 'Imported']]);
+    expect(store.snapshot().model.diagrams[0]).toMatchObject({ shapes: [{ id: 'a', link: { type: 'element', id: 'a' } }, { id: 'b', text: 'gone' }], connectors: [] });
+    expect(logs).toEqual([
+      'archweave: skipped a second diagram with the id `map`.',
+      expect.stringMatching(/^archweave: skipped diagram `broken`: name: /),
+      expect.stringMatching(/^archweave: skipped diagram #4: /),
+      'archweave: diagram `map` shape `b`: cleared its parent, `a` is not a group.',
+      'archweave: diagram `map` shape `b`: unlinked from missing element `gone`, it keeps the name it showed.',
+      'archweave: diagram `map` connector `c`: dropped, there is no shape `zz` (`to`).',
+    ]);
+    expect(new Store({ model: store.snapshot().model, log: (m) => logs.push(m) }).snapshot().model).toEqual(store.snapshot().model);
+    expect(logs).toHaveLength(6);
+  });
+
+  it('takes over the model and the diagrams independently', () => {
+    const { store, logs } = drawn();
+    const { diagrams, ...graph } = store.snapshot().model;
+
+    store.replace(undefined, undefined, [{ id: 'solo', name: 'Solo', shapes: [at('web', 0, 0, { link: { type: 'element', id: 'web' } })] }]);
+    expect(store.snapshot().model.diagrams.map((d) => d.id)).toEqual(['solo']);
+    expect(store.snapshot().model.elements).toEqual(graph.elements);
+    expect(store.canUndo()).toBe(false);
+
+    store.replace(undefined, undefined, diagrams);
+    const changes: StoreChange[] = [];
+    store.subscribe((c) => changes.push(c));
+    store.replace({ ...graph, elements: graph.elements.filter((e) => e.id !== 'pricing'), relations: graph.relations.filter((r) => r.to !== 'pricing'), flows: [] }, undefined);
+    expect(changes).toMatchObject([{ cause: 'reload', modelChanged: true, layoutChanged: false }]);
+    expect(store.snapshot().model.diagrams.map((d) => d.id)).toEqual(['detail', 'checkout-overview']);
+    expect(shape(store, 'pricing')).toEqual(at('pricing', 200, 40, { kind: 'box', text: 'Prices', parent: 'zone' }));
+    expect(shape(store, 'flow')).toMatchObject({ text: 'Place order' });
+    expect(shape(store, 'flow').link).toBeUndefined();
+    expect(logs).toEqual([
+      'archweave: diagram `checkout-overview` shape `pricing`: unlinked from missing element `pricing`, it keeps the name it showed.',
+      'archweave: diagram `checkout-overview` shape `flow`: unlinked from missing flow `place-order`, it keeps the name it showed.',
+    ]);
+  });
+
+  it('never lets a change set through that leaves a diagram inconsistent', () => {
+    const { store } = drawn();
+    const twice = { id: 'detail', shapes: [{ id: 'x', x: 0, y: 0 }], connectors: [{ id: 'y', from: 'x', to: 'x' }] };
+    expect(() => store.apply({ diagrams: [twice] }, 'human')).toThrow(/Nothing was applied\.\ndiagram `detail` connector `y`: `from` and `to` are the same shape `x`\./);
+    expect(diagram(store, 'detail').shapes).toEqual([]);
   });
 });

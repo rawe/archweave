@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { PERSPECTIVES, type Perspective } from '../shared/model.ts';
+import { PERSPECTIVES, type Perspective, slugify } from '../shared/model.ts';
+import { prepareChanges } from './arrange.ts';
 import { EXPORT_FORMATS, ExportError, type ExportFormat, exportModel } from './export.ts';
+import { type DiagramImageOptions, renderDiagramPng, renderDiagramSvg } from './render.ts';
 import { repairCodeLinks } from './repair.ts';
 import { PathError, type Repo } from './repo.ts';
 import type { ServerEvent, Session } from './session.ts';
@@ -37,7 +39,7 @@ export function apiRoutes(deps: ApiDeps): Hono {
 
   api.get('/snapshot', (c) => c.json(store.snapshot()));
 
-  api.post('/changes', async (c) => c.json(store.apply(await jsonBody(c.req.raw), 'human')));
+  api.post('/changes', async (c) => c.json(store.apply(await prepareChanges(store.snapshot().model, await jsonBody(c.req.raw)), 'human')));
 
   api.post('/undo', (c) => {
     const revision = store.undo('human');
@@ -138,6 +140,31 @@ export function apiRoutes(deps: ApiDeps): Hono {
     });
   });
 
+  /**
+   * A diagram as a picture. Query: `format` svg (default) or png, `theme` light (default) or dark, `scale` 1 to 4
+   * (png, default 2), `background` canvas (default), white or transparent, `download=1` to be offered as a file.
+   */
+  api.get('/diagrams/:id/image', async (c) => {
+    const format = oneOf(c.req.query('format'), ['svg', 'png'] as const, 'format');
+    const options: DiagramImageOptions = {
+      theme: oneOf(c.req.query('theme'), ['light', 'dark'] as const, 'theme'),
+      background: oneOf(c.req.query('background'), ['canvas', 'white', 'transparent'] as const, 'background'),
+    };
+    const scale = c.req.query('scale');
+    if (scale !== undefined) {
+      options.scale = Number(scale);
+      if (!(options.scale >= 1 && options.scale <= 4)) throw new BadRequest('`scale` must be between 1 and 4');
+    }
+    const { model } = store.snapshot();
+    const id = c.req.param('id');
+    const diagram = model.diagrams.find((d) => d.id === id);
+    if (!diagram) return c.json({ error: `Unknown diagram \`${id}\`` }, 404);
+    const headers: Record<string, string> = { 'content-type': format === 'png' ? 'image/png' : 'image/svg+xml; charset=utf-8', 'cache-control': 'no-store' };
+    if (c.req.query('download') === '1') headers['content-disposition'] = `attachment; filename="${slugify(diagram.name) || 'diagram'}.${format}"`;
+    if (format === 'png') return c.body((await renderDiagramPng(model, id, options)) as Uint8Array<ArrayBuffer>, 200, headers);
+    return c.body(renderDiagramSvg(model, id, options)!, 200, headers);
+  });
+
   api.all('*', (c) => c.json({ error: `No route ${c.req.method} ${c.req.path}` }, 404));
 
   return api;
@@ -161,6 +188,12 @@ async function jsonBody(request: Request): Promise<unknown> {
   } catch {
     throw new BadRequest('Request body must be JSON');
   }
+}
+
+function oneOf<T extends string>(value: string | undefined, allowed: readonly T[], name: string): T | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (!allowed.includes(value as T)) throw new BadRequest(`\`${name}\` must be one of ${allowed.join(', ')}`);
+  return value as T;
 }
 
 function integer(value: string, name: string): number {

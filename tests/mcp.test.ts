@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { INSTRUCTIONS } from '../src/server/guide.ts';
 import { createMcpServer } from '../src/server/mcp.ts';
 import { Repo } from '../src/server/repo.ts';
 import { Session } from '../src/server/session.ts';
@@ -105,6 +106,7 @@ describe('get_model', () => {
       byKind: { actor: 1, app: 1, service: 1, component: 2, module: 1, store: 1, external: 1, data: 3 },
       relations: 7,
       flows: 0,
+      diagrams: 0,
     });
     const api = outline.elements.find((e: any) => e.id === 'api');
     expect(api).toMatchObject({ childCount: 2, dataCount: 1 });
@@ -302,8 +304,8 @@ describe('guide', () => {
   it('answers the questions agents ran into', async () => {
     const { call, client } = await harness();
     const guide = await call('get_guide');
-    expect(client.getInstructions()).toBe(guide);
-    expect(guide).toMatch(/same text as `get_guide`/);
+    expect(client.getInstructions()).not.toContain('Model in levels');
+    expect(guide).toMatch(/topic "diagrams"/);
     expect(guide).toMatch(/Relations have no name/);
     expect(guide).toMatch(/<from>-<kind>-<to>/);
     expect(guide).toMatch(/owned by the store/);
@@ -326,5 +328,126 @@ describe('guide', () => {
     expect(describe('find_by_code').description).toMatch(/`check` is "ok", "moved"/);
     expect(describe('apply_changes').description).toMatch(/\[\{path, symbol\?, startLine\?\}\]/);
     expect(describe('apply_changes').description).toMatch(/actor, external, system/);
+  });
+});
+
+describe('diagrams', () => {
+  const CHECKOUT = {
+    id: 'checkout',
+    name: 'Checkout',
+    summary: 'How an order is paid.',
+    shapes: [
+      { id: 'backend', kind: 'group', text: 'Backend' },
+      { id: 'orders-box', parent: 'backend', link: { type: 'element', id: 'orders' } },
+      { id: 'pay', parent: 'backend', text: 'Payments', tone: 'blue' },
+      { id: 'buyer', kind: 'actor', text: 'Buyer' },
+    ],
+    connectors: [{ id: 'buys', from: 'buyer', to: 'orders-box', label: 'places order' }, { from: 'orders-box', to: 'pay', line: 'dashed' }],
+  };
+
+  async function drawn() {
+    const h = await harness();
+    const result = await h.call('apply_changes', { summary: 'Draw checkout', diagrams: [CHECKOUT] });
+    return { ...h, result };
+  }
+
+  it('arranges a diagram sent without positions and answers with its lints', async () => {
+    const { result, store } = await drawn();
+    expect(result.created.diagrams).toEqual(['checkout']);
+    expect(result.diagrams).toEqual([{ id: 'checkout', lints: [] }]);
+    const diagram = store.snapshot().model.diagrams[0]!;
+    expect(diagram.shapes.every((s) => s.x % 8 === 0 && s.y % 8 === 0)).toBe(true);
+    expect(store.journal().at(-1)).toMatchObject({ actor: 'agent', summary: 'Draw checkout' });
+  });
+
+  it('seeds on a dry run without applying anything', async () => {
+    const { call, store } = await harness();
+    const result = await call('apply_changes', { summary: 'Try', dryRun: true, diagrams: [{ id: 'try', name: 'Try', seed: ['web', 'orders'] }] });
+    expect(result).toMatchObject({ dryRun: true, created: { diagrams: ['try'] } });
+    expect(store.snapshot().model.diagrams).toEqual([]);
+    await expect(call('apply_changes', { summary: 'Try', diagrams: [{ id: 'try', name: 'Try', seed: ['ordrs'] }] })).rejects.toThrow(/unknown element `ordrs`\. Did you mean `orders`\?/);
+  });
+
+  it('reads a diagram as an outline with nesting, live names, set styles and lints', async () => {
+    const { call } = await drawn();
+    const outline = await call('get_element', { id: 'checkout' });
+    expect(outline).toMatchObject({ type: 'diagram', id: 'checkout', name: 'Checkout', direction: 'down', counts: { shapes: 4, connectors: 2 }, lints: [] });
+    const backend = outline.shapes.find((s: any) => s.id === 'backend');
+    expect(backend.children.map((s: any) => s.id)).toEqual(['orders-box', 'pay']);
+    expect(backend.children[0]).toEqual({
+      id: 'orders-box',
+      kind: 'box',
+      label: 'Orders',
+      link: { type: 'element', id: 'orders', name: 'Orders', kind: 'component', status: 'built' },
+      at: expect.any(Array),
+    });
+    expect(backend.children[1]).toMatchObject({ label: 'Payments', tone: 'blue' });
+    expect(outline.connectors).toEqual([
+      { id: 'buys', from: 'buyer', to: 'orders-box', label: 'places order' },
+      { id: 'orders-box-to-pay', from: 'orders-box', to: 'pay', line: 'dashed' },
+    ]);
+    expect(await call('get_element', { id: 'orders' })).toMatchObject({ diagrams: [{ id: 'checkout', name: 'Checkout' }] });
+    await expect(call('get_element', { id: 'checkot' })).rejects.toThrow(/Did you mean `checkout`/);
+  });
+
+  it('lists diagrams in the model outline and finds them by shape text', async () => {
+    const { call } = await drawn();
+    const outline = await call('get_model', {});
+    expect(outline.diagrams).toEqual([{ id: 'checkout', name: 'Checkout', summary: 'How an order is paid.', shapes: 4 }]);
+    expect(outline.counts.diagrams).toBe(1);
+    expect(await call('search', { query: 'payments' })).toEqual([{ type: 'diagram', id: 'checkout', name: 'Checkout', summary: 'How an order is paid.', shapes: 4, matchedIn: ['shapes'] }]);
+    expect(await call('search', { query: 'payments', kinds: ['component'] })).toEqual([]);
+  });
+
+  it('gives the open diagram and the selected shapes in full in get_context', async () => {
+    const { call, session } = await drawn();
+    session.setUi({ perspective: 'diagrams', diagramId: 'checkout', selectedShapeIds: ['orders-box', 'buys'] });
+    const context = await call('get_context');
+    expect(context.ui.diagram).toMatchObject({ id: 'checkout', counts: { shapes: 4 } });
+    expect(context.selection.shapes).toEqual([expect.objectContaining({ id: 'orders-box', parent: 'backend', link: { type: 'element', id: 'orders', kind: 'component', name: 'Orders', status: 'built', parentId: 'api' } })]);
+    expect(context.selection.connectors).toEqual([{ id: 'buys', from: 'buyer', to: 'orders-box', label: 'places order' }]);
+    expect(context.hint).toBeUndefined();
+    session.setUi({ perspective: 'diagrams' });
+    expect((await call('get_context')).ui.diagrams).toEqual([expect.objectContaining({ id: 'checkout', shapes: 4 })]);
+  });
+
+  it('opens a diagram and highlights shapes with focus_ui, checking the ids', async () => {
+    const { call, session } = await drawn();
+    const sent: unknown[] = [];
+    session.subscribe((e) => e.event === 'focus' && sent.push(e.data));
+    await call('focus_ui', { diagramId: 'checkout', shapeIds: ['pay'], message: 'Here' });
+    expect(sent).toEqual([{ elementIds: [], perspective: 'diagrams', diagramId: 'checkout', shapeIds: ['pay'], message: 'Here' }]);
+    await expect(call('focus_ui', { diagramId: 'checkout', shapeIds: ['payy'] })).rejects.toThrow(/unknown shape or connector `payy`\. Did you mean `pay`\?/);
+    await expect(call('focus_ui', { diagramId: 'chekout' })).rejects.toThrow(/unknown diagram `chekout`\. Did you mean `checkout`\?/);
+    await expect(call('focus_ui', { shapeIds: ['pay'] })).rejects.toThrow(/`shapeIds` needs `diagramId`/);
+  });
+
+  it('renders a diagram as a PNG image block followed by its lints', async () => {
+    const { client } = await drawn();
+    const result = (await client.callTool({ name: 'render_diagram', arguments: { id: 'checkout', theme: 'dark' } })) as { content: any[]; structuredContent?: unknown };
+    expect(result.content.map((c) => c.type)).toEqual(['image', 'text']);
+    expect(result.structuredContent).toBeUndefined();
+    const png = Buffer.from(result.content[0].data, 'base64');
+    expect(result.content[0].mimeType).toBe('image/png');
+    expect(png.subarray(1, 4).toString()).toBe('PNG');
+    expect(Math.max(png.readUInt32BE(16), png.readUInt32BE(20))).toBeLessThanOrEqual(1568);
+    expect(JSON.parse(result.content[1].text)).toMatchObject({ id: 'checkout', lints: [] });
+    const missing = (await client.callTool({ name: 'render_diagram', arguments: { id: 'checkot' } })) as { isError?: boolean; content: { text: string }[] };
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0]!.text).toMatch(/Did you mean `checkout`/);
+  });
+
+  it('serves two guide topics and keeps the instructions short enough for every client', async () => {
+    const { call, client } = await harness();
+    expect(await call('get_guide')).toMatch(/Model in levels/);
+    const diagrams = await call('get_guide', { topic: 'diagrams' });
+    for (const word of ['promote', 'setShapes', 'arrange', 'seed', 'render_diagram', 'focus_ui', 'cylinder', 'tone', 'fromSide']) expect(diagrams).toContain(word);
+    expect(diagrams.length).toBeLessThan(9000);
+    expect(INSTRUCTIONS.length).toBeLessThan(4096);
+    expect(client.getInstructions()).toBe(INSTRUCTIONS);
+    expect(INSTRUCTIONS.slice(0, 512)).toMatch(/get_guide[\s\S]*"modeling"[\s\S]*"diagrams"/);
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === 'get_guide')!.description).toMatch(/"modeling"[\s\S]*"diagrams"/);
+    expect(tools.find((t) => t.name === 'apply_changes')!.description).toMatch(/get_guide with topic "diagrams"/);
   });
 });

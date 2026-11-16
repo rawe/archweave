@@ -2,17 +2,23 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { ChangeSet, CODE_EXPECTED_KINDS, type CodeRef, ElementKind, type FocusRequest, Id, type JournalEntry, type Model, normalizeCodePath, Perspective, type UiState } from '../shared/model.ts';
+import { diagramLints } from '../shared/diagram/lints.ts';
+import { buildScene } from '../shared/diagram/scene.ts';
+import { LIGHT_THEME } from '../shared/diagram/theme.ts';
+import { type ChangeResult, ChangeSet, CODE_EXPECTED_KINDS, type CodeRef, type Diagram, ElementKind, type FocusRequest, Id, type JournalEntry, type Model, normalizeCodePath, Perspective, type UiState } from '../shared/model.ts';
 import { ancestorsOf, descendantsOf, projectStructure } from '../shared/projection.ts';
+import { prepareChanges } from './arrange.ts';
+import { diagramOutline, diagramSelection } from './diagramViews.ts';
 import { EXPORT_FORMATS, exportModel } from './export.ts';
-import { GUIDE } from './guide.ts';
+import { GUIDE_TOPICS, INSTRUCTIONS } from './guide.ts';
+import { renderDiagramPng } from './render.ts';
 import { ownedRefs, repairCodeLinks } from './repair.ts';
 import { PathError, type Repo } from './repo.ts';
 import type { Session } from './session.ts';
 import type { StaleLinks, Verdict } from './stale.ts';
 import type { Store } from './store.ts';
 import { didYouMean } from './suggest.ts';
-import { compact, ModelView, THREAD_ID_CAP } from './views.ts';
+import { compact, diagramEntry, ModelView, THREAD_ID_CAP } from './views.ts';
 
 export interface McpDeps {
   store: Store;
@@ -69,19 +75,25 @@ function ok(value: unknown): CallToolResult {
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
+/** Agent clients scale larger images down or refuse them: a rendered diagram stays within this many pixels on its long edge. */
+export const MAX_IMAGE_EDGE = 1568;
+const IMAGE_PADDING = 32;
+
 export function createMcpServer(deps: McpDeps): McpServer {
   const { store, session, repo, stale } = deps;
-  const server = new McpServer({ name: 'archweave', version: deps.version }, { instructions: GUIDE });
+  const server = new McpServer({ name: 'archweave', version: deps.version }, { instructions: INSTRUCTIONS });
   const view = () => new ModelView(store.snapshot().model);
 
   server.registerTool(
     'get_guide',
     {
-      title: 'Modeling guide',
-      description: 'Returns the ArchWeave modeling guide: how to structure the model in levels, name things, link code, model data structures and flows, and work with the human. Read it once before your first change to the model.',
+      title: 'Guide',
+      description:
+        'Returns a guide. Topic "modeling" (the default): how to structure the model in levels, name things, link code, model data structures and flows, and work with the human; read it once before your first change to the model. Topic "diagrams": what a diagram is, the workflow, the shape and connector vocabulary, composition conventions and examples; read it once before drawing or changing a diagram.',
+      inputSchema: { topic: z.enum(['modeling', 'diagrams']).optional().describe('Default "modeling".') },
       annotations: readOnly,
     },
-    async () => ok(GUIDE),
+    async ({ topic }) => ok(GUIDE_TOPICS[topic ?? 'modeling']),
   );
 
   server.registerTool(
@@ -89,7 +101,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'What the human is looking at',
       description:
-        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids; in the data perspective: `dataView`, either the catalog of all structures by owner or the focused structure with its fields, the structures it references and that reference it, and the elements using it by verb), the selected elements and relations expanded in full (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes (the 20 most recent; `olderHumanChangesOmitted` counts the rest, which get_changes lists), and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
+        'Returns what the human is doing in ArchWeave right now: the perspective and scope they are viewing (with breadcrumb), what is visible there (in the structure perspective: the scope\'s children, outside neighbors marked `neighbor: true`, and `visibleRelations`, the threads drawn between them with the underlying relation ids; in the data perspective: `dataView`, either the catalog of all structures by owner or the focused structure with its fields, the structures it references and that reference it, and the elements using it by verb; in the diagrams perspective: `diagram`, the open diagram as get_element returns it, or `diagrams`, the list, when none is open), the selected elements and relations expanded in full (in the diagrams perspective also `shapes` and `connectors`: the selected ones in full, a linked shape with its element) (code refs, notes, children, relations in and out, flows, data), open notes across the model, the changes the human made since your last get_context or apply_changes (the 20 most recent; `olderHumanChangesOmitted` counts the rest, which get_changes lists), and how many code links are stale. `ui.reportedAt` says when the browser reported this view; when no browser is connected, `uiHint` says the view may be out of date. Call this first whenever a request says "this", "here", "the selected" or otherwise refers to what the human sees.',
       annotations: { ...readOnly, idempotentHint: false },
     },
     async () => {
@@ -101,10 +113,12 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const flow = ui.flowId ? v.flowsById.get(ui.flowId) : undefined;
       const selectedElements = ui.selectedElementIds.map((id) => v.expandElement(id) ?? { id, missing: true });
       const selectedRelations = ui.selectedRelationIds.map((id) => v.expandRelation(id) ?? { id, missing: true });
+      const diagram = ui.perspective === 'diagrams' && ui.diagramId ? snapshot.model.diagrams.find((d) => d.id === ui.diagramId) : undefined;
+      const drawn = diagram ? diagramSelection(snapshot.model, diagram, ui.selectedShapeIds) : undefined;
       const humanChanges = recentHumanChanges(store.journal({ since: session.agentCursor, actor: 'human' }));
       const staleCount = (await stale.check(snapshot.model)).length;
       session.advanceAgentCursor(snapshot.revision);
-      const nothingSelected = !selectedElements.length && !selectedRelations.length;
+      const nothingSelected = !selectedElements.length && !selectedRelations.length && !drawn?.shapes.length && !drawn?.connectors.length;
       const browserConnected = session.browserCount > 0;
       const uiHint = browserConnected
         ? undefined
@@ -123,7 +137,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           ...visibleIn(v, ui, scope?.id),
         },
         ...(uiHint ? { uiHint } : {}),
-        selection: { elements: selectedElements, relations: selectedRelations },
+        selection: { elements: selectedElements, relations: selectedRelations, ...(drawn ? drawn : {}) },
         ...(nothingSelected ? { hint: 'Nothing is selected. If the request refers to something specific, ask the human to select it in ArchWeave, or work from the scope and visible elements.' } : {}),
         openNotes: openNotes(snapshot.model),
         ...humanChanges,
@@ -137,7 +151,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'Model outline',
       description:
-        'Returns an outline of the architecture: nested elements as {id, kind, name, summary, status, childCount, dataCount, children} starting at the top level or at `scopeId`, `depth` levels deep. `childCount` counts non-data children and `dataCount` the data structures an element owns; `children` is present only above the depth limit, so call again with a deeper `scopeId` or `depth` to expand. `relations` shows connectivity at the level returned: a single relation between two listed elements appears as itself (with `id`); relations between their descendants are lifted to the listed ancestors and merged into threads {from, to, count, relationIds (at most 10), kinds}. With `scopeId`, connections to elements outside the scope are lifted to outside `neighbors`, as on the diagram. `counts` covers the whole model, per kind including data. Data structures are left out of the outline unless `includeData` is true.',
+        'Returns an outline of the architecture: nested elements as {id, kind, name, summary, status, childCount, dataCount, children} starting at the top level or at `scopeId`, `depth` levels deep. `childCount` counts non-data children and `dataCount` the data structures an element owns; `children` is present only above the depth limit, so call again with a deeper `scopeId` or `depth` to expand. `relations` shows connectivity at the level returned: a single relation between two listed elements appears as itself (with `id`); relations between their descendants are lifted to the listed ancestors and merged into threads {from, to, count, relationIds (at most 10), kinds}. With `scopeId`, connections to elements outside the scope are lifted to outside `neighbors`, as on the diagram. `counts` covers the whole model, per kind including data. Data structures are left out of the outline unless `includeData` is true. `diagrams` lists every diagram as {id, name, summary, shapes} (shape count); read one with get_element.',
       inputSchema: {
         scopeId: Id.optional().describe('Element whose inside to outline. Omit for the whole system.'),
         depth: z.number().int().min(1).max(10).optional().describe('Levels of nesting to include. Default 2.'),
@@ -158,15 +172,16 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       title: 'Element in full',
       description:
-        'Returns one element in full: all fields, code refs, notes, parent chain, children, relations in and out (with the other end\'s name), flows it takes part in, and the data it touches (for a data structure: who uses it and which fields reference it). Also accepts a relation id or a flow id.',
-      inputSchema: { id: z.string().min(1).describe('Element, relation or flow id.') },
+        'Returns one element in full: all fields, code refs, notes, parent chain, children, relations in and out (with the other end\'s name), flows it takes part in, the data it touches (for a data structure: who uses it and which fields reference it), and the `diagrams` that show it. Also accepts a relation id, a flow id or a diagram id. A diagram comes as an outline: `direction`, `counts`, `shapes` nested in their groups (each with `label`, what it shows; `text` only when its own text replaces a linked name; `detail`; `link` {type, id, name, and for elements kind and status}; the style properties set on it; `at: [x, y, w, h]`), `connectors` with the properties set on them, and `lints`, the problems a reviewer would see.',
+      inputSchema: { id: z.string().min(1).describe('Element, relation, flow or diagram id.') },
       annotations: readOnly,
     },
     async ({ id }) => {
       const v = view();
-      const found = v.expandElement(id) ?? v.expandRelation(id) ?? flowDetail(v, id);
+      const diagram = v.model.diagrams.find((d) => d.id === id);
+      const found = v.expandElement(id) ?? v.expandRelation(id) ?? flowDetail(v, id) ?? (diagram && diagramOutline(v.model, diagram));
       if (!found) {
-        throw new Error(`No element, relation or flow \`${id}\`.${didYouMean(id, [...v.byId.values(), ...v.relationsById.values(), ...v.flowsById.values()])}`);
+        throw new Error(`No element, relation, flow or diagram \`${id}\`.${didYouMean(id, [...v.byId.values(), ...v.relationsById.values(), ...v.flowsById.values(), ...v.model.diagrams])}`);
       }
       return ok(found);
     },
@@ -176,7 +191,8 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'search',
     {
       title: 'Search the model',
-      description: 'Finds elements whose name, id, summary, description, tags, technology, field names or code paths contain all words of `query`. Returns compact elements, best matches first, with where they matched.',
+      description:
+        'Finds elements whose name, id, summary, description, tags, technology, field names or code paths contain all words of `query`, and diagrams whose name, id, summary or shape and connector texts do. Returns compact elements and diagrams ({type: "diagram", id, name, summary, shapes}), best matches first, each with where it matched. With `kinds`, only elements of those kinds.',
       inputSchema: {
         query: z.string().min(1).describe('Words to look for, e.g. "order payload" or "src/billing".'),
         kinds: z.array(ElementKind).optional().describe('Only these element kinds.'),
@@ -260,18 +276,27 @@ Semantics:
 - \`remove\` deletes by id. Removing an element also removes its descendants, attached relations and the flow steps that touch it.
 - \`dataIds\` and field \`ref\`s you send must name data structures (kind "data"); otherwise the change set is rejected. References broken by a removal, or by an element no longer being of kind "data", are cleaned up with a warning.
 - Code ref paths are stored normalized (repo-relative, forward slashes, no "./"); an absolute path inside the repository is made relative, a path outside it is an error.
-- Do not send \`layout\`.`,
+- Do not send \`layout\`.
+
+Diagrams (read get_guide with topic "diagrams" first for the vocabulary and conventions):
+- \`diagrams\`: upserts by \`id\`; a new diagram needs \`name\`. \`shapes\` / \`connectors\` are full lists replacing the stored ones; \`setShapes\` / \`setConnectors\` upsert single entries by id (only given properties change, \`null\` clears one); \`removeShapes\` / \`removeConnectors\` take ids. \`remove.diagrams\` deletes diagrams.
+- Leave out \`x\`, \`y\`, \`w\`, \`h\`: shapes are sized to their text and arranged by the server. \`arrange\`: "new" (default) places only shapes without a position, "all" arranges every shape afresh (only when the human asks).
+- \`seed\`: element ids to draw: a linked shape per element not on the diagram yet (shape id = element id) and a connector per pair of drawn shapes the model relates, relations lifted to the nearest drawn ancestor of each end.
+- The reply lists \`diagrams: [{id, lints}]\` for each diagram created or updated: fix what the lints name.`,
       inputSchema: ChangeSet.extend({
         summary: z.string().min(1).max(200).describe('One line for the activity feed.'),
         dryRun: z.boolean().optional().describe('Validate and report what would change without applying it.'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
-    async ({ dryRun, ...changes }) => {
+    async ({ dryRun, ...input }) => {
+      const changes = await prepareChanges(store.snapshot().model, input);
       if (dryRun) return ok({ dryRun: true, ...store.preview(changes, 'agent') });
       const { humanChanges, olderHumanChangesOmitted } = recentHumanChanges(store.journal({ since: session.agentCursor, actor: 'human' }));
-      const result = store.apply(changes, 'agent');
+      const result = { ...store.apply(changes, 'agent') } as ChangeResult & Record<string, unknown>;
       session.advanceAgentCursor(result.revision);
+      const drawn = diagramReport(store.snapshot().model, result);
+      if (drawn.length) result.diagrams = drawn;
       return ok(humanChanges.length ? { ...result, humanChangesSinceYouLastLooked: humanChanges, ...(olderHumanChangesOmitted ? { olderHumanChangesOmitted } : {}) } : result);
     },
   );
@@ -347,29 +372,34 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
     {
       title: 'Show something to the human',
       description:
-        'Asks the browser to navigate to and highlight these elements, optionally in a given perspective, scope or flow, with a short message shown to the human. Use it to point at what you are talking about. Returns whether a browser is connected to receive it.',
+        'Asks the browser to navigate to and highlight these elements, optionally in a given perspective, scope or flow, or to open a diagram and highlight shapes and connectors on it, with a short message shown to the human. Use it to point at what you are talking about. Returns whether a browser is connected to receive it.',
       inputSchema: {
-        elementIds: z.array(Id).describe('Elements to highlight. May be empty when only navigating.'),
-        perspective: Perspective.optional().describe('structure, data or flows. Omit to let the browser choose.'),
+        elementIds: z.array(Id).default([]).describe('Elements to highlight. May be empty when only navigating.'),
+        perspective: Perspective.optional().describe('structure, data, flows or diagrams. Omit to let the browser choose; with `diagramId` it is diagrams.'),
         scopeId: Id.nullable().optional().describe('Structure scope to open; null for the top level. Omit to let the browser pick a scope that shows the elements.'),
         flowId: Id.optional().describe('Flow to open in the flows perspective.'),
+        diagramId: Id.optional().describe('Diagram to open in the diagrams perspective.'),
+        shapeIds: z.array(Id).optional().describe('Shapes and connectors of `diagramId` to highlight.'),
         message: z.string().max(280).optional().describe('One short sentence shown to the human.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ elementIds, perspective, scopeId, flowId, message }) => {
+    async ({ elementIds, perspective, scopeId, flowId, diagramId, shapeIds, message }) => {
       const v = view();
       const problems: string[] = [];
       for (const id of [...elementIds, ...(scopeId ? [scopeId] : [])]) {
         if (!v.byId.has(id)) problems.push(`unknown element \`${id}\`.${didYouMean(id, v.byId.values())}`);
       }
       if (flowId && !v.flowsById.has(flowId)) problems.push(`unknown flow \`${flowId}\`.${didYouMean(flowId, v.flowsById.values())}`);
+      problems.push(...diagramFocusProblems(v.model.diagrams, diagramId, shapeIds, perspective));
       if (problems.length) throw new Error(problems.join('\n'));
       const request: FocusRequest = {
         elementIds,
-        ...(perspective ? { perspective } : {}),
+        ...(perspective || diagramId ? { perspective: perspective ?? 'diagrams' } : {}),
         ...(scopeId !== undefined ? { scopeId } : {}),
         ...(flowId ? { flowId } : {}),
+        ...(diagramId ? { diagramId } : {}),
+        ...(shapeIds?.length ? { shapeIds } : {}),
         ...(message ? { message } : {}),
       };
       session.publish({ event: 'focus', data: request });
@@ -379,6 +409,33 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
         browsers,
         ...(browsers ? {} : { hint: `No browser is connected. Ask the human to open ${deps.uiUrl}.` }),
       });
+    },
+  );
+
+  server.registerTool(
+    'render_diagram',
+    {
+      title: 'Look at a diagram',
+      description: `Renders a diagram as a PNG image, followed by its lints as text, so you can see what the human sees. Use it after drawing or changing a diagram when your client shows images. The image is at most ${MAX_IMAGE_EDGE} pixels on its long edge.`,
+      inputSchema: {
+        id: Id.describe('Diagram id.'),
+        theme: z.enum(['light', 'dark']).optional().describe('Default light.'),
+        scale: z.number().min(0.25).max(4).optional().describe('Pixels per diagram unit. Default 2, lowered to keep the image within the size limit.'),
+      },
+      annotations: readOnly,
+    },
+    async ({ id, theme, scale }) => {
+      const { model } = store.snapshot();
+      const diagram = model.diagrams.find((d) => d.id === id);
+      if (!diagram) throw new Error(`Unknown diagram \`${id}\`.${didYouMean(id, model.diagrams)}`);
+      const png = await renderDiagramPng(model, id, { theme, padding: IMAGE_PADDING, scale: imageScale(diagram, model, scale ?? 2) });
+      const lints = diagramLints(diagram, model);
+      return {
+        content: [
+          { type: 'image', data: Buffer.from(png!).toString('base64'), mimeType: 'image/png' },
+          { type: 'text', text: JSON.stringify({ id, lints, ...(lints.length ? {} : { hint: 'No lints: nothing overlaps, no line runs through a shape, all text fits.' }) }) },
+        ],
+      };
     },
   );
 
@@ -404,8 +461,39 @@ With \`repair: true\` it also changes the model, in one journaled change set: ev
   return server;
 }
 
+/** The lints of every diagram a change created or updated. */
+function diagramReport(model: Model, result: ChangeResult): { id: string; lints: ReturnType<typeof diagramLints> }[] {
+  const ids = [...result.created.diagrams, ...result.updated.diagrams];
+  return ids.flatMap((id) => {
+    const diagram = model.diagrams.find((d) => d.id === id);
+    return diagram ? [{ id, lints: diagramLints(diagram, model) }] : [];
+  });
+}
+
+/** The largest scale up to `wanted` at which the rendered diagram stays within MAX_IMAGE_EDGE pixels. */
+function imageScale(diagram: Diagram, model: Model, wanted: number): number {
+  const bounds = buildScene(diagram, model, LIGHT_THEME).bounds;
+  const edge = bounds ? Math.max(bounds.w, bounds.h) + 2 * IMAGE_PADDING + 2 : 0;
+  return edge ? Math.min(wanted, Math.floor((MAX_IMAGE_EDGE / edge) * 100) / 100) : wanted;
+}
+
+function diagramFocusProblems(diagrams: Diagram[], diagramId: string | undefined, shapeIds: string[] | undefined, perspective: string | undefined): string[] {
+  if (!diagramId) return shapeIds?.length ? ['`shapeIds` needs `diagramId`, the diagram they are on.'] : [];
+  if (perspective && perspective !== 'diagrams') return [`\`diagramId\` opens the diagrams perspective; leave out \`perspective\` or set it to "diagrams".`];
+  const diagram = diagrams.find((d) => d.id === diagramId);
+  if (!diagram) return [`unknown diagram \`${diagramId}\`.${didYouMean(diagramId, diagrams)}`];
+  const items = [...diagram.shapes.map((s) => ({ id: s.id, name: s.text })), ...diagram.connectors.map((c) => ({ id: c.id, name: c.label }))];
+  const known = new Set(items.map((i) => i.id));
+  return (shapeIds ?? []).filter((id) => !known.has(id)).map((id) => `diagram \`${diagramId}\`: unknown shape or connector \`${id}\`.${didYouMean(id, items)}`);
+}
+
 /** What the browser draws for this perspective, as far as the agent needs it. */
 function visibleIn(v: ModelView, ui: UiState, scopeId: string | undefined): Record<string, unknown> {
+  if (ui.perspective === 'diagrams') {
+    const diagram = ui.diagramId ? v.model.diagrams.find((d) => d.id === ui.diagramId) : undefined;
+    if (diagram) return { diagram: diagramOutline(v.model, diagram) };
+    return { ...(ui.diagramId ? { diagram: { id: ui.diagramId, missing: true } } : {}), diagrams: v.model.diagrams.map(diagramEntry) };
+  }
   if (ui.perspective === 'data') {
     // As in the browser: the first selected data structure is in focus; without one the catalog shows.
     const focusId = ui.selectedElementIds.find((id) => v.byId.get(id)?.kind === 'data');

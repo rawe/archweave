@@ -44,7 +44,7 @@ export async function createArchWeave(config: Config, tuning: Tuning = {}): Prom
   const stale = new StaleLinks(repo);
   let store: Store;
   try {
-    store = new Store({ ...loaded, code: stale.access });
+    store = new Store({ ...loaded, code: stale.access, log: tuning.log });
   } catch (error) {
     throw new Error(`Cannot load the model in ${config.dataDir}: ${(error as Error).message}\nFix model.json or layout.json and start again.`);
   }

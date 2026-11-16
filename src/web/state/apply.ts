@@ -6,6 +6,8 @@
  * The UI only ever sends plain patches: full lists, never the list helpers
  * (`addCodeRefs`, `setFields`, `updateSteps`, …), which stay a convenience for
  * agents. `PlainChangeSet` makes that a type-level guarantee on the commit path.
+ * Diagram patches are the exception: they run through the same `applyDiagramPatch`
+ * as on the server, so they are carried as they are.
  */
 import {
   Element,
@@ -20,6 +22,7 @@ import {
   type Model,
   type RelationPatch,
 } from '../../shared/model.ts';
+import { applyDiagramPatch, unlinkLost } from '../../shared/diagram/patch.ts';
 import { descendantsOf } from '../../shared/projection.ts';
 
 export interface Doc {
@@ -120,8 +123,23 @@ export function applyLocal(doc: Doc, cs: PlainChangeSet, now = Date.now()): Doc 
     model = { ...model, flows };
   }
 
+  if (cs.diagrams?.length) {
+    const diagrams = [...model.diagrams];
+    for (const patch of cs.diagrams) {
+      const at = patch.id ? diagrams.findIndex((d) => d.id === patch.id) : -1;
+      if (at < 0 && !patch.name) continue;
+      const id = at >= 0 ? diagrams[at]!.id : (patch.id ?? uniqueId(slugify(patch.name!), new Set(diagrams.map((d) => d.id))));
+      // A patch the server will refuse is skipped: its answer is the truth.
+      const { diagram } = applyDiagramPatch(diagrams[at], patch, { id, model: { ...model, diagrams } });
+      if (!diagram) continue;
+      if (at >= 0) diagrams[at] = diagram;
+      else diagrams.push(diagram);
+    }
+    model = { ...model, diagrams };
+  }
+
   const remove = cs.remove;
-  if (remove?.elements?.length || remove?.relations?.length || remove?.flows?.length) {
+  if (remove?.elements?.length || remove?.relations?.length || remove?.flows?.length || remove?.diagrams?.length) {
     const goneElements = new Set<string>();
     for (const id of remove.elements ?? []) {
       goneElements.add(id);
@@ -150,7 +168,13 @@ export function applyLocal(doc: Doc, cs: PlainChangeSet, now = Date.now()): Doc 
             ? { ...f, steps: f.steps.filter((s) => !goneElements.has(s.from) && !goneElements.has(s.to)).map((s) => ({ ...s, dataIds: keptData(s.dataIds) })) }
             : f,
         ),
+      diagrams: remove.diagrams?.length ? model.diagrams.filter((d) => !remove.diagrams!.includes(d.id)) : model.diagrams,
     };
+    // As on the server: shapes that linked to something removed stay, with the name they showed before this change set.
+    if (model.diagrams.some((d) => d.shapes.some((s) => s.link))) {
+      const targets = model;
+      model = { ...model, diagrams: model.diagrams.map((d) => unlinkLost(d, targets, doc.model).diagram) };
+    }
     if (goneElements.size) {
       const next: Layout = {};
       for (const [key, positions] of Object.entries(layout)) {
@@ -178,7 +202,7 @@ export function applyLocal(doc: Doc, cs: PlainChangeSet, now = Date.now()): Doc 
 }
 
 export function isLayoutOnly(cs: PlainChangeSet): boolean {
-  return !!cs.layout && !cs.model && !cs.elements?.length && !cs.relations?.length && !cs.flows?.length && !cs.remove;
+  return !!cs.layout && !cs.model && !cs.elements?.length && !cs.relations?.length && !cs.flows?.length && !cs.diagrams?.length && !cs.remove;
 }
 
 /** The patched entry with the schema's defaults filled in, as the server stores it. */

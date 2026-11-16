@@ -10,9 +10,11 @@ COPY . .
 RUN npm run build:web \
  && npx esbuild src/server/main.ts --bundle --platform=node --format=esm --target=node22 \
       --outfile=dist/server/main.js \
-      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+ && node scripts/copy-server-assets.mjs
 
 # The server is bundled with its dependencies, so the runtime image needs no node_modules.
+# What it reads at run time (fonts, the SVG rasteriser) lies beside the bundle in dist/server/assets.
 FROM node:22-alpine
 RUN apk add --no-cache git
 WORKDIR /app

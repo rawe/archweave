@@ -13,6 +13,7 @@ const base: Model = {
   ],
   relations: [{ id: 'checkout-writes-db', from: 'checkout', to: 'db', kind: 'writes', label: '', description: '', dataIds: [], status: 'built', codeRefs: [] }],
   flows: [{ id: 'buy', name: 'Buy', summary: '', steps: [{ from: 'checkout', to: 'db', label: 'save', dataIds: [], codeRefs: [] }] }],
+  diagrams: [],
 };
 
 describe('applyLocal', () => {

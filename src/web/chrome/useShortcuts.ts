@@ -11,6 +11,7 @@ import {
   undo,
 } from '../state/store.ts';
 import { sendCanvasCommand } from '../lib/commands.ts';
+import { removeShapes } from '../diagrams/actions.ts';
 import { isTypingTarget } from '../lib/dom.ts';
 import { toggleTheme } from '../lib/theme.ts';
 
@@ -62,8 +63,9 @@ export function useShortcuts() {
         case '1':
         case '2':
         case '3':
+        case '4':
           if (e.shiftKey) break;
-          setPerspective((['structure', 'data', 'flows'] as const)[Number(e.key) - 1]!);
+          setPerspective((['structure', 'data', 'flows', 'diagrams'] as const)[Number(e.key) - 1]!);
           return;
         case '+':
         case '=':
@@ -85,7 +87,8 @@ export function useShortcuts() {
           sendCanvasCommand('compose');
           return;
         case 'Enter':
-          if (s.perspective === 'structure' && s.selection.elementIds.length === 1 && isCanvasFocus(e.target)) {
+          const single = s.perspective === 'diagrams' ? s.selectedShapeIds.length === 1 : s.perspective === 'structure' && s.selection.elementIds.length === 1;
+          if (single && isCanvasFocus(e.target)) {
             e.preventDefault();
             sendCanvasCommand('open-selected');
           }
@@ -94,13 +97,14 @@ export function useShortcuts() {
         case 'Delete':
           if (s.perspective === 'flows') return;
           e.preventDefault();
-          void deleteSelection();
+          if (s.perspective === 'diagrams') removeShapes(s.selectedShapeIds);
+          else void deleteSelection();
           return;
         case 'Escape': {
           if (s.overlay) return setOverlay(null);
           if (s.code) return closeCode();
           const before = atKeyDown;
-          if (before.selection.elementIds.length || before.selection.relationIds.length || before.stepIndex !== null) return clearSelection();
+          if (before.selection.elementIds.length || before.selection.relationIds.length || before.selectedShapeIds.length || before.stepIndex !== null) return clearSelection();
           if (s.perspective === 'structure') scopeOut();
           return;
         }

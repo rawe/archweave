@@ -53,7 +53,7 @@ export async function captureFlow<N extends Node, E extends Edge>(rf: ReactFlowI
 export function fitOptions(opts: { rail?: boolean; duration?: number } = {}): FitViewOptions {
   const s = getState();
   const wide = window.innerWidth >= 900;
-  const inspector = wide && (s.selection.elementIds.length > 0 || s.selection.relationIds.length > 0);
+  const inspector = wide && (s.selection.elementIds.length > 0 || s.selection.relationIds.length > 0 || (s.perspective === 'diagrams' && s.selectedShapeIds.length > 0));
   const app = document.querySelector<HTMLElement>('.app');
   const drawer = app ? parseFloat(getComputedStyle(app).getPropertyValue('--drawer-h')) || 0 : 0;
   return {

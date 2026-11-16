@@ -35,7 +35,7 @@ export function bootstrap(): () => void {
       setState({ repo: session.repo ?? { name: '' } });
       if (!fromHash && session.ui) {
         const ui = session.ui;
-        setState({ perspective: ui.perspective ?? 'structure', scopeId: ui.scopeId, flowId: ui.flowId });
+        setState({ perspective: ui.perspective ?? 'structure', scopeId: ui.scopeId, flowId: ui.flowId, diagramId: ui.diagramId });
       }
     })
     .catch(() => undefined)
@@ -96,7 +96,7 @@ export function bootstrap(): () => void {
   const onPop = () => {
     const parsed = parseHash(location.hash);
     lastHash = location.hash;
-    if (parsed) setState({ selection: { elementIds: [], relationIds: [] }, stepIndex: null, ...parsed });
+    if (parsed) setState({ selection: { elementIds: [], relationIds: [] }, selectedShapeIds: [], stepIndex: null, ...parsed });
   };
   window.addEventListener('popstate', onPop);
 
@@ -115,14 +115,17 @@ function uiStateOf(s: State): UiState {
     perspective: s.perspective,
     scopeId: s.perspective === 'structure' ? s.scopeId : undefined,
     flowId: s.perspective === 'flows' ? s.flowId : undefined,
+    diagramId: s.perspective === 'diagrams' ? s.diagramId : undefined,
     selectedElementIds: s.selection.elementIds,
     selectedRelationIds: s.selection.relationIds,
+    selectedShapeIds: s.perspective === 'diagrams' ? s.selectedShapeIds : [],
   };
 }
 
 function hashOf(s: State): string {
   if (s.perspective === 'structure') return s.scopeId ? `#/structure/${s.scopeId}` : '#/structure';
   if (s.perspective === 'flows') return s.flowId ? `#/flows/${s.flowId}` : '#/flows';
+  if (s.perspective === 'diagrams') return s.diagramId ? `#/diagrams/${s.diagramId}` : '#/diagrams';
   // The focused structure is part of the address, so Back returns to the previous focus.
   const focus = dataFocusId(s);
   return focus ? `#/data/${focus}` : '#/data';
@@ -130,12 +133,13 @@ function hashOf(s: State): string {
 
 function parseHash(hash: string): Partial<State> | null {
   const [perspective, id] = hash.replace(/^#\/?/, '').split('/') as [string, string | undefined];
-  if (!(['structure', 'data', 'flows'] as string[]).includes(perspective)) return null;
+  if (!(['structure', 'data', 'flows', 'diagrams'] as string[]).includes(perspective)) return null;
   const p = perspective as Perspective;
   return {
     perspective: p,
     scopeId: p === 'structure' && id ? decodeURIComponent(id) : undefined,
     flowId: p === 'flows' && id ? decodeURIComponent(id) : undefined,
+    ...(p === 'diagrams' ? { diagramId: id ? decodeURIComponent(id) : undefined } : {}),
     ...(p === 'data' ? { selection: { elementIds: id ? [decodeURIComponent(id)] : [], relationIds: [] } } : {}),
   };
 }

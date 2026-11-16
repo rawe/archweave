@@ -86,6 +86,14 @@ export const api = {
   /** Re-anchors moved links. */
   repairLinks: (opts: { scopeId?: string } = {}) =>
     request<RepairResult>('/api/code/repair', { method: 'POST', body: JSON.stringify(opts.scopeId ? { scopeId: opts.scopeId } : {}) }),
+  /** A diagram rendered by the server, as the exports and the agent see it. */
+  diagramImageUrl: (id: string, opts: { format: 'png' | 'svg'; theme: 'light' | 'dark'; background: 'canvas' | 'white' | 'transparent'; scale?: number; download?: boolean; version?: number }) => {
+    const params = new URLSearchParams({ format: opts.format, theme: opts.theme, background: opts.background });
+    if (opts.format === 'png' && opts.scale) params.set('scale', String(opts.scale));
+    if (opts.download) params.set('download', '1');
+    if (opts.version !== undefined) params.set('v', String(opts.version));
+    return `/api/diagrams/${encodeURIComponent(id)}/image?${params}`;
+  },
   exportUrl: (opts: { format: 'markdown' | 'json' | 'mermaid'; scope?: string; perspectives: string[]; code: boolean }) => {
     const params = new URLSearchParams({ format: opts.format, perspectives: opts.perspectives.join(','), code: String(opts.code) });
     if (opts.scope) params.set('scope', opts.scope);

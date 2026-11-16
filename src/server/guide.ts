@@ -1,9 +1,9 @@
-/** The modeling guide: sent as MCP server instructions and returned by `get_guide`. */
+/** The modeling guide: `get_guide` with topic "modeling" (the default). */
 export const GUIDE = `# Working with ArchWeave
 
 ArchWeave holds the architecture of the repository you are working in. A developer sees and edits the same model in a browser while you work on it through these tools. Keep the model truthful to the code and readable by a person: it is a map the human uses to think and to direct you, not a dump of the code.
 
-These are the server's MCP instructions, the same text as \`get_guide\` returns.
+This is the modeling guide. Diagrams, the drawings beside the model, have their own: \`get_guide\` with topic "diagrams".
 
 ## When to call what
 
@@ -76,3 +76,123 @@ These are the server's MCP instructions, the same text as \`get_guide\` returns.
 - After changing code: \`find_by_code\` for the touched paths, \`check_code_links\` with \`repair: true\`, then update the affected elements, set \`status\`, fix changed code refs, resolve notes you handled.
 - Use \`focus_ui\` to show the human what you are talking about, with a short \`message\`.
 `;
+
+/**
+ * The MCP server instructions: a short router to the tools and the guides. Clients keep only the start of
+ * this text (Claude Code the first 4096 characters, Codex advises a self-contained first 512), so the
+ * essentials come first and the guides stay behind `get_guide`.
+ */
+export const INSTRUCTIONS = `ArchWeave holds the architecture of the repository you are working in: a model of elements, relations, data structures and flows linked to the code, plus diagrams drawn beside it. A developer sees and edits the same model in a browser. Read \`get_guide\` (topic "modeling") before your first change to the model, and \`get_guide\` with topic "diagrams" before drawing or changing a diagram. What follows is only a summary.
+
+## Which tool when
+- The human says "this", "here", "the selected" or refers to what they see: \`get_context\` first. It returns their view, the selection in full, open notes and what they changed since you last looked.
+- Getting oriented: \`get_model\` (outline of elements, flows and diagrams), then \`get_element\` for one element, relation, flow or diagram, and \`search\` to find things by name, field, file or diagram text.
+- Changing the model or a diagram: \`apply_changes\`, one coherent step per call with a \`summary\` the human reads in the activity feed. \`dryRun: true\` checks without applying.
+- After changing code: \`find_by_code\` with the touched paths, then \`check_code_links\` with \`repair: true\`, then update the affected elements.
+- Diagrams: read one with \`get_element\` (an outline with lints), draw with \`diagrams\` in \`apply_changes\` (leave positions out; the server arranges), look at it with \`render_diagram\` when your client shows images.
+- Pointing at something while you explain it: \`focus_ui\`.
+- History: \`get_changes\`. Documentation: \`export\`.
+
+## Always
+- Modeling is human-directed: reflect the code, answer notes, carry out requests; do not restructure or rename on your own initiative. Planned elements and open human notes are design intent.
+- Keep the model truthful to the code and readable by a person.
+- Diagrams are drawings: shapes may link to model items, connectors are never relations, and the model stays the source of truth.
+- Do not send \`layout\`. Leave diagram positions out unless the human asked for a place.
+- Errors name the entry and suggest the id you probably meant; fix and resend.
+`;
+
+/** The diagrams guide: `get_guide` with topic "diagrams". */
+export const DIAGRAMS_GUIDE = `# Drawing diagrams in ArchWeave
+
+A diagram is a drawing beside the model: shapes and connectors placed on purpose to explain one idea to a person. It is not the model. Elements, relations and flows stay the source of truth; a diagram may point at them and never adds to them.
+
+- A shape may \`link\` to a model item: \`{"type": "element" | "flow" | "diagram", "id": …}\`. A linked shape without \`text\` shows the item's live name and follows renames; give \`text\` only to say something else.
+- Connectors are drawn lines, never relations. Drawing one changes nothing in the model.
+- To make a drawn box real ("promote" it), create the element and link the shape in the same change set; clearing \`text\` lets it show the element's name: \`{"elements": [{"id": "mailer", "kind": "component", "name": "Invoice mailer"}], "diagrams": [{"id": "billing-overview", "setShapes": [{"id": "mailer-box", "text": "", "link": {"type": "element", "id": "mailer"}}]}]}\`.
+- Removing an element keeps its shapes, unlinked, with the name they showed.
+
+## Workflow
+1. When the human refers to what they see ("this diagram", "the selected box"), call \`get_context\`: in the diagrams perspective it returns the open diagram and the selected shapes and connectors.
+2. Read a diagram with \`get_element\` and its id: shapes nested in their groups, each with \`label\` (what it shows), \`link\`, the style set on it and \`at: [x, y, w, h]\`; connectors; \`lints\`. \`get_model\` lists every diagram.
+3. Write with one \`apply_changes\` per coherent step. Choose a readable diagram id ("checkout-flow") and shape ids ("api", "orders-db"); connectors name shapes by id.
+4. Leave out \`x\`, \`y\`, \`w\` and \`h\`. The server sizes every shape to its text and arranges the diagram in its \`direction\`.
+5. The reply lists \`diagrams: [{id, lints}]\`. A lint is what a reviewer would notice: shapes that overlap, a line running through or along a shape, lines on top of each other, a label covering a shape, a label or a line, text that does not fit, an empty shape, a doubled connector, too many shapes. Fix them in your next change set.
+6. When your client shows images, \`render_diagram\` returns a PNG of the result. Look at it before you call the diagram done.
+7. \`focus_ui\` with \`diagramId\` (and \`shapeIds\` to highlight) opens the diagram for the human.
+
+## Writing
+\`diagrams\` in \`apply_changes\` holds upserts: with an existing \`id\` only what you send changes; a new id creates the diagram and needs \`name\`. \`direction\` is "down" (default) or "right"; \`summary\` is one sentence.
+- \`shapes\` and \`connectors\` are full lists that replace the stored ones. Use them to create a diagram.
+- \`setShapes\` / \`setConnectors\` upsert single entries by id: only the given properties change, \`null\` clears one. \`removeShapes\` / \`removeConnectors\` take ids. Removing a shape removes its connectors; what sat in a removed group moves out.
+- \`arrange\`: "new" (the default) places only shapes without a position and moves nothing else; "all" arranges every shape afresh.
+- \`seed\`: element ids to draw from the model. Each element not on the diagram yet gets a linked shape with the element id as shape id (stores as cylinders, queues as pills, actors as actors, externals and planned elements dashed), an element seeded with its parent sits inside it as a group, and the relations become connectors, lifted as the structure view lifts them: a relation between elements that are not drawn runs between their nearest drawn ancestors, relations lifting to the same pair share one connector (labelled only when they all say the same), and pairs already connected are left alone.
+- \`remove: {"diagrams": [id]}\` deletes a diagram.
+
+## Vocabulary
+Shape \`kind\`:
+- \`box\` (default): a service, component, step, anything.
+- \`pill\`: start and end points, queues, small tags.
+- \`cylinder\`: a store: database, cache, bucket.
+- \`diamond\`: a decision.
+- \`actor\`: a person or role.
+- \`note\`: an annotation with a folded corner, amber by default.
+- \`text\`: free text without outline, for titles and captions.
+- \`group\`: a titled frame. Shapes with \`parent: "<group id>"\` sit inside it. Use it for a boundary: a service, a network, a team, a phase.
+\`text\` is the label: 1 to 4 words, line breaks kept. \`detail\` is a quieter second block under it ("Postgres 16", "every 5 min").
+Style, all optional:
+- \`outline\`: solid, dashed (planned, external, optional), dotted (deprecated, temporary), none.
+- \`tone\`: neutral, blue, teal, green, amber, red, violet.
+- \`fill\`: none (see-through), plain (surface), tint (a soft wash of the tone), solid (the tone itself with light text; for the one thing that matters).
+- \`size\`: s, m (default), l.
+Connector: \`from\`, \`to\`, \`label\` (the verb: "reads", "publishes order").
+- \`line\`: solid (default), dashed (asynchronous, planned, optional), dotted.
+- \`ends\`: arrow (default, a head at \`to\`), both, none.
+- \`route\`: elbow (default, right angles), straight, curve.
+- \`tone\` as for shapes. \`fromSide\` / \`toSide\` (top, right, bottom, left) pin where the line leaves and arrives, to steer it around a shape.
+
+## Composition
+- One idea per diagram, 5 to 15 shapes. Bigger: split it, and link a shape to the detail diagram (\`{"type": "diagram"}\`).
+- \`direction\` "down" for layers (clients on top, stores at the bottom), "right" for pipelines and sequences.
+- Short noun labels on shapes, the verb on the connector.
+- Groups for real boundaries, at most two levels deep.
+- Dashed outlines for planned or external things, dashed lines for asynchronous or planned connections.
+- Colour means something or nothing: one tone per meaning, the same meaning in the same tone everywhere, and a \`note\` saying what the tones mean. Most shapes stay neutral.
+- A \`note\` holds what the drawing cannot say: an assumption, an open question.
+- Link a shape whenever it stands for a model item, so it follows renames and readers can jump to the model.
+
+## Editing a diagram a human arranged
+- Read it first. Never resend the full \`shapes\` list for a small change; use \`setShapes\`, \`removeShapes\`, \`setConnectors\`, \`removeConnectors\`.
+- Never move or resize shapes the human placed unless asked. New shapes without a position are placed around them; only a group may grow to hold a new shape.
+- \`arrange: "all"\` only when the human asks to tidy the whole diagram.
+
+## Examples
+A new diagram:
+\`\`\`json
+{"summary": "Draw the checkout path", "diagrams": [{"id": "checkout", "name": "Checkout", "summary": "How an order is paid.", "direction": "right",
+  "shapes": [
+    {"id": "shopper", "kind": "actor", "text": "Shopper"},
+    {"id": "backend", "kind": "group", "text": "Order API"},
+    {"id": "orders", "parent": "backend", "link": {"type": "element", "id": "orders"}},
+    {"id": "billing", "parent": "backend", "link": {"type": "element", "id": "billing"}},
+    {"id": "stripe", "text": "Stripe", "outline": "dashed"},
+    {"id": "db", "kind": "cylinder", "text": "Orders DB"}],
+  "connectors": [
+    {"from": "shopper", "to": "orders", "label": "places order"},
+    {"from": "orders", "to": "db", "label": "writes"},
+    {"from": "orders", "to": "billing", "label": "charges"},
+    {"from": "billing", "to": "stripe", "label": "creates payment"}]}]}
+\`\`\`
+Adding two shapes to a diagram a human arranged:
+\`\`\`json
+{"summary": "Add fraud scoring to checkout", "diagrams": [{"id": "checkout",
+  "setShapes": [{"id": "fraud", "text": "Fraud check", "parent": "backend", "outline": "dashed"}, {"id": "fraud-why", "kind": "note", "text": "Planned for Q3"}],
+  "setConnectors": [{"from": "orders", "to": "fraud", "label": "scores", "line": "dashed"}]}]}
+\`\`\`
+Seeding from elements and adding a note:
+\`\`\`json
+{"summary": "Draw billing", "diagrams": [{"id": "billing-overview", "name": "Billing", "seed": ["billing", "invoices-db", "stripe"],
+  "setShapes": [{"id": "retries", "kind": "note", "text": "Stripe retries webhooks for 3 days."}]}]}
+\`\`\`
+`;
+
+export const GUIDE_TOPICS = { modeling: GUIDE, diagrams: DIAGRAMS_GUIDE } as const;

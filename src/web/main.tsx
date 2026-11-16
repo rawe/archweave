@@ -11,6 +11,7 @@ import './styles/canvas.css';
 import './styles/inspector.css';
 import './styles/data.css';
 import './styles/flows.css';
+import './styles/diagrams.css';
 import './styles/code.css';
 import { App } from './App.tsx';
 import { bootstrap } from './state/bootstrap.ts';

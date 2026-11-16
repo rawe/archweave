@@ -25,6 +25,7 @@ One graph. See `src/shared/model.ts` for the exact shapes.
 - **Flow**: a named scenario, an ordered list of steps `from → to` with a label and optional data and code references.
 - **CodeRef**: repo-relative `path`, optional `symbol`, optional line range, optional `note`, and the server's `digest` seal (see Stale link detection).
 - **Note**: text pinned to an element by the human or the agent, resolvable. Human notes are the lightweight way to hand work to the agent.
+- **Diagram**: a drawing beside the graph, made by the human or the agent to explain one idea: `shapes` (box, pill, cylinder, diamond, actor, note, text, group) and `connectors` between them, styled from a small vocabulary (outline, tone, fill, text size; line, ends, route, sides), with a reading `direction` (down or right). Shape positions and sizes are part of the content. A shape may `link` to an element, flow or diagram; a linked shape without text shows the item's live name. A connector is a drawn line, never a relation: a diagram points at the model and never adds to it. Removing a linked item keeps its shapes, unlinked, with the name they showed.
 
 Ids are readable slugs generated from names and never change on rename.
 
@@ -35,13 +36,15 @@ Everything lives in the data directory (`ARCHWEAVE_DATA_DIR`, default `<repo>/.a
 ```
 .archweave/
   model.json      elements, relations, flows. Stable ordering (sorted by id), 2-space JSON, trailing newline.
-  layout.json     diagram positions per canvas. Same formatting rules.
+  layout.json     positions on the structure and data canvases. Same formatting rules.
+  diagrams/
+    <id>.json     one file per diagram, with its shapes and connectors in drawing order. Same formatting rules.
   .gitignore      contains "state/"
   state/          not tracked
     journal.jsonl activity journal, capped at 500 entries
 ```
 
-Arrays are written sorted by id and default-valued fields are omitted, so Git diffs are small and meaningful. Writes are atomic (temp file plus rename) and debounced (about 150 ms). The server watches both files; when they change on disk for a reason other than its own write (git checkout, manual edit), it reloads, bumps the revision and broadcasts.
+Arrays are written sorted by id and default-valued fields are omitted, so Git diffs are small and meaningful. Writes are atomic (temp file plus rename) and debounced (about 150 ms). The server watches these files (a diagram file added, changed or deleted counts too); when they change on disk for a reason other than its own write (git checkout, manual edit), it reloads, bumps the revision and broadcasts.
 
 ## 3. Server
 
@@ -71,6 +74,8 @@ Rules:
 - Code ref paths are stored repo-relative: an absolute path inside the repository is made relative; an absolute path outside it, or one escaping it with `..`, is a validation error.
 - A change set that only contains `layout` does not create a journal entry or an undo step and does not bump the model revision visibly to the agent (it still broadcasts to browsers).
 - Undo: the store keeps the last 50 model snapshots. `undo()` restores the previous one and journals it.
+- Diagrams change through `diagrams` patches (see `DiagramPatch`), applied by the same function the browser uses for its optimistic update (`shared/diagram/patch.ts`). Upserts by id; full `shapes`/`connectors` lists replace the stored ones, `setShapes`/`setConnectors` change single entries, `removeShapes`/`removeConnectors` remove them (with the connectors attached; a removed group's content moves out). Errors name the diagram and the entry. A new shape without `w`/`h` is sized to its text; shapes never move unless a position is sent. Diagram files read from disk are repaired instead of refused: a damaged entry is dropped or unlinked and the repair logged.
+- Arrangement runs before the store, in `server/arrange.ts`, for `POST /api/changes` and `apply_changes` alike: `seed` is expanded into linked shapes for the given elements and connectors for the relations among them, lifted to the nearest drawn ancestor as the structure perspective lifts them, and shapes are placed (`arrange: "new"`, the default, places only new shapes without a position, around the rest; `"all"` lays out every shape afresh with ELK's layered algorithm). The result is written into the change set as plain positions, so the store, the journal and undo see an ordinary change.
 - Journal coalescing: a change that only updates one element, relation or flow (nothing created or removed) and has no `summary` gets a generated one naming what changed ("Edited Order: summary, fields"). It is merged into the previous journal entry when that entry is the same kind of edit of the same item by the same actor, less than 60 s old, with nothing journaled in between (an undo or a disk reload ends it). The merged entry takes the new `revision` and `at`, keeps the first edit's revision in `firstRevision`, so `since` queries inside the range still return it, and its summary covers everything changed since the first edit. Undo steps stay one per change.
 
 ### REST API
@@ -91,7 +96,8 @@ All JSON. Errors are `{ "error": string, "details"?: unknown }` with a 4xx or 5x
 | `GET /api/code/files?q=&limit=` | Repo file paths matching a fuzzy query, for the code link picker. Uses `git ls-files` when the repo is a Git checkout, otherwise a walk that skips `node_modules`, `.git`, `dist`, `build` and dot-directories. |
 | `GET /api/code/stale` | `StaleLink[]` |
 | `POST /api/code/repair` | Body `{ scopeId? }`. Re-anchors every code link whose text moved within its file. Returns `{ revision, summary?, repaired, stale }`. |
-| `GET /api/export?format=markdown\|json\|mermaid&scope=<id>&perspectives=structure,data,flows&code=true\|false` | Download. |
+| `GET /api/export?format=markdown\|json\|mermaid&scope=<id>&perspectives=structure,data,flows,diagrams&code=true\|false` | Download. |
+| `GET /api/diagrams/:id/image?format=svg\|png&theme=light\|dark&scale=1..4&background=canvas\|white\|transparent&download=1` | A diagram as a picture, rendered on the server with the same scene code as the browser. |
 
 Server-sent events (`event:` name, JSON `data:`):
 - `snapshot`: `{ snapshot: Snapshot, entry?: JournalEntry }` after every applied change, undo or disk reload. Also sent once on connect.
@@ -122,17 +128,17 @@ Refs without a seal (no line range, unreadable or binary file, or not written si
 
 ### Export
 
-- **markdown**: an architecture document. Title and description; per scope a section with a Mermaid flowchart of that level and a short entry for each element (summary, description, code links, notes that are open); a data section with a field table per structure and "used by"; a flows section with a Mermaid sequence diagram per flow. `scope` limits the document to one subtree.
+- **markdown**: an architecture document. Title and description; per scope a section with a Mermaid flowchart of that level and a short entry for each element (summary, description, code links, notes that are open); a data section with a field table per structure and "used by"; a flows section with a Mermaid sequence diagram per flow; a list of the drawn diagrams by name and summary (without a `scope`). `scope` limits the document to one subtree.
 - **mermaid**: just the diagrams.
 - **json**: `{ model, layout }`.
 
-Image export (PNG, SVG) of the current canvas happens in the browser.
+Image export (PNG, SVG) of the structure, data and flows canvases happens in the browser; drawn diagrams are rendered by the image route.
 
 ## 4. MCP
 
 Streamable HTTP at `/mcp` on the same port, stateless JSON responses are fine. Validate the `Host` header against localhost names and the configured host to block DNS rebinding. Any MCP request marks the agent as present (`lastSeenAt`, `clientName` from `initialize`); presence expires to `connected: false` after 60 s without requests.
 
-The server `instructions` and the `get_guide` tool carry the modeling guide (section 4.2), so an agent that has never seen ArchWeave can use it well.
+The server `instructions` are a short router: what ArchWeave is, which tool to call when, and that `get_guide` must be read before the first change to the model (topic `modeling`) and before drawing or changing a diagram (topic `diagrams`). Clients keep only the start of the instructions (Claude Code the first 4096 characters, Codex advises a self-contained first 512), so they stay under 4096 characters with the essentials in the first 500, and the guides (section 4.2) stay behind `get_guide`.
 
 ### 4.1 Tools
 
@@ -140,23 +146,26 @@ Keep the surface small. Tool results are compact JSON text. Every tool that retu
 
 | Tool | Input | Returns |
 | --- | --- | --- |
-| `get_guide` | none | The modeling guide. |
-| `get_context` | none | What the human is doing now: `ui` state with the selected elements and relations expanded in full (including code refs, notes, children, relations in and out), the breadcrumb of the current scope, what the canvas shows (structure: the scope's nodes and threads; data: the catalog as counts per owner, or the focused structure with its fields, the structures it references and that reference it, and its users by verb), open notes across the model, journal entries by the human since the agent's last `get_context` or `apply_changes` (the 20 most recent; `olderHumanChangesOmitted` counts the rest), and stale link count. This is the first call for any request that says "this", "here", "the selected". |
-| `get_model` | `scopeId?`, `depth?` (default 2), `kinds?`, `includeData?` | Outline of the model: nested elements as `{id, kind, name, summary, status, children}` plus relations among them, flows by name, counts. |
-| `get_element` | `id` | One element in full: fields, code refs, notes, parent chain, children, relations in and out with the other end's name, flows it takes part in, data it touches. Works for relations ids too. |
-| `search` | `query`, `kinds?`, `limit?` | Elements whose name, summary, description, tags, field names or code paths match. |
+| `get_guide` | `topic?`: `modeling` (default) or `diagrams` | The guide for that topic. |
+| `get_context` | none | What the human is doing now: `ui` state with the selected elements and relations expanded in full (including code refs, notes, children, relations in and out), the breadcrumb of the current scope, what the canvas shows (structure: the scope's nodes and threads; data: the catalog as counts per owner, or the focused structure with its fields, the structures it references and that reference it, and its users by verb; diagrams: the open diagram's outline, or the list of diagrams, and the selected shapes and connectors in full, a linked shape with its element), open notes across the model, journal entries by the human since the agent's last `get_context` or `apply_changes` (the 20 most recent; `olderHumanChangesOmitted` counts the rest), and stale link count. This is the first call for any request that says "this", "here", "the selected". |
+| `get_model` | `scopeId?`, `depth?` (default 2), `kinds?`, `includeData?` | Outline of the model: nested elements as `{id, kind, name, summary, status, children}` plus relations among them, flows by name, diagrams as `{id, name, summary, shapes}`, counts. |
+| `get_element` | `id` | One element in full: fields, code refs, notes, parent chain, children, relations in and out with the other end's name, flows it takes part in, data it touches, diagrams that show it. Works for relation and flow ids too. A diagram id returns its outline: shapes nested in their groups with `label`, `link` (with the element's kind and status), the style set on them and `at: [x, y, w, h]`, connectors with their set properties, `direction`, counts and lints. |
+| `search` | `query`, `kinds?`, `limit?` | Elements whose name, summary, description, tags, field names or code paths match, and (without `kinds`) diagrams whose name, summary or shape texts match. |
 | `find_by_code` | `paths: string[]` | Elements, relations and flow steps whose code refs touch those files or directories, each ref with its current `check` (`ok`, `moved` with `suggestion`, `changed`, or another stale reason) and a count per check. Call this after changing code to find what to update and what needs re-anchoring. |
-| `apply_changes` | `ChangeSet` (as in `model.ts`) | `ChangeResult`. Applied as actor `agent`. `summary` is required here. A stale `expectedRevision` is a tool error. |
+| `apply_changes` | `ChangeSet` (as in `model.ts`) | `ChangeResult`, plus `diagrams: [{id, lints}]` for every diagram created or updated. Applied as actor `agent` after arrangement (see Store). `summary` is required here. A stale `expectedRevision` is a tool error. |
 | `check_code_links` | `scopeId?`, `repair?` | Stale links (flow refs with their `step`), plus built elements of kinds that should have code (app, service, component, module, data) without any code ref. With `repair: true`: re-anchors moved links in one change set and returns what it changed and what still needs attention. |
 | `get_changes` | `since?` (revision), `actor?` | Journal entries. |
-| `focus_ui` | `elementIds`, `perspective?`, `scopeId?`, `flowId?`, `message?` | Asks the browser to show and highlight these elements. Returns whether a browser is connected. |
+| `focus_ui` | `elementIds`, `perspective?`, `scopeId?`, `flowId?`, `diagramId?`, `shapeIds?`, `message?` | Asks the browser to show and highlight these elements, or to open a diagram and highlight shapes and connectors on it. Returns whether a browser is connected. |
+| `render_diagram` | `id`, `theme?`, `scale?` | An MCP image block (PNG, at most 1568 pixels on the long edge) followed by a text block with the diagram's lints. |
 | `export` | `format`, `scope?` | The export text. |
+
+**Lints** (`shared/diagram/lints.ts`) tell an agent that cannot see the picture what a reviewer would notice, one actionable sentence each: shapes that overlap (other than a group and its content), a shape sticking out of its group, a line running through or along a shape that is not one of its ends, two lines from different shapes running on top of each other, a label covering a shape, another label or another line (all routed and placed as the renderer does it; lines of one fan may share a trunk), text that does not fit its shape, two connectors between the same shapes in the same direction with the same label, a shape with neither text nor link, and more than 40 shapes.
 
 Errors come back as tool errors with a message the agent can act on ("relation `a-calls-b`: unknown element `b`. Did you mean `billing`?").
 
-### 4.2 Modeling guide (text shipped to agents)
+### 4.2 Guides (text shipped to agents)
 
-Write this as `src/server/guide.md` or a string constant. Content, in this spirit:
+`src/server/guide.ts` holds the instructions router and two guides, returned by `get_guide`. The `diagrams` guide covers what a diagram is and is not (a drawing; links show live names; connectors are never relations; promoting a drawn box), the workflow (`get_context`, `get_element`, one `apply_changes` with readable ids and no positions, lints, `render_diagram`, `focus_ui`), the vocabulary, composition conventions, editing a diagram a human arranged, and worked examples. The `modeling` guide, in this spirit:
 
 - ArchWeave holds the architecture of this repository. The human sees and edits the same model in a browser. Keep it truthful to the code and readable by a person.
 - Start with `get_context` whenever the request refers to what the human sees or selected.
@@ -169,7 +178,7 @@ Write this as `src/server/guide.md` or a string constant. Content, in this spiri
 - Send one `apply_changes` per coherent step with a `summary` the human will read in the activity feed.
 - After changing code: `find_by_code` for the touched paths, update the affected elements, set `status`, fix code refs, resolve notes you handled with `resolveNotes`.
 - Planned elements and open human notes are design intent. Implement toward them; do not delete or reshape them without being asked. If the code cannot match the plan, add a note explaining why.
-- Do not set layout. The browser arranges new elements.
+- Do not set layout. The browser arranges new elements. On diagrams, leave positions out: the server arranges them.
 - Use `focus_ui` to show the human what you are talking about.
 
 ## 5. Web UI
@@ -179,7 +188,7 @@ React, Vite, `@xyflow/react` for the canvas, `elkjs` for automatic layout, `zust
 ### 5.1 Principles
 
 - **The canvas is the page.** Chrome floats over it in small pieces and gets out of the way. No sidebars that are always open, no headers above panels, no captions explaining what a panel is.
-- **One accent per author.** The human's selection and edits are cobalt. The agent's activity is saffron. Nothing else in the interface uses those two hues, so a glance tells who did what.
+- **One accent per author.** The human's selection and edits are cobalt. The agent's activity is saffron. Nothing else in the interface uses those two hues, so a glance tells who did what. The tones of drawn diagrams are content, not interface: they are chosen beside the two author hues, not from them (the diagram blue leans to steel, its amber to ochre), so a toned shape never reads as selected or as touched by the agent.
 - **Threads carry the meaning.** Relations are drawn as calm, thin threads. Selecting an element brings its threads and neighbors forward and lets the rest recede. This focus behavior is the signature of the product and the main tool for reading a dense diagram.
 - **Words are scarce.** Diagram nodes show a name, and at comfortable zoom the full summary. Everything else appears in the inspector on selection. Explanations live behind `?`.
 - **Nothing is cut off.** No text on a canvas or in a panel is ever shortened with an ellipsis or clipped: names, summaries, field names, field types, technology, labels, paths and list entries wrap, and their container grows to fit. To reduce density the interface hides a whole kind of content (the "names only" view option hides summaries; neighbor chips never had them), it never shows half of it. A diagram the reader cannot fully read is useless.
@@ -218,7 +227,7 @@ Agent activity: elements the agent created or changed get a saffron ring that fa
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ◈ shop › Order service › Checkout      [Structure  Data  Flows]   ⌕  ● ⤓ ◐ ? │
+│ ◈ shop › Order service › Checkout [Structure Data Flows Diagrams] ⌕  ● ⤓ ◐ ? │
 │                                                                ┌───────────┐ │
 │                                                                │ Inspector │ │
 │                     canvas                                     │ (only on  │ │
@@ -228,8 +237,8 @@ Agent activity: elements the agent created or changed get a saffron ring that fa
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Top left:** the mark and a breadcrumb of the current scope. Each crumb is clickable. The model name is the root crumb.
-- **Top center:** the perspective switch, a three-segment control. Keys `1`, `2`, `3`.
+- **Top left:** the mark and a breadcrumb of the current scope (or the open flow or diagram). Each crumb is clickable. The model name is the root crumb.
+- **Top center:** the perspective switch, a four-segment control: Structure, Data, Flows, Diagrams. Keys `1`, `2`, `3`, `4`.
 - **Top right:** search (`⌘K`), agent presence, export, theme, help. Icon buttons with tooltips.
 - **Bottom left:** zoom out, zoom level, zoom in, fit. Undo appears here after a change.
 - **Right:** the inspector, 360 px, slides in on selection, closes with `Esc`.
@@ -280,7 +289,24 @@ A flow list (same rail position as the data list) and, for the selected flow, a 
 - Participants link back to the Structure perspective.
 - Steps are added with "Add step" at the end of the diagram (pick from, to, label), reordered by drag, edited in the inspector.
 
-### 5.7 Inspector
+### 5.7 Diagrams perspective
+
+Drawings beside the model, made by the human or the agent to explain one idea to people: a checkout path for a design review, a deployment sketch for a customer document. A diagram is never the model; it may point at it. Everything on the canvas is drawn by the shared renderer (`shared/diagram`), so what the editor shows is exactly what the SVG and PNG exports contain.
+
+- **List and header.** A diagram list on the left (same rail as Flows, with a filter and "New diagram"). The open diagram's name is the last crumb; a quiet header over the canvas holds its name and summary, editable in place, and a menu: Add from model…, Tidy (arranges every shape afresh after a confirm), Duplicate, Export image…, Delete.
+- **Empty states.** No diagrams: two sentences on what a diagram is for and that the agent can draw one, and "New diagram". An empty diagram: double-click to place a box, or pick a shape below.
+- **Create.** A small shape toolbar floats at the bottom center: box, group, note, text, then pill, cylinder, diamond, actor, and "From the model" (a picker that places a shape linked to an element, flow or diagram). Choosing a kind arms it; the next click places the shape there with its text open; `Esc` disarms. Keys `B` box, `G` group, `S` note, `T` text. Double-click on empty canvas, or `N`, places a box and starts typing. A shape placed and named is one change; `Esc` while naming it places nothing.
+- **Text.** Double-click a shape, or `Enter` on the selected one, edits its label in place, in the position, font, size and alignment the renderer draws it. `Enter` commits, `Shift+Enter` breaks the line, `Esc` cancels. The shape grows while the text needs it. A linked shape without text shows the linked item's live name; typing gives it its own text, clearing it brings the live name back. Double-clicking a line edits its label the same way.
+- **Move and arrange.** Shapes snap to an 8-unit grid and line up with the edges and centres of nearby shapes, with a thin guide while they do. Shift-click and Shift-drag a box select several; they move together. Moving a group moves what is inside it. A shape dropped with its centre inside a group joins it, with the same drop highlight as "move into" in Structure; dragged out, it leaves. Arrow keys nudge by 8 (with `Shift` by 1). Resize handles appear on the one selected shape; edges land on the grid and a shape never gets smaller than its text. Each finished gesture is one change, undone with `⌘Z`.
+- **Connect.** Drag from a handle on a shape's side to another shape. Released over empty canvas, the line ends in a new box with its text open, so a chain of boxes is drawn in one motion. A selected line shows grips at its ends; dragging one to another shape moves that end.
+- **Keys.** `⌫` deletes the selection, `⌘D` duplicates it with an offset, `⌘C` / `⌘V` copy and paste shapes with the lines between them (also into another diagram, with fresh ids), `⌘A` selects everything, `]` / `[` bring to front and send to back. None of them act while a text field has focus.
+- **Links.** A linked shape carries a small quiet link glyph; clicking it (or the row in the inspector) goes to the element in Structure or Data, the flow, or the other diagram.
+- **Inspector.** For shapes (one or several): shape kind, tone (seven swatches in the renderer's colours for the current theme), fill, outline, text size, as compact segmented controls; for one shape also its text, detail and link (pick, open, unlink). Effective values are shown, and only what the human chooses is written: choosing the kind's default clears the property. For lines: label, line, ends, route, tone, Reverse, and "Unpin sides" when an end is pinned. Selection outlines and handles are cobalt and drawn outside the shape, so they never change how it looks.
+- **Promote** is always an explicit act. On an unlinked shape, "Make this an element…" picks a kind (suggested from the silhouette: cylinder store, pill queue, actor actor, group system, otherwise component) and creates a planned element named after the first line of the text, with the detail as summary, linked to the shape in the same change. On a line whose two ends link to elements, "Make this a relation" adds a `uses` relation with the line's label.
+- **Seed.** "Add from model…" picks elements to draw; the server places them with the relations among them. In Structure, "Draw as diagram" (palette and node menu) starts a new diagram from the selected elements, named after the scope or the first element.
+- **Agent.** When the agent draws or changes a diagram, the toast's "Show" opens it and the shapes it touched carry the saffron ring. Changes arriving under the human's hands keep the zoom and pan, and an open text edit stays open. `focus_ui` with a diagram opens it, selects the shapes and fits them into view.
+
+### 5.8 Inspector
 
 For an element, top to bottom, with sections collapsed when empty and no section headers heavier than a 12 px `--ink-2` label:
 
@@ -297,33 +323,35 @@ For a relation: kind, label, technology, description, data carried (picker), cod
 
 Edits commit on blur or `Enter` and go out as a `ChangeSet`. Plain property edits (fields, summary, description, technology, code links, a relation's label) carry no summary, so the server describes them and coalesces quick ones into one journal entry (see Store).
 
-### 5.8 Code drawer
+### 5.9 Code drawer
 
 Read-only view of the linked file with syntax highlighting (`highlight.js`), the referenced range marked and scrolled into view. Header: path (mono), a list of the elements linked to this same file as chips (code-to-architecture navigation), "Open in editor" (`vscode://file/<hostPath>/<path>:<line>`, shown when a host path is known), copy path. Selecting lines and pressing "Link lines <range> to <element>" (for example "Link lines 8–12 to Checkout") adds a code ref with that range to the selected element.
 
-### 5.9 Search and commands
+### 5.10 Search and commands
 
-`⌘K` opens a centered palette: elements, data structures, flows, and files that have links, each with kind icon and scope path. `Enter` navigates to it in the right perspective and scope and selects it. Commands also live here: export, tidy, toggle theme, undo.
+`⌘K` opens a centered palette: elements, data structures, flows, diagrams, and files that have links, each with kind icon and scope path. `Enter` navigates to it in the right perspective and scope and selects it. Commands also live here: export, tidy, toggle theme, undo, new diagram, and "Draw as diagram" while elements are selected in Structure.
 
-### 5.10 Agent presence and activity
+### 5.11 Agent presence and activity
 
 The presence button shows a dot: hollow when no agent has connected, saffron when one is present. Clicking it opens the activity popover: code links that need attention, then open notes across the model (author color, the full text, the owning element; clicking one goes to the element; no section when there are none), then journal entries newest first, each with author color, summary and relative time; clicking an entry selects what it touched. When no agent has ever connected the popover shows how to connect: the MCP URL and the one-line config, with a copy button.
 
 When the agent applies a change while the human is looking, a small toast at the bottom center names the summary; clicking it navigates to the change. A `focus` event navigates immediately and shows the message in the same toast.
 
-The browser reports `UiState` to the server whenever perspective, scope, flow or selection changes (debounced 150 ms), and at once whenever the event stream connects or reconnects, so a restarted server knows the view without waiting for a click.
+The browser reports `UiState` to the server whenever perspective, scope, flow, open diagram or selection (elements, relations, or shapes and lines of the open diagram) changes (debounced 150 ms), and at once whenever the event stream connects or reconnects, so a restarted server knows the view without waiting for a click.
 
-### 5.11 Empty state
+### 5.12 Empty state
 
 An empty model shows a single centered invitation on the canvas: a short sentence that the architecture can be drawn here or built by the agent, the MCP connection snippet with a copy button, and a suggested first prompt ("Analyze this repository and model its architecture in ArchWeave"). It disappears with the first element.
 
-### 5.12 Export
+### 5.13 Export
 
 A small dialog: what (current scope or everything), which perspectives, format (Markdown document, Mermaid, JSON, PNG, SVG of the current canvas), include code links. One primary button, "Export".
 
-### 5.13 Help
+In the Diagrams perspective, PNG and SVG are the open diagram, rendered by the image route (`GET /api/diagrams/:id/image`) rather than captured from the screen: theme (light by default, since exports mostly go into documents, or dark), background (canvas, white, transparent), PNG scale (1× to 4×, default 2×), and a live preview from the same route. "Export" downloads the file; "Copy image" puts the PNG on the clipboard where the browser allows it.
 
-`?` opens a sheet with the shortcut list and three short paragraphs on working with an agent. Nowhere else does the interface explain itself.
+### 5.14 Help
+
+`?` opens a sheet with the shortcut list (including the Diagrams keys), three short paragraphs on working with an agent and one on diagrams: drawings beside the model, shapes that link to model items, promote and seed, and that the agent draws and reads them too. Nowhere else does the interface explain itself.
 
 ## 6. Running
 

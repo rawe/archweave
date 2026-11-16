@@ -10,7 +10,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     group: 'Anywhere',
     items: [
       [`${MOD} K`, 'Search and commands'],
-      ['1 2 3', 'Structure, Data, Flows'],
+      ['1 2 3 4', 'Structure, Data, Flows, Diagrams'],
       [`${MOD} Z`, 'Undo'],
       [`${MOD} E`, 'Export'],
       ['⇧ T', 'Toggle theme'],
@@ -36,6 +36,19 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     items: [
       ['→ J', 'Next step'],
       ['← K', 'Previous step'],
+    ],
+  },
+  {
+    group: 'Diagrams',
+    items: [
+      ['B G S T', 'Box, group, note, text: click to place'],
+      ['N', 'New box, or double-click empty canvas'],
+      ['↵', 'Edit the text, ⇧ ↵ for a new line'],
+      ['← → ↑ ↓', 'Nudge, with ⇧ by a single unit'],
+      [`${MOD} D`, 'Duplicate'],
+      [`${MOD} C ${MOD} V`, 'Copy and paste, also into another diagram'],
+      [`${MOD} A`, 'Select everything'],
+      ['] [', 'Bring to front, send to back'],
     ],
   },
 ];
@@ -65,6 +78,11 @@ export function HelpSheet() {
             <p>
               Planned elements and notes are how you hand over work. Draw what should exist, leave a note for the agent, and it will build
               toward it and mark things built as the code catches up. Changes by the agent glow in saffron until you have looked at them.
+            </p>
+            <p>
+              Diagrams are drawings beside the model, made to explain one idea to people. A shape can stand for an element, flow or diagram
+              and then shows its live name. Make this an element turns a drawn box into a planned element; Add from model starts a drawing
+              from what is modeled. The agent draws and reads diagrams too: “Draw the checkout path as a diagram.”
             </p>
           </div>
           <div className="help-keys">
