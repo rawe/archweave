@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-alpine AS build
+# The build output is plain JavaScript, so this stage runs natively on the build machine
+# and only the runtime stage is built per target platform.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -20,6 +22,7 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.title="ArchWeave" \
       org.opencontainers.image.description="A shared visual architecture workspace for developers and coding agents" \
+      org.opencontainers.image.source="https://github.com/rawe/archweave" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.created="${BUILD_DATE}"

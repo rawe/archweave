@@ -4,21 +4,31 @@ A shared architecture workspace for a developer and a coding agent. The develope
 
 The model lives in your repository as plain JSON (`.archweave/model.json` and `.archweave/layout.json`), so it is versioned and reviewed like code.
 
-## Run it with Docker
+## Use it in your project
 
-Until the image is published, build it once from an ArchWeave checkout. This tags it as `ghcr.io/rawe/archweave:0.1.0` and `:latest` in your local Docker daemon, the same name the compose file pulls:
+ArchWeave ships as a multi-arch image (`linux/amd64`, `linux/arm64`): `ghcr.io/rawe/archweave`. Nothing to build.
 
-```bash
-make release VERSION=0.1.0
-```
+1. Add this `docker-compose.yml` to the root of the repository you want to model:
 
-Copy [`docker-compose.yml`](docker-compose.yml) into the repository you want to model and start it there:
+   ```yaml
+   services:
+     archweave:
+       image: ghcr.io/rawe/archweave:0.1.0
+       user: "${ARCHWEAVE_UID:-1000}:${ARCHWEAVE_GID:-1000}"
+       ports:
+         - "127.0.0.1:4317:4317"
+       volumes:
+         - ./:/repo
+       environment:
+         ARCHWEAVE_DATA_DIR: /repo/.archweave
+         ARCHWEAVE_HOST_REPO_PATH: ${PWD}
+       restart: unless-stopped
+   ```
 
-```sh
-docker compose up -d
-```
+2. Start it: `docker compose up -d`
+3. Open <http://localhost:4317> and connect your coding agent (see below).
 
-Open <http://localhost:4317>. The compose file mounts the repository at `/repo`, stores the model in `/repo/.archweave` and publishes the port on `127.0.0.1` only. Set `ARCHWEAVE_IMAGE` to use a different image or tag. Files are written as user `1000:1000`; set `ARCHWEAVE_UID` and `ARCHWEAVE_GID` to your own ids if they differ.
+The repository is mounted at `/repo` and the model is written to `.archweave/` in it; commit that folder. Files are written as `1000:1000`; if your ids differ (`id -u`, `id -g`), set `ARCHWEAVE_UID` and `ARCHWEAVE_GID`, for example in a `.env` file next to the compose file. Use `:latest` instead of a version to always get the newest release (`docker compose pull` to update).
 
 ## Run it with Node
 
@@ -80,3 +90,13 @@ npm run typecheck
 ```
 
 The design and the behavior contract are in [`docs/DESIGN.md`](docs/DESIGN.md); the data contract is [`src/shared/model.ts`](src/shared/model.ts).
+
+### Releasing
+
+Push a semantic version tag; GitHub Actions builds the image for amd64 and arm64 and pushes it to GHCR:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Final versions also get `latest`; pre-releases (`v0.2.0-beta.1`) do not. `make release VERSION=0.1.0` builds the same image locally.
