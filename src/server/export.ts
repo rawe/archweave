@@ -70,6 +70,7 @@ class DocumentWriter {
     if (options.perspectives.has('structure')) this.structure();
     if (options.perspectives.has('data')) this.data();
     if (options.perspectives.has('flows')) this.flows();
+    if (options.perspectives.has('diagrams') && !scope && !options.diagramsOnly) this.diagrams();
     return `${this.out.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
   }
 
@@ -208,6 +209,13 @@ class DocumentWriter {
       });
       if (steps.length) this.line(steps.join('\n'));
     }
+  }
+
+  /** The drawn diagrams by name and summary; their pictures are exported from the browser or the image route. */
+  private diagrams(): void {
+    if (!this.model.diagrams.length) return;
+    this.line('## Diagrams');
+    this.line(this.model.diagrams.map((d) => `- **${d.name}**${d.summary ? `: ${oneLine(d.summary)}` : ''}`).join('\n'));
   }
 
   private nameOf(id: string): string {

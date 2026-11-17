@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   AgentPresence,
+  Diagram,
   FocusRequest,
   JournalEntry,
   Layout,
@@ -50,7 +51,7 @@ export interface Selection {
 }
 
 const EMPTY_SELECTION: Selection = { elementIds: [], relationIds: [] };
-const EMPTY_MODEL: Model = { version: 1, name: 'Architecture', description: '', elements: [], relations: [], flows: [] };
+const EMPTY_MODEL: Model = { version: 1, name: 'Architecture', description: '', elements: [], relations: [], flows: [], diagrams: [] };
 const UNSEEN_KEY = 'archweave.unseen';
 const NAMES_ONLY_KEY = 'archweave.namesOnly';
 
@@ -93,14 +94,23 @@ export interface State {
   flowId?: string;
   stepIndex: number | null;
   selection: Selection;
+  /** The diagram open in the Diagrams perspective. */
+  diagramId?: string;
+  /** Diagrams perspective: selected shapes and connectors of the open diagram (one id namespace). */
+  selectedShapeIds: string[];
   /** Bumped to ask the active canvas to center on the selection. */
   revealToken: number;
+  /** Bumped by a deliberate jump (a link followed, the agent showing something): it gets its own Back entry. */
+  navToken: number;
+  /** Position in the app's own history and the last position Forward reaches (see state/navHistory.ts). */
+  navIndex: number;
+  navMax: number;
   /** A relation whose label field the inspector should focus once, right after connecting. */
   labelFocusFor?: string;
 
-  /** Element and relation ids recently touched by the agent → time of the change. */
+  /** Element and relation ids recently touched by the agent → time of the change; shapes as "<diagram>/<shape>". */
   fresh: Record<string, number>;
-  /** Ids touched by the agent that the human has not selected since. */
+  /** Ids touched by the agent that the human has not selected since; diagrams as "diagram:<id>". */
   unseen: Record<string, true>;
   /** Removed by the agent a moment ago; kept briefly so they can fade out. */
   leaving: Record<string, number>;
@@ -132,7 +142,11 @@ export const useStore = create<State>(() => ({
   perspective: 'structure',
   stepIndex: null,
   selection: EMPTY_SELECTION,
+  selectedShapeIds: [],
   revealToken: 0,
+  navToken: 0,
+  navIndex: 0,
+  navMax: 0,
   fresh: {},
   unseen: loadUnseen(),
   leaving: {},
@@ -185,13 +199,30 @@ export function receiveSnapshot(snapshot: Snapshot, entry?: JournalEntry) {
     snapshot.revision,
   );
   const next: Partial<State> = { server: snapshot, loaded: true };
+  const redrawn = entry?.actor === 'agent' ? changedShapes(state.model.diagrams, snapshot.model.diagrams, [...entry.created.diagrams, ...entry.updated.diagrams]) : [];
   if (entry && !state.journal.some((j) => j.revision === entry.revision && j.at === entry.at)) {
     // A coalesced entry replaces the entry it grew from.
     const merged = (j: JournalEntry) => entry.firstRevision !== undefined && j.actor === entry.actor && j.revision >= entry.firstRevision && j.revision < entry.revision;
     next.journal = [...state.journal.filter((j) => !merged(j)), entry].slice(-500);
   }
   setDocument(snapshot, pending, next);
-  if (entry?.actor === 'agent') onAgentEntry(entry);
+  if (entry?.actor === 'agent') onAgentEntry(entry, redrawn);
+}
+
+/** Shapes and connectors of the given diagrams that are new or differ, as "<diagram>/<id>". */
+function changedShapes(before: Diagram[], after: Diagram[], ids: string[]): string[] {
+  const out: string[] = [];
+  for (const id of ids) {
+    const was = before.find((d) => d.id === id);
+    const now = after.find((d) => d.id === id);
+    if (!now) continue;
+    const old = new Map<string, unknown>([...(was?.shapes ?? []), ...(was?.connectors ?? [])].map((s) => [s.id, s]));
+    for (const item of [...now.shapes, ...now.connectors]) {
+      const prev = old.get(item.id);
+      if (!prev || JSON.stringify(prev) !== JSON.stringify(item)) out.push(`${id}/${item.id}`);
+    }
+  }
+  return out;
 }
 
 /**
@@ -238,9 +269,10 @@ export async function undo() {
 
 const FRESH_MS = 6500;
 
-function onAgentEntry(entry: JournalEntry) {
+function onAgentEntry(entry: JournalEntry, redrawn: string[] = []) {
   const now = Date.now();
   const touched = [...entry.created.elements, ...entry.updated.elements, ...entry.created.relations, ...entry.updated.relations];
+  const diagrams = [...entry.created.diagrams, ...entry.updated.diagrams];
   const { fresh, unseen, leaving } = get();
   const nextFresh = { ...fresh };
   const nextUnseen = { ...unseen };
@@ -248,6 +280,8 @@ function onAgentEntry(entry: JournalEntry) {
     nextFresh[id] = now;
     nextUnseen[id] = true;
   }
+  for (const id of redrawn) nextFresh[id] = now;
+  for (const id of diagrams) if (get().perspective !== 'diagrams' || get().diagramId !== id) nextUnseen[`diagram:${id}`] = true;
   const nextLeaving = { ...leaving };
   for (const id of [...entry.removed.elements, ...entry.removed.relations]) nextLeaving[id] = now;
   set({ fresh: nextFresh, unseen: nextUnseen, leaving: nextLeaving });
@@ -261,7 +295,7 @@ function onAgentEntry(entry: JournalEntry) {
     set({ fresh: f, leaving: l });
   }, FRESH_MS);
 
-  const navigable = touched.length > 0 || entry.created.flows.length + entry.updated.flows.length > 0;
+  const navigable = touched.length > 0 || diagrams.length > 0 || entry.created.flows.length + entry.updated.flows.length > 0;
   toast({
     tone: 'agent',
     text: entry.summary,
@@ -321,9 +355,28 @@ export function select(selection: Partial<Selection>, opts: { reveal?: boolean }
 }
 
 export function clearSelection() {
-  const { selection, stepIndex } = get();
-  if (selection.elementIds.length || selection.relationIds.length || stepIndex !== null)
-    set({ selection: EMPTY_SELECTION, stepIndex: null });
+  const { selection, stepIndex, selectedShapeIds } = get();
+  if (selection.elementIds.length || selection.relationIds.length || stepIndex !== null || selectedShapeIds.length)
+    set({ selection: EMPTY_SELECTION, stepIndex: null, selectedShapeIds: [] });
+}
+
+/** Selects shapes and connectors of the open diagram. */
+export function selectShapes(ids: string[], opts: { reveal?: boolean } = {}) {
+  set((s) => ({ selectedShapeIds: ids, revealToken: opts.reveal ? s.revealToken + 1 : s.revealToken }));
+}
+
+/** Opens a diagram in the Diagrams perspective, optionally with shapes selected and brought into view. */
+export function openDiagram(diagramId: string | undefined, selectIds: string[] = []) {
+  set((s) => ({
+    perspective: 'diagrams',
+    diagramId,
+    selectedShapeIds: selectIds,
+    selection: EMPTY_SELECTION,
+    stepIndex: null,
+    revealToken: s.revealToken + (selectIds.length ? 1 : 0),
+    navToken: s.navToken + (selectIds.length ? 1 : 0),
+  }));
+  if (diagramId) markSeen([`diagram:${diagramId}`]);
 }
 
 export function setPerspective(perspective: Perspective) {
@@ -334,7 +387,8 @@ export function setPerspective(perspective: Perspective) {
     if (!el) return false;
     return perspective === 'data' ? el.kind === 'data' : perspective === 'structure' ? el.kind !== 'data' : false;
   });
-  set({ perspective, selection: { elementIds: keep, relationIds: [] }, stepIndex: null });
+  set({ perspective, selection: { elementIds: keep, relationIds: [] }, stepIndex: null, selectedShapeIds: [] });
+  if (perspective === 'diagrams' && s.diagramId) markSeen([`diagram:${s.diagramId}`]);
 }
 
 export function enterScope(scopeId: string | undefined, selectAfter?: string[]) {
@@ -364,7 +418,7 @@ export function navigateToElement(id: string, extra: string[] = []) {
   const el = model.elements.find((e) => e.id === id);
   if (!el) return;
   if (el.kind === 'data') {
-    set((s) => ({ perspective: 'data', selection: { elementIds: [id, ...extra], relationIds: [] }, revealToken: s.revealToken + 1, stepIndex: null }));
+    set((s) => ({ perspective: 'data', selection: { elementIds: [id, ...extra], relationIds: [] }, revealToken: s.revealToken + 1, navToken: s.navToken + 1, stepIndex: null }));
   } else {
     const parent = el.parentId && model.elements.some((e) => e.id === el.parentId) ? el.parentId : undefined;
     set((s) => ({
@@ -372,6 +426,7 @@ export function navigateToElement(id: string, extra: string[] = []) {
       scopeId: parent,
       selection: { elementIds: [id, ...extra], relationIds: [] },
       revealToken: s.revealToken + 1,
+      navToken: s.navToken + 1,
       stepIndex: null,
     }));
   }
@@ -386,7 +441,7 @@ export function navigateToRelation(id: string) {
   const to = model.elements.find((e) => e.id === rel.to);
   if (from?.kind === 'data' && to?.kind === 'data') {
     // The data perspective shows a relation between structures by focusing its source.
-    set((s) => ({ perspective: 'data', selection: { elementIds: [rel.from], relationIds: [] }, revealToken: s.revealToken + 1, stepIndex: null }));
+    set((s) => ({ perspective: 'data', selection: { elementIds: [rel.from], relationIds: [] }, revealToken: s.revealToken + 1, navToken: s.navToken + 1, stepIndex: null }));
     markSeen([id]);
     return;
   }
@@ -397,6 +452,7 @@ export function navigateToRelation(id: string) {
     scopeId: anchor?.parentId,
     selection: { elementIds: [], relationIds: [id] },
     revealToken: s.revealToken + 1,
+    navToken: s.navToken + 1,
     stepIndex: null,
   }));
   markSeen([id]);
@@ -417,14 +473,40 @@ export function navigateToEntry(entry: JournalEntry) {
   const relationId = [...entry.created.relations, ...entry.updated.relations].find((id) => model.relations.some((r) => r.id === id));
   if (relationId) return navigateToRelation(relationId);
   const flowId = [...entry.created.flows, ...entry.updated.flows].find((id) => model.flows.some((f) => f.id === id));
-  if (flowId) openFlow(flowId);
+  if (flowId) return openFlow(flowId);
+  const diagramId = [...entry.created.diagrams, ...entry.updated.diagrams].find((id) => model.diagrams.some((d) => d.id === id));
+  if (diagramId) {
+    const changed = Object.keys(get().fresh).filter((key) => key.startsWith(`${diagramId}/`)).map((key) => key.slice(diagramId.length + 1));
+    openDiagram(diagramId, changed);
+  }
 }
 
 export function handleFocusRequest(req: FocusRequest) {
   const { model } = get();
   const ids = req.elementIds.filter((id) => model.elements.some((e) => e.id === id));
+  const diagram = req.diagramId ? model.diagrams.find((d) => d.id === req.diagramId) : undefined;
+  if (diagram) {
+    const known = new Set([...diagram.shapes, ...diagram.connectors].map((s) => s.id));
+    const shapeIds = (req.shapeIds ?? []).filter((id) => known.has(id));
+    // Always a reveal: the canvas fits the highlighted shapes, or the whole diagram. One deliberate jump, one Back entry.
+    set((s) => ({
+      perspective: 'diagrams',
+      diagramId: diagram.id,
+      selectedShapeIds: shapeIds,
+      selection: EMPTY_SELECTION,
+      stepIndex: null,
+      revealToken: s.revealToken + 1,
+      navToken: s.navToken + 1,
+    }));
+    markSeen([`diagram:${diagram.id}`]);
+    const now = Date.now();
+    set((s) => ({ fresh: { ...s.fresh, ...Object.fromEntries(shapeIds.map((id) => [`${diagram.id}/${id}`, now])) } }));
+    toast({ tone: 'agent', text: req.message || 'The agent is showing you this' });
+    return;
+  }
   if (req.perspective === 'flows' || (req.flowId && !req.perspective)) {
     openFlow(req.flowId ?? get().flowId);
+    set((s) => ({ navToken: s.navToken + 1 }));
   } else if (req.perspective || req.scopeId !== undefined) {
     const perspective = req.perspective ?? 'structure';
     set((s) => ({
@@ -432,6 +514,7 @@ export function handleFocusRequest(req: FocusRequest) {
       scopeId: perspective === 'structure' ? (req.scopeId ?? undefined) : s.scopeId,
       selection: { elementIds: ids, relationIds: [] },
       revealToken: s.revealToken + 1,
+      navToken: s.navToken + 1,
       stepIndex: null,
     }));
   } else if (ids.length) {
@@ -461,12 +544,28 @@ function sanitizeView(before: Model) {
     patch.selection = { elementIds, relationIds, edgeKey: relationIds.length ? s.selection.edgeKey : undefined };
   }
   if (s.code?.ownerId && !ids.has(s.code.ownerId) && !relIds.has(s.code.ownerId)) patch.code = { ...s.code, ownerId: undefined };
+  const diagram = s.diagramId ? s.model.diagrams.find((d) => d.id === s.diagramId) : undefined;
+  if (s.diagramId && !diagram) patch.diagramId = undefined;
+  if (s.selectedShapeIds.length) {
+    const known = new Set([...(diagram?.shapes ?? []), ...(diagram?.connectors ?? [])].map((x) => x.id));
+    const kept = s.selectedShapeIds.filter((id) => known.has(id));
+    if (kept.length !== s.selectedShapeIds.length) patch.selectedShapeIds = kept;
+  }
   if (Object.keys(patch).length) set(patch);
 }
 
 /** The structure the data perspective is focused on: the first selected data element, if any. */
 export function dataFocusId(s: Pick<State, 'selection' | 'model'>): string | undefined {
   return s.selection.elementIds.find((id) => s.model.elements.some((e) => e.id === id && e.kind === 'data'));
+}
+
+/** Back and Forward through the app's own history; the browser's buttons do the same. */
+export function goBack() {
+  if (get().navIndex > 0) history.back();
+}
+
+export function goForward() {
+  if (get().navIndex < get().navMax) history.forward();
 }
 
 export function openCode(view: CodeView) {

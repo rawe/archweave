@@ -1,4 +1,4 @@
-import { type CodeRef, type Element, type ElementKind, type Flow, type Model, normalizeCodePath, type Relation } from '../shared/model.ts';
+import { type CodeRef, type Diagram, type Element, type ElementKind, type Flow, type Model, type ModelLink, normalizeCodePath, type Relation } from '../shared/model.ts';
 import { ancestorsOf, indexById } from '../shared/projection.ts';
 
 /** How many underlying relation ids a merged thread lists. */
@@ -23,6 +23,11 @@ export function compact(element: Element): CompactElement {
     status: element.status,
     ...(element.parentId ? { parentId: element.parentId } : {}),
   };
+}
+
+/** A diagram in a list: what it is called and how big it is. */
+export function diagramEntry(diagram: Diagram): Record<string, unknown> {
+  return pruned({ id: diagram.id, name: diagram.name, summary: diagram.summary, shapes: diagram.shapes.length });
 }
 
 export function compactRelation(relation: Relation): Record<string, unknown> {
@@ -79,7 +84,13 @@ export class ModelView {
       dataTouched: element.kind === 'data' ? undefined : this.dataTouchedBy(id),
       usedBy: element.kind === 'data' ? this.usersOfData(id) : undefined,
       referencedByFields: element.kind === 'data' ? this.fieldRefsTo(id) : undefined,
+      diagrams: this.diagramsShowing({ type: 'element', id }),
     });
+  }
+
+  /** The diagrams with a shape linked to this element, flow or diagram. */
+  diagramsShowing(link: ModelLink): { id: string; name: string }[] {
+    return this.model.diagrams.filter((d) => d.shapes.some((s) => s.link?.type === link.type && s.link.id === link.id)).map((d) => ({ id: d.id, name: d.name }));
   }
 
   expandRelation(id: string): Record<string, unknown> | undefined {
@@ -241,7 +252,8 @@ export class ModelView {
       neighbors: neighbors.map((id) => this.ref(id)),
       relations: threads,
       flows: this.model.flows.map((f) => ({ id: f.id, name: f.name, steps: f.steps.length })),
-      counts: { elements: this.model.elements.length, byKind, relations: this.model.relations.length, flows: this.model.flows.length },
+      diagrams: this.model.diagrams.map(diagramEntry),
+      counts: { elements: this.model.elements.length, byKind, relations: this.model.relations.length, flows: this.model.flows.length, diagrams: this.model.diagrams.length },
     });
   }
 
@@ -293,25 +305,18 @@ export class ModelView {
     };
   }
 
+  /**
+   * Elements whose name, id, tags, summary, field names, code paths, technology or description contain every
+   * term, best first, and, unless `kinds` narrows the search to elements, diagrams whose name, id, summary or
+   * shape texts do (marked `type: 'diagram'`).
+   */
   search(query: string, options: { kinds?: ElementKind[]; limit: number }): Record<string, unknown>[] {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     if (!terms.length) return [];
-    const hits: { element: Element; score: number; matched: Set<string> }[] = [];
-    for (const element of this.model.elements) {
-      if (options.kinds?.length && !options.kinds.includes(element.kind)) continue;
-      const haystacks: [string, string, number][] = [
-        ['name', element.name, 10],
-        ['id', element.id, 6],
-        ['tags', element.tags.join(' '), 4],
-        ['summary', element.summary, 3],
-        ['fields', element.fields.map((f) => `${f.name} ${f.type}`).join(' '), 3],
-        ['code', element.codeRefs.map((r) => `${r.path} ${r.symbol ?? ''}`).join(' '), 2],
-        ['technology', element.technology ?? '', 2],
-        ['description', element.description, 1],
-      ];
+    const hits: { entry: Record<string, unknown>; name: string; score: number }[] = [];
+    const consider = (name: string, haystacks: [string, string, number][], entry: () => Record<string, unknown>) => {
       let score = 0;
       const matched = new Set<string>();
-      let all = true;
       for (const term of terms) {
         let best = 0;
         for (const [field, text, weight] of haystacks) {
@@ -320,15 +325,47 @@ export class ModelView {
             best = Math.max(best, weight);
           }
         }
-        if (!best) all = false;
+        if (!best) return;
         score += best;
       }
-      if (all) hits.push({ element, score: score + (element.name.toLowerCase() === query.toLowerCase() ? 20 : 0), matched });
+      hits.push({ entry: { ...entry(), matchedIn: [...matched] }, name, score: score + (name.toLowerCase() === query.toLowerCase() ? 20 : 0) });
+    };
+    for (const element of this.model.elements) {
+      if (options.kinds?.length && !options.kinds.includes(element.kind)) continue;
+      consider(
+        element.name,
+        [
+          ['name', element.name, 10],
+          ['id', element.id, 6],
+          ['tags', element.tags.join(' '), 4],
+          ['summary', element.summary, 3],
+          ['fields', element.fields.map((f) => `${f.name} ${f.type}`).join(' '), 3],
+          ['code', element.codeRefs.map((r) => `${r.path} ${r.symbol ?? ''}`).join(' '), 2],
+          ['technology', element.technology ?? '', 2],
+          ['description', element.description, 1],
+        ],
+        () => ({ ...compact(element) }),
+      );
+    }
+    if (!options.kinds?.length) {
+      for (const diagram of this.model.diagrams) {
+        const texts = diagram.shapes.flatMap((s) => [s.text, s.detail ?? '']).join(' ');
+        consider(
+          diagram.name,
+          [
+            ['name', diagram.name, 10],
+            ['id', diagram.id, 6],
+            ['summary', diagram.summary, 3],
+            ['shapes', `${texts} ${diagram.connectors.map((c) => c.label).join(' ')}`, 2],
+          ],
+          () => ({ type: 'diagram', ...diagramEntry(diagram) }),
+        );
+      }
     }
     return hits
-      .sort((a, b) => b.score - a.score || a.element.name.localeCompare(b.element.name))
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
       .slice(0, options.limit)
-      .map((h) => ({ ...compact(h.element), matchedIn: [...h.matched] }));
+      .map((h) => h.entry);
   }
 
   /**

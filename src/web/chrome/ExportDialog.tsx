@@ -7,6 +7,7 @@ import { getCanvasTarget } from '../lib/canvasTarget.ts';
 import { cx } from '../lib/dom.ts';
 import { getState, setOverlay, toast, useStore } from '../state/store.ts';
 import { useModalKeys } from './useModalKeys.ts';
+import { canCopyImage, copyDiagramImage, DiagramImageOptions, type ImageOptions } from '../diagrams/DiagramExport.tsx';
 
 type Format = 'markdown' | 'mermaid' | 'json' | 'png' | 'svg';
 
@@ -18,13 +19,17 @@ const FORMATS: { id: Format; label: string; detail: string }[] = [
   { id: 'svg', label: 'SVG', detail: 'Vector image of the canvas' },
 ];
 
-const PERSPECTIVE_LABEL: Record<Perspective, string> = { structure: 'Structure', data: 'Data', flows: 'Flows' };
+const PERSPECTIVE_LABEL: Record<Perspective, string> = { structure: 'Structure', data: 'Data', flows: 'Flows', diagrams: 'Diagrams' };
 
 export function ExportDialog() {
   const scopeId = useStore((s) => s.scopeId);
   const perspective = useStore((s) => s.perspective);
   const scope = useStore((s) => s.model.elements.find((e) => e.id === s.scopeId));
-  const [format, setFormat] = useState<Format>('markdown');
+  const diagram = useStore((s) => (s.perspective === 'diagrams' ? s.model.diagrams.find((d) => d.id === s.diagramId) : undefined));
+  const revision = useStore((s) => s.revision);
+  const [format, setFormat] = useState<Format>(diagram ? 'png' : 'markdown');
+  // Exports mostly go into documents, so a diagram picture is light unless asked otherwise.
+  const [picture, setPicture] = useState<ImageOptions>({ theme: 'light', background: 'canvas', scale: 2 });
   const [what, setWhat] = useState<'scope' | 'all'>(scopeId ? 'scope' : 'all');
   const [perspectives, setPerspectives] = useState<Perspective[]>(['structure', 'data', 'flows']);
   const [code, setCode] = useState(true);
@@ -34,6 +39,11 @@ export function ExportDialog() {
   const image = format === 'png' || format === 'svg';
 
   const run = async () => {
+    if (image && diagram) {
+      download(api.diagramImageUrl(diagram.id, { format: format as 'png' | 'svg', ...picture, download: true }), '');
+      close();
+      return;
+    }
     if (image) {
       setBusy(true);
       let restorePaint: (() => void) | undefined;
@@ -84,7 +94,7 @@ export function ExportDialog() {
               <label key={f.id} className={cx('format', format === f.id && 'is-active')}>
                 <input type="radio" name="format" value={f.id} checked={format === f.id} onChange={() => setFormat(f.id)} />
                 <span className="format-label">{f.label}</span>
-                <span className="format-detail">{f.detail}</span>
+                <span className="format-detail">{diagram && (f.id === 'png' || f.id === 'svg') ? `${diagram.name} as ${f.id === 'png' ? 'a picture' : 'a vector image'}` : f.detail}</span>
               </label>
             ))}
           </div>
@@ -125,11 +135,17 @@ export function ExportDialog() {
             </label>
           </>
         )}
-        {image && <p className="dialog-body muted">The {PERSPECTIVE_LABEL[perspective]} canvas as you see it now, framed to fit everything on it.</p>}
+        {image && diagram && <DiagramImageOptions diagramId={diagram.id} format={format as 'png' | 'svg'} value={picture} onChange={setPicture} version={revision} />}
+        {image && !diagram && <p className="dialog-body muted">The {PERSPECTIVE_LABEL[perspective]} canvas as you see it now, framed to fit everything on it.</p>}
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={close}>
             Cancel
           </button>
+          {image && diagram && canCopyImage && (
+            <button type="button" className="btn" onClick={() => void copyDiagramImage(diagram.id, picture).then((ok) => ok && close())}>
+              Copy image
+            </button>
+          )}
           <button type="button" className="btn btn-primary" disabled={busy || (!image && !perspectives.length)} onClick={() => void run()}>
             {busy ? 'Exporting…' : 'Export'}
           </button>

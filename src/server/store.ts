@@ -1,4 +1,6 @@
-import { type Actor, type ChangeResult, type ChangeSet, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
+import { repairDiagram } from '../shared/diagram/patch.ts';
+import { linkName } from '../shared/diagram/links.ts';
+import { type Actor, type ChangeResult, type ChangeSet, Diagram, type JournalEntry, Layout, Model, type Snapshot } from '../shared/model.ts';
 import { applyChangeSet, type Collection, describeChanges, describeEdit, diffModels, onlyUpdated, parseChangeSet } from './changes.ts';
 import { integrityProblems } from './integrity.ts';
 import type { CodeAccess } from './stale.ts';
@@ -16,11 +18,15 @@ export interface StoreChange {
 
 export interface StoreOptions {
   model?: unknown;
+  /** The diagrams read from the diagram files. A model document that carries `diagrams` itself adds those the files do not define. */
+  diagrams?: unknown;
   layout?: unknown;
   journal?: JournalEntry[];
   now?: () => Date;
   /** Normalizes code ref paths against the repository and seals refs written by change sets. Without it refs are stored unsealed. */
   code?: CodeAccess;
+  /** Receives what was repaired or skipped in diagrams taken over from outside. Defaults to `console.warn`. */
+  log?: (message: string) => void;
 }
 
 interface UndoStep {
@@ -57,9 +63,11 @@ export class Store {
   private listeners = new Set<(change: StoreChange) => void>();
   private now: () => Date;
   private code?: CodeAccess;
+  private log: (message: string) => void;
 
   constructor(options: StoreOptions = {}) {
-    this.model = parseModel(options.model ?? {});
+    this.log = options.log ?? ((message) => console.warn(message));
+    this.model = parseModel(options.model ?? {}, options.diagrams, this.log);
     this.layout = Layout.parse(options.layout ?? {});
     this.entries = (options.journal ?? []).slice(-JOURNAL_CAP);
     this.revision = this.entries.reduce((max, e) => Math.max(max, e.revision), 0);
@@ -137,12 +145,16 @@ export class Store {
   }
 
   /**
-   * Takes over a model and/or layout changed on disk by someone else (git checkout, manual edit).
-   * `undefined` keeps the current document. Both are validated before either is replaced;
-   * an invalid document throws and changes nothing.
+   * Takes over a model, layout and/or the diagrams changed on disk by someone else (git checkout, manual edit).
+   * `undefined` keeps the current document: a model without `diagrams` keeps the current diagrams, `diagrams`
+   * alone keeps the current elements, relations and flows. All are validated before any is replaced; an invalid
+   * document throws and changes nothing. Diagrams are repaired instead of refused (see `parseModel`); a shape
+   * whose link target is gone from the new model keeps the name the current model had for it.
    */
-  replace(model: unknown, layout: unknown): void {
-    const nextModel = model === undefined ? undefined : parseModel(model);
+  replace(model: unknown, layout: unknown, diagrams?: unknown): void {
+    const { diagrams: current, ...graph } = this.model;
+    const nextModel =
+      model === undefined && diagrams === undefined ? undefined : parseModel(model ?? graph, diagrams ?? current, this.log, (link) => linkName(this.model, link));
     const nextLayout = layout === undefined ? undefined : Layout.parse(layout);
     if (!nextModel && !nextLayout) return;
     if (nextModel) {
@@ -214,7 +226,7 @@ export class RevisionConflict extends Error {
 }
 
 function isLayoutOnly(changes: ChangeSet): boolean {
-  return !changes.model && !changes.elements?.length && !changes.relations?.length && !changes.flows?.length && !changes.remove;
+  return !changes.model && !changes.elements?.length && !changes.relations?.length && !changes.flows?.length && !changes.diagrams?.length && !changes.remove;
 }
 
 export class ModelIntegrityError extends Error {
@@ -226,9 +238,33 @@ export class ModelIntegrityError extends Error {
   }
 }
 
-/** Schema and graph validation for a model read from outside the store. */
-function parseModel(input: unknown): Model {
-  const model = Model.parse(input);
+/**
+ * Schema and graph validation for a model read from outside the store. Elements, relations and flows are
+ * strict: a problem throws. Diagrams are lenient, so a hand-edited or merge-damaged diagram never stops the
+ * server: an entry of `diagrams` (the diagram files) that is no valid diagram is skipped, the rest is made
+ * consistent by `repairDiagram`, and each skip or repair is logged. Diagrams the model document carries
+ * itself (an imported export) are used for ids `diagrams` does not define.
+ */
+function parseModel(input: unknown, diagrams: unknown, log: (message: string) => void, lastName?: Parameters<typeof repairDiagram>[2]): Model {
+  const document = Model.parse(input);
+  const merged = new Map<string, Diagram>();
+  (Array.isArray(diagrams) ? diagrams : []).forEach((entry, i) => {
+    const parsed = Diagram.safeParse(entry);
+    const id = parsed.success ? parsed.data.id : typeof (entry as { id?: unknown } | null)?.id === 'string' ? (entry as { id: string }).id : undefined;
+    if (!parsed.success) log(`archweave: skipped diagram ${id ? `\`${id}\`` : `#${i + 1}`}: ${parsed.error.issues.slice(0, 5).map((issue) => `${issue.path.join('.') || 'diagram'}: ${issue.message}`).join('; ')}`);
+    else if (merged.has(parsed.data.id)) log(`archweave: skipped a second diagram with the id \`${parsed.data.id}\`.`);
+    else merged.set(parsed.data.id, parsed.data);
+  });
+  for (const diagram of document.diagrams) if (!merged.has(diagram.id)) merged.set(diagram.id, diagram);
+  const targets = { elements: document.elements, flows: document.flows, diagrams: [...merged.values()] };
+  const model: Model = {
+    ...document,
+    diagrams: targets.diagrams.map((diagram) => {
+      const repaired = repairDiagram(diagram, targets, lastName);
+      for (const note of repaired.notes) log(`archweave: ${note}`);
+      return repaired.diagram;
+    }),
+  };
   const problems = integrityProblems(model);
   if (problems.length) throw new ModelIntegrityError(problems);
   return model;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CircleQuestionMark, Download, FileCheck, FileCode, LayoutGrid, Maximize, Moon, Plus, Rows3, Undo2, Workflow, Network, Braces, Text } from 'lucide-react';
+import { CircleQuestionMark, Download, FileCheck, FileCode, LayoutGrid, Maximize, Moon, Plus, Rows3, Undo2, Workflow, Network, Braces, Text, Shapes, PenTool } from 'lucide-react';
 import { fuzzyScore } from '../lib/fuzzy.ts';
 import { cx } from '../lib/dom.ts';
 import { MOD } from '../lib/format.ts';
@@ -7,7 +7,8 @@ import { KindIcon } from '../lib/kinds.tsx';
 import { sendCanvasCommand } from '../lib/commands.ts';
 import { toggleTheme } from '../lib/theme.ts';
 import { checkLinks } from '../state/codeLinks.ts';
-import { getState, navigateToElement, openCode, openFlow, setOverlay, setPerspective, toast, toggleNamesOnly, undo, useStore } from '../state/store.ts';
+import { getState, navigateToElement, openCode, openDiagram, openFlow, setOverlay, setPerspective, toast, toggleNamesOnly, undo, useStore } from '../state/store.ts';
+import { askNewDiagram, drawAsDiagram } from '../diagrams/actions.ts';
 import { scopePath, useIndex } from '../state/selectors.ts';
 import { Keys } from './primitives.tsx';
 
@@ -18,17 +19,19 @@ interface Entry {
   hint?: string;
   keys?: string;
   icon: ReactNode;
-  group: 'Elements' | 'Data' | 'Flows' | 'Files' | 'Commands';
+  group: 'Elements' | 'Data' | 'Flows' | 'Diagrams' | 'Files' | 'Commands';
   mono?: boolean;
   run: () => void;
 }
 
 const ICON = { size: 15, strokeWidth: 1.6 } as const;
+const NONE: string[] = [];
 
 export function Palette() {
   const index = useIndex();
   const model = useStore((s) => s.model);
   const perspective = useStore((s) => s.perspective);
+  const structureSelection = useStore((s) => (s.perspective === 'structure' ? s.selection.elementIds : NONE));
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null);
@@ -49,6 +52,8 @@ export function Palette() {
     }
     for (const f of model.flows)
       out.push({ id: `flow:${f.id}`, label: f.name, detail: f.summary || undefined, hint: 'flow', icon: <Workflow {...ICON} />, group: 'Flows', run: () => openFlow(f.id) });
+    for (const d of model.diagrams)
+      out.push({ id: `diagram:${d.id}`, label: d.name, detail: d.summary || undefined, hint: 'diagram', icon: <Shapes {...ICON} />, group: 'Diagrams', run: () => openDiagram(d.id) });
     const files = new Map<string, { owner: string; line?: number; ownerId: string }>();
     for (const el of model.elements) for (const r of el.codeRefs) if (!files.has(r.path)) files.set(r.path, { owner: el.name, line: r.startLine, ownerId: el.id });
     for (const r of model.relations) for (const c of r.codeRefs) if (!files.has(c.path)) files.set(c.path, { owner: 'a relation', line: c.startLine, ownerId: r.id });
@@ -67,7 +72,16 @@ export function Palette() {
       cmd('structure', 'Go to Structure', <Network {...ICON} />, () => setPerspective('structure'), '1'),
       cmd('data', 'Go to Data', <Braces {...ICON} />, () => setPerspective('data'), '2'),
       cmd('flows', 'Go to Flows', <Rows3 {...ICON} />, () => setPerspective('flows'), '3'),
-      cmd('new', perspective === 'data' ? 'New data structure' : 'New element', <Plus {...ICON} />, () => setTimeout(() => sendCanvasCommand('compose'), 30), 'N'),
+      cmd('diagrams', 'Go to Diagrams', <Shapes {...ICON} />, () => setPerspective('diagrams'), '4'),
+      ...(perspective === 'diagrams' ? [] : [cmd('new', perspective === 'data' ? 'New data structure' : 'New element', <Plus {...ICON} />, () => setTimeout(() => sendCanvasCommand('compose'), 30), 'N')]),
+      cmd('new-diagram', 'New diagram', <Plus {...ICON} />, () => {
+        setPerspective('diagrams');
+        setTimeout(askNewDiagram, 30);
+      }),
+      ...(perspective === 'diagrams' && getState().diagramId ? [cmd('new-box', 'New box', <Plus {...ICON} />, () => setTimeout(() => sendCanvasCommand('compose'), 30), 'N')] : []),
+      ...(structureSelection.length
+        ? [cmd('draw', `Draw as diagram${structureSelection.length > 1 ? ` (${structureSelection.length} elements)` : ''}`, <PenTool {...ICON} />, () => drawAsDiagram(structureSelection))]
+        : []),
       cmd('tidy', 'Tidy layout', <LayoutGrid {...ICON} />, () => sendCanvasCommand('tidy')),
       cmd('names-only', useStore.getState().namesOnly ? 'Show summaries on nodes' : 'Names only on nodes', <Text {...ICON} />, toggleNamesOnly),
       cmd('fit', 'Fit to screen', <Maximize {...ICON} />, () => sendCanvasCommand('fit'), '⇧ 1'),
@@ -80,7 +94,7 @@ export function Palette() {
       cmd('help', 'Shortcuts and help', <CircleQuestionMark {...ICON} />, () => setOverlay('help'), '?'),
     );
     return out;
-  }, [model, index, perspective]);
+  }, [model, index, perspective, structureSelection]);
 
   const results = useMemo(() => {
     const q = query.trim();
@@ -88,9 +102,10 @@ export function Palette() {
       const { scopeId } = getState();
       const here = entries.filter((e) => e.group === 'Elements' && model.elements.find((el) => `el:${el.id}` === e.id)?.parentId === scopeId).slice(0, 8);
       const flows = entries.filter((e) => e.group === 'Flows').slice(0, 3);
-      return [...here, ...flows, ...entries.filter((e) => e.group === 'Commands')];
+      const diagrams = entries.filter((e) => e.group === 'Diagrams').slice(0, 3);
+      return [...here, ...flows, ...diagrams, ...entries.filter((e) => e.group === 'Commands')];
     }
-    const weight: Record<Entry['group'], number> = { Elements: 30, Data: 28, Flows: 26, Commands: 10, Files: 0 };
+    const weight: Record<Entry['group'], number> = { Elements: 30, Data: 28, Flows: 26, Diagrams: 24, Commands: 10, Files: 0 };
     return entries
       .map((e) => ({ e, score: Math.max(fuzzyScore(q, e.label), fuzzyScore(q, `${e.detail ?? ''} ${e.label}`) - 40) }))
       .filter((x) => x.score >= 0)
@@ -117,7 +132,7 @@ export function Palette() {
           className="palette-input"
           autoFocus
           value={query}
-          placeholder="Search elements, data, flows, files, commands"
+          placeholder="Search elements, data, flows, diagrams, files, commands"
           role="combobox"
           aria-expanded
           aria-controls="palette-list"

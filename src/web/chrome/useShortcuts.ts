@@ -4,6 +4,8 @@ import {
   clearSelection,
   closeCode,
   getState,
+  goBack,
+  goForward,
   scopeOut,
   setOverlay,
   setPerspective,
@@ -11,6 +13,7 @@ import {
   undo,
 } from '../state/store.ts';
 import { sendCanvasCommand } from '../lib/commands.ts';
+import { removeShapes } from '../diagrams/actions.ts';
 import { isTypingTarget } from '../lib/dom.ts';
 import { toggleTheme } from '../lib/theme.ts';
 
@@ -20,8 +23,17 @@ export function useShortcuts() {
     // The state as it was when the key went down. A focused canvas node handles Escape itself
     // (it deselects) before the event reaches the window; Escape must not then also drill out.
     let atKeyDown = getState();
-    const onKeyCapture = () => {
+    const onKeyCapture = (e: KeyboardEvent) => {
       atKeyDown = getState();
+      // Alt+arrows go Back and Forward; taken before a focused canvas node would move with them.
+      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const s = getState();
+        if (isTypingTarget(e.target) || document.querySelector('[aria-modal="true"]') || (s.overlay && s.overlay !== 'activity')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'ArrowLeft') goBack();
+        else goForward();
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -62,8 +74,9 @@ export function useShortcuts() {
         case '1':
         case '2':
         case '3':
+        case '4':
           if (e.shiftKey) break;
-          setPerspective((['structure', 'data', 'flows'] as const)[Number(e.key) - 1]!);
+          setPerspective((['structure', 'data', 'flows', 'diagrams'] as const)[Number(e.key) - 1]!);
           return;
         case '+':
         case '=':
@@ -85,7 +98,8 @@ export function useShortcuts() {
           sendCanvasCommand('compose');
           return;
         case 'Enter':
-          if (s.perspective === 'structure' && s.selection.elementIds.length === 1 && isCanvasFocus(e.target)) {
+          const single = s.perspective === 'diagrams' ? s.selectedShapeIds.length === 1 : s.perspective === 'structure' && s.selection.elementIds.length === 1;
+          if (single && isCanvasFocus(e.target)) {
             e.preventDefault();
             sendCanvasCommand('open-selected');
           }
@@ -94,13 +108,14 @@ export function useShortcuts() {
         case 'Delete':
           if (s.perspective === 'flows') return;
           e.preventDefault();
-          void deleteSelection();
+          if (s.perspective === 'diagrams') removeShapes(s.selectedShapeIds);
+          else void deleteSelection();
           return;
         case 'Escape': {
           if (s.overlay) return setOverlay(null);
           if (s.code) return closeCode();
           const before = atKeyDown;
-          if (before.selection.elementIds.length || before.selection.relationIds.length || before.stepIndex !== null) return clearSelection();
+          if (before.selection.elementIds.length || before.selection.relationIds.length || before.selectedShapeIds.length || before.stepIndex !== null) return clearSelection();
           if (s.perspective === 'structure') scopeOut();
           return;
         }

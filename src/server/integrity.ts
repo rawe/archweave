@@ -1,14 +1,16 @@
+import { diagramProblems } from '../shared/diagram/patch.ts';
 import type { Model } from '../shared/model.ts';
 
 /**
  * Graph problems a schema cannot catch: duplicate ids, references to missing
- * elements, data references to non-data elements, containment cycles.
+ * elements, data references to non-data elements, containment cycles, and
+ * diagrams that are inconsistent in themselves or link to nothing.
  * Returns one readable line per problem; empty when the model is consistent.
  */
 export function integrityProblems(model: Model): string[] {
   const problems: string[] = [];
   const elements = new Map<string, Model['elements'][number]>();
-  for (const collection of ['elements', 'relations', 'flows'] as const) {
+  for (const collection of ['elements', 'relations', 'flows', 'diagrams'] as const) {
     const seen = new Set<string>();
     for (const item of model[collection]) {
       if (seen.has(item.id)) problems.push(`duplicate ${collection.slice(0, -1)} id \`${item.id}\``);
@@ -67,5 +69,6 @@ export function integrityProblems(model: Model): string[] {
       dataIds(`flow \`${flow.id}\` step ${i + 1}`, step.dataIds);
     });
   }
+  for (const diagram of model.diagrams) problems.push(...diagramProblems(diagram, model));
   return problems;
 }

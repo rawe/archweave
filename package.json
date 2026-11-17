@@ -10,7 +10,7 @@
     "dev:web": "vite",
     "build": "npm run build:web && npm run build:server",
     "build:web": "vite build",
-    "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/server/main.js",
+    "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/server/main.js && node scripts/copy-server-assets.mjs",
     "start": "node dist/server/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -20,6 +20,7 @@
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@hono/node-server": "^2.1.8",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@resvg/resvg-wasm": "^2.6.2",
     "@xyflow/react": "^12.12.1",
     "dompurify": "^3.4.17",
     "elkjs": "^0.12.1",

@@ -30,6 +30,7 @@ export function linesLabel(start?: number, end?: number): string {
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const MOD = isMac ? '⌘' : 'Ctrl';
+export const ALT = isMac ? '⌥' : 'Alt';
 
 export function fileName(path: string): string {
   return path.split('/').pop() ?? path;

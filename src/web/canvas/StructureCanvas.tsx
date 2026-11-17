@@ -12,11 +12,12 @@ import {
   type OnNodeDrag,
   type Viewport,
 } from '@xyflow/react';
-import { ArrowUpRight, Copy, Crosshair, LayoutGrid, Plus, Trash, Maximize } from 'lucide-react';
+import { ArrowUpRight, Copy, Crosshair, LayoutGrid, PenTool, Plus, Trash, Maximize } from 'lucide-react';
 import type { Element } from '../../shared/model.ts';
 import { focusSet, projectStructure, type ProjectedEdge } from '../../shared/projection.ts';
 import { Menu, type MenuItem } from '../chrome/primitives.tsx';
 import { canvasKey, connect, createElement, deleteSelection, reparent } from '../state/actions.ts';
+import { drawAsDiagram } from '../diagrams/actions.ts';
 import {
   clearSelection,
   commit,
@@ -603,6 +604,7 @@ export function StructureCanvas() {
     else items.push({ label: 'Show where it lives', icon: Crosshair, onSelect: () => navigateToElement(el.id) });
     items.push(
       { label: 'Copy id', icon: Copy, onSelect: () => void copyText(el.id).then(() => toast({ tone: 'info', text: `Copied ${el.id}` })) },
+      { label: 'Draw as diagram', icon: PenTool, onSelect: () => drawAsDiagram(getState().selection.elementIds) },
       'sep',
       { label: 'Delete', icon: Trash, keys: '⌫', danger: true, onSelect: () => void deleteSelection() },
     );

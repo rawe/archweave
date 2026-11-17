@@ -19,7 +19,7 @@ describe('Session', () => {
 
   it('validates and defaults the UI state', () => {
     const session = new Session();
-    expect(session.setUi({ selectedElementIds: ['a'] })).toEqual({ perspective: 'structure', selectedElementIds: ['a'], selectedRelationIds: [] });
+    expect(session.setUi({ selectedElementIds: ['a'] })).toEqual({ perspective: 'structure', selectedElementIds: ['a'], selectedRelationIds: [], selectedShapeIds: [] });
     expect(() => session.setUi({ perspective: 'sideways' })).toThrow();
   });
 });

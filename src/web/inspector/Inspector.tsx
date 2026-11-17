@@ -11,6 +11,7 @@ import { KindIcon } from '../lib/kinds.tsx';
 import { ElementInspector } from './ElementInspector.tsx';
 import { RelationInspector } from './RelationInspector.tsx';
 import { StepInspector } from './StepInspector.tsx';
+import { DiagramInspector } from '../diagrams/DiagramInspector.tsx';
 
 export function Inspector() {
   const selection = useStore((s) => s.selection);
@@ -18,11 +19,18 @@ export function Inspector() {
   const flowId = useStore((s) => s.flowId);
   const stepIndex = useStore((s) => s.stepIndex);
   const flow = useStore((s) => s.model.flows.find((f) => f.id === s.flowId));
+  const diagram = useStore((s) => (s.perspective === 'diagrams' ? s.model.diagrams.find((d) => d.id === s.diagramId) : undefined));
+  const shapeIds = useStore((s) => s.selectedShapeIds);
   const index = useIndex();
 
   let content: React.ReactNode = null;
   let key = '';
-  if (perspective === 'flows' && flow && stepIndex !== null && flow.steps[stepIndex]) {
+  if (perspective === 'diagrams') {
+    if (diagram && [...diagram.shapes, ...diagram.connectors].some((s) => shapeIds.includes(s.id))) {
+      content = <DiagramInspector diagram={diagram} ids={shapeIds} />;
+      key = `diagram-${diagram.id}-${shapeIds.length === 1 ? shapeIds[0] : 'many'}`;
+    }
+  } else if (perspective === 'flows' && flow && stepIndex !== null && flow.steps[stepIndex]) {
     content = <StepInspector flow={flow} stepIndex={stepIndex} index={index} />;
     key = `step-${flowId}-${stepIndex}`;
   } else if (selection.elementIds.length === 1) {

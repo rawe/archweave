@@ -1,3 +1,4 @@
+import { applyDiagramPatch, unlinkLost } from '../shared/diagram/patch.ts';
 import { descendantsOf } from '../shared/projection.ts';
 import {
   type Actor,
@@ -5,6 +6,8 @@ import {
   CODELESS_KINDS,
   ChangeSet,
   type CodeRef,
+  type Diagram,
+  type DiagramPatch,
   Element,
   type ElementPatch,
   type Field,
@@ -49,6 +52,7 @@ export interface Applied {
 }
 
 export type Collection = keyof IdLists;
+const COLLECTIONS = ['elements', 'relations', 'flows', 'diagrams'] as const satisfies readonly Collection[];
 
 export function parseChangeSet(input: unknown): ChangeSet {
   const parsed = ChangeSet.safeParse(input);
@@ -84,6 +88,9 @@ class Draft {
   private elements: Map<string, Element>;
   private relations: Map<string, Relation>;
   private flows: Map<string, Flow>;
+  private diagrams: Map<string, Diagram>;
+  /** The model before this change set, for the names unlinked diagram shapes keep. */
+  private base: Model;
   /** Kinds before this change set, to find elements that stopped being data structures. */
   private baseKinds: Map<string, Element['kind']>;
   private created = sets();
@@ -107,6 +114,8 @@ class Draft {
     this.elements = new Map(this.model.elements.map((e) => [e.id, e]));
     this.relations = new Map(this.model.relations.map((r) => [r.id, r]));
     this.flows = new Map(this.model.flows.map((f) => [f.id, f]));
+    this.diagrams = new Map(this.model.diagrams.map((d) => [d.id, d]));
+    this.base = base.model;
     this.baseKinds = new Map(this.model.elements.map((e) => [e.id, e.kind]));
   }
 
@@ -116,6 +125,7 @@ class Draft {
     changes.elements?.forEach((patch, i) => this.upsertElement(patch, i));
     changes.relations?.forEach((patch, i) => this.upsertRelation(patch, i));
     changes.flows?.forEach((patch, i) => this.upsertFlow(patch, i));
+    changes.diagrams?.forEach((patch, i) => this.upsertDiagram(patch, i));
     this.failOnErrors();
     this.checkElements();
     this.checkRelations();
@@ -123,11 +133,13 @@ class Draft {
     this.checkSuppliedData();
     this.failOnErrors();
     this.dropLostData();
+    this.unlinkLostShapes();
     if (changes.layout) this.applyLayout(changes.layout);
 
     this.model.elements = [...this.elements.values()];
     this.model.relations = [...this.relations.values()];
     this.model.flows = [...this.flows.values()];
+    this.model.diagrams = [...this.diagrams.values()];
     // The same check the store runs on load: no change set may persist a model that would not load again.
     const problems = integrityProblems(this.model);
     if (problems.length) throw new ChangeError(`Nothing was applied. The change set would leave the model inconsistent:\n${problems.slice(0, 10).map((p) => `- ${p}`).join('\n')}`, problems);
@@ -135,11 +147,12 @@ class Draft {
       elements: [...s.elements],
       relations: [...s.relations],
       flows: [...s.flows],
+      diagrams: [...s.diagrams],
     });
     const created = lists(this.created);
     const updated = lists(this.updated);
     const removed = lists(this.removed);
-    const modelChanged = this.metaChanged || [created, updated, removed].some((l) => l.elements.length + l.relations.length + l.flows.length > 0);
+    const modelChanged = this.metaChanged || [created, updated, removed].some((l) => COLLECTIONS.some((c) => l[c].length));
     return { model: this.model, layout: this.layout, created, updated, removed, warnings: this.warnings, modelChanged, layoutChanged: this.layoutChanged };
   }
 
@@ -174,6 +187,7 @@ class Draft {
     checkUnknown(remove.elements, 'elements', this.elements, 'element');
     checkUnknown(remove.relations, 'relations', this.relations, 'relation');
     checkUnknown(remove.flows, 'flows', this.flows, 'flow');
+    checkUnknown(remove.diagrams, 'diagrams', this.diagrams, 'diagram');
     this.failOnErrors();
 
     const doomed = new Set<string>();
@@ -197,6 +211,10 @@ class Draft {
     for (const id of remove.flows ?? []) {
       this.flows.delete(id);
       this.removed.flows.add(id);
+    }
+    for (const id of remove.diagrams ?? []) {
+      this.diagrams.delete(id);
+      this.removed.diagrams.add(id);
     }
     if (!doomed.size) return;
     for (const flow of [...this.flows.values()]) {
@@ -464,6 +482,49 @@ class Draft {
     else this.created.flows.add(id);
   }
 
+  private upsertDiagram(patch: DiagramPatch, index: number): void {
+    const where = entryLabel('diagrams', index, patch.id, patch.name);
+    const existing = patch.id ? this.diagrams.get(patch.id) : undefined;
+    if (!existing && !patch.name) {
+      this.errors.push(
+        patch.id
+          ? `${where}: there is no diagram \`${patch.id}\`. To create it, give \`name\`.${didYouMean(patch.id, this.diagrams.values())}`
+          : `${where}: a new diagram needs \`name\`.`,
+      );
+      return;
+    }
+    const id = existing?.id ?? patch.id ?? uniqueId(slugify(patch.name!), new Set(this.diagrams.keys()));
+    const { diagram, errors } = applyDiagramPatch(existing, patch, { id, model: this.linkTargets() });
+    if (!diagram) {
+      this.errors.push(...errors);
+      return;
+    }
+    if (existing && JSON.stringify(existing) === JSON.stringify(diagram)) return;
+    this.diagrams.set(id, diagram);
+    if (existing) this.markUpdated('diagrams', id);
+    else this.created.diagrams.add(id);
+  }
+
+  /** What diagram shapes may link to right now. */
+  private linkTargets(): Pick<Model, 'elements' | 'flows' | 'diagrams'> {
+    return { elements: [...this.elements.values()], flows: [...this.flows.values()], diagrams: [...this.diagrams.values()] };
+  }
+
+  /** Shapes that linked to something this change set removed stay, as plain shapes with the name they showed. */
+  private unlinkLostShapes(): void {
+    if (!this.removed.elements.size && !this.removed.flows.size && !this.removed.diagrams.size) return;
+    const targets = this.linkTargets();
+    for (const current of [...this.diagrams.values()]) {
+      const { diagram, lost } = unlinkLost(current, targets, this.base);
+      if (!lost.length) continue;
+      for (const { shape, link } of lost) {
+        this.warnings.push(`diagram \`${diagram.id}\` shape \`${shape}\`: unlinked from removed ${link.type} \`${link.id}\`, it keeps the name it showed.`);
+      }
+      this.diagrams.set(diagram.id, diagram);
+      this.markUpdated('diagrams', diagram.id);
+    }
+  }
+
   /**
    * Applies `updateSteps`, `removeSteps` and `insertSteps`. All indices are 0-based and
    * refer to `steps` as given; steps whose data ids come from the patch go into `supplied`.
@@ -636,7 +697,7 @@ class Draft {
 /** Compares two models and lists what differs, for journaling undo and reloads. */
 export function diffModels(before: Model, after: Model): { created: IdLists; updated: IdLists; removed: IdLists } {
   const result = { created: emptyLists(), updated: emptyLists(), removed: emptyLists() };
-  for (const collection of ['elements', 'relations', 'flows'] as const) {
+  for (const collection of COLLECTIONS) {
     const old = new Map<string, unknown>(before[collection].map((e) => [e.id, e]));
     const now = new Map<string, unknown>(after[collection].map((e) => [e.id, e]));
     for (const [id, item] of now) {
@@ -649,13 +710,13 @@ export function diffModels(before: Model, after: Model): { created: IdLists; upd
 }
 
 export function emptyLists(): IdLists {
-  return { elements: [], relations: [], flows: [] };
+  return { elements: [], relations: [], flows: [], diagrams: [] };
 }
 
 export function describeChanges(created: IdLists, updated: IdLists, removed: IdLists): string {
   const parts: string[] = [];
   const phrase = (verb: string, lists: IdLists) => {
-    const items = (['elements', 'relations', 'flows'] as const)
+    const items = COLLECTIONS
       .filter((c) => lists[c].length)
       .map((c) => `${lists[c].length} ${lists[c].length === 1 ? c.slice(0, -1) : c}`);
     if (items.length) parts.push(`${verb} ${items.join(', ')}`);
@@ -668,11 +729,11 @@ export function describeChanges(created: IdLists, updated: IdLists, removed: IdL
   return text[0]!.toUpperCase() + text.slice(1);
 }
 
-/** The one element, relation or flow a change only updated (nothing created or removed), if that is all it did. */
+/** The one element, relation, flow or diagram a change only updated (nothing created or removed), if that is all it did. */
 export function onlyUpdated(lists: { created: IdLists; updated: IdLists; removed: IdLists }): { collection: Collection; id: string } | undefined {
-  const all = (l: IdLists) => [...l.elements, ...l.relations, ...l.flows];
+  const all = (l: IdLists) => COLLECTIONS.flatMap((c) => l[c]);
   if (all(lists.created).length || all(lists.removed).length || all(lists.updated).length !== 1) return undefined;
-  const collection = (['elements', 'relations', 'flows'] as const).find((c) => lists.updated[c].length)!;
+  const collection = COLLECTIONS.find((c) => lists.updated[c].length)!;
   return { collection, id: lists.updated[collection][0]! };
 }
 
@@ -691,7 +752,7 @@ export function describeEdit(collection: Collection, before: object | undefined,
 }
 
 function sets(): Record<Collection, Set<string>> {
-  return { elements: new Set(), relations: new Set(), flows: new Set() };
+  return { elements: new Set(), relations: new Set(), flows: new Set(), diagrams: new Set() };
 }
 
 function entryLabel(collection: Collection, index: number, id?: string, name?: string): string {

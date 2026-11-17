@@ -19,6 +19,7 @@ export function InlineText({
   allowEmpty = true,
   maxLength,
   multiline = true,
+  lineBreaks = false,
 }: {
   value: string;
   onCommit: (value: string) => void;
@@ -32,6 +33,8 @@ export function InlineText({
   maxLength?: number;
   /** Wraps like text and grows with it (the default, so nothing is ever cut off); Enter still commits. */
   multiline?: boolean;
+  /** Keeps line breaks: Shift+Enter breaks the line. */
+  lineBreaks?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const editing = useRef(false);
@@ -96,11 +99,11 @@ export function InlineText({
       onFocus={() => (editing.current = true)}
       onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         dirty.current = true;
-        setDraft(multiline ? e.target.value.replace(/\n/g, ' ') : e.target.value);
+        setDraft(multiline && !lineBreaks ? e.target.value.replace(/\n/g, ' ') : e.target.value);
       }}
       onBlur={commit}
       onKeyDown={(e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && !(lineBreaks && e.shiftKey)) {
           e.preventDefault();
           e.currentTarget.blur();
         } else if (e.key === 'Escape') {

@@ -30,6 +30,7 @@
 .chrome-left {
   top: var(--gutter);
   left: var(--gutter);
+  gap: 8px;
   max-width: calc(50% - 190px);
 }
 
@@ -91,7 +92,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 40px;
+  min-height: 40px;
   padding: 0 8px 0 10px;
   border-radius: 12px;
   background: var(--surface);
@@ -123,6 +124,13 @@
   line-height: 18px;
   text-align: left;
   overflow-wrap: anywhere;
+}
+
+/* The model name keeps to one line, so a long current crumb wraps instead of breaking the root mid-word. */
+.crumb-root {
+  flex: none;
+  max-width: none;
+  white-space: nowrap;
 }
 
 button.crumb:hover {

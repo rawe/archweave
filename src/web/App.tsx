@@ -2,6 +2,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { StructureCanvas } from './canvas/StructureCanvas.tsx';
 import { DataView } from './data/DataView.tsx';
 import { FlowsView } from './flows/FlowsView.tsx';
+import { DiagramsView } from './diagrams/DiagramsView.tsx';
 import { Inspector } from './inspector/Inspector.tsx';
 import { CodeDrawer } from './code/CodeDrawer.tsx';
 import { TopBar } from './chrome/TopBar.tsx';
@@ -26,6 +27,7 @@ export function App() {
   const codeOpen = useStore((s) => !!s.code);
   const namesOnly = useStore((s) => s.namesOnly);
   const dataFocus = useStore((s) => (s.perspective === 'data' ? dataFocusId(s) : undefined));
+  const diagramOpen = useStore((s) => s.perspective === 'diagrams' && s.model.diagrams.some((d) => d.id === s.diagramId));
 
   return (
     <ReactFlowProvider>
@@ -34,11 +36,12 @@ export function App() {
           {loaded && perspective === 'structure' && <StructureCanvas key="structure" />}
           {loaded && perspective === 'data' && <DataView />}
           {loaded && perspective === 'flows' && <FlowsView />}
+          {loaded && perspective === 'diagrams' && <DiagramsView />}
           {!loaded && <div className="loading">{connection === 'offline' ? 'Waiting for the ArchWeave server…' : ''}</div>}
           {empty && perspective === 'structure' && <EmptyState />}
         </main>
         <TopBar />
-        <CanvasControls zoomable={perspective === 'structure' || (perspective === 'data' && !!dataFocus)} viewOptions={perspective === 'structure'} />
+        <CanvasControls zoomable={perspective === 'structure' || (perspective === 'data' && !!dataFocus) || diagramOpen} viewOptions={perspective === 'structure'} />
         <Inspector />
         <CodeDrawer />
         <Toasts />

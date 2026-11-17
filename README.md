@@ -2,7 +2,9 @@
 
 A shared architecture workspace for a developer and a coding agent. The developer works in the browser, the agent works through MCP, and both edit the same model of the repository they are in: elements, relations, data structures and flows, each linked to the code that implements it.
 
-The model lives in your repository as plain JSON (`.archweave/model.json` and `.archweave/layout.json`), so it is versioned and reviewed like code.
+Beside the model there are diagrams: freeform drawings of boxes, groups, notes and arrows that you or the agent draw to explain one idea. A shape can link to a model element and then shows its live name; the drawing itself never changes the model. Diagrams export as SVG and PNG.
+
+The model lives in your repository as plain JSON (`.archweave/model.json`, `.archweave/layout.json` and one file per diagram in `.archweave/diagrams/`), so it is versioned and reviewed like code.
 
 ## Quick start
 
@@ -62,13 +64,14 @@ Requests whose `Host` or `Origin` header names another host (or an opaque `null`
 ```
 .archweave/
   model.json      elements, relations, flows; sorted by id, defaults omitted
-  layout.json     diagram positions
+  layout.json     positions on the structure canvases
+  diagrams/       one file per diagram, named after its id
   .gitignore      ignores state/
   state/
     journal.jsonl activity journal (last 500 entries)
 ```
 
-Commit `model.json` and `layout.json`. ArchWeave watches both files and reloads the one that changed on disk, for example after `git checkout` or `git pull`. A model with broken references (unknown ids, containment cycles, data references to non-data elements) is refused: at startup the server exits with a list of the problems, and a reload that would bring one in is ignored and logged.
+Commit `model.json`, `layout.json` and `diagrams/`. ArchWeave watches these files and reloads what changed on disk, for example after `git checkout` or `git pull`. A damaged diagram file is repaired or skipped with a log line and never stops the server. A model with broken references (unknown ids, containment cycles, data references to non-data elements) is refused: at startup the server exits with a list of the problems, and a reload that would bring one in is ignored and logged.
 
 ## Development
 
